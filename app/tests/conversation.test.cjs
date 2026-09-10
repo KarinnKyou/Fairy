@@ -60,8 +60,8 @@ function open(name, extra) {
   check(turn && typeof turn.turnId === 'string', '不可用时仍能开始回合（turnId 已生成）');
   check(c.recentHistory().length === 0, '不可用时历史为空数组');
   check(c.identity() === null, '不可用时身份为 null');
-  check(c.messagesFor(turn).length === 1,
-    '不可用时仍能组装消息（只有 system，无历史可带）：' + c.messagesFor(turn).length);
+  check(c.messagesFor(turn).length === 2,
+    '不可用时仍能组装消息（system + 本次提问）：' + c.messagesFor(turn).length);
   c.recordAssistantDelta(turn, '我在');
   c.finishTurn(turn, '我在');
   c.recordError(turn, '写入失败');
@@ -86,11 +86,18 @@ function open(name, extra) {
   /* Examples must NOT be injected as message pairs: the model would treat a sample answer
    * as something it actually said (this caused real off-topic replies). Only the system
    * prompt and the real history may be present — nothing else. */
-  check(msgs.length === 1, '只有 system（本轮历史为空），没有伪造的对话轮次（共 ' + msgs.length + ' 条）');
+  check(msgs.length === 2, '只有 system + 本次提问，没有伪造的对话轮次（共 ' + msgs.length + ' 条）');
   check(!msgs.some((m) => m.role !== 'system' && /今天天气|凌晨两点十七分/.test(m.content)),
     '示例文本未出现在任何非 system 消息里');
-  check(/# 语气样例/.test(msgs[0].content), '历史短时在 system 内注入语气样例');
-  check(/从未真实发生过/.test(msgs[0].content), '样例被明确标注为虚构、非对话内容');
+  /* The message being answered MUST be last. Its absence was a real bug: the model got a
+   * conversation ending on the assistant's own previous reply and simply continued from
+   * there, which looked exactly like "answering the previous question". */
+  check(msgs[msgs.length - 1].role === 'user',
+    '最后一条是用户消息（模型必须有事可答），实为 ' + msgs[msgs.length - 1].role);
+  check(msgs[msgs.length - 1].content === '你是谁',
+    '最后一条内容就是本次提问：' + JSON.stringify(msgs[msgs.length - 1].content));
+  check(msgs.filter((m) => m.content === '你是谁').length === 1,
+    '本次提问只出现一次（未与历史重复）');
 
   c.recordAssistantDelta(turn, '我是');
   const midId = turn.assistantMessageId;
@@ -163,12 +170,14 @@ function open(name, extra) {
   }
   const t = c.beginTurn('latest');
   const msgs = c.messagesFor(t);
-  /* system + at most CONTEXT_MESSAGE_LIMIT history entries; no example pair at this size. */
-  check(msgs.length <= 1 + conv.CONTEXT_MESSAGE_LIMIT,
-    '上下文受 CONTEXT_MESSAGE_LIMIT 限制（' + msgs.length + ' <= ' + (1 + conv.CONTEXT_MESSAGE_LIMIT) + '）');
+  /* system + at most CONTEXT_MESSAGE_LIMIT history entries + the current question.
+   * No example pair at this size. */
+  check(msgs.length <= 2 + conv.CONTEXT_MESSAGE_LIMIT,
+    '上下文受 CONTEXT_MESSAGE_LIMIT 限制（' + msgs.length + ' <= ' + (2 + conv.CONTEXT_MESSAGE_LIMIT) + '）');
   check(msgs[0].role === 'system', 'system 仍在首位');
-  const lastHist = msgs.filter((m) => m.role !== 'system').pop();
-  check(lastHist && lastHist.content === 'a40', '窗口保留的是最近的内容：' + (lastHist && lastHist.content));
+  check(msgs[msgs.length - 1].content === 'latest', '最后一条是本次提问');
+  const lastHist = msgs.filter((m) => m.role === 'assistant').pop();
+  check(lastHist && lastHist.content === 'a40', '窗口保留的是最近的助手回复：' + (lastHist && lastHist.content));
   check(!msgs.some((m) => m.content === 'a1'), '最旧的内容已被挤出窗口');
   c.close();
 }

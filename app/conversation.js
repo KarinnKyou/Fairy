@@ -145,7 +145,14 @@ function openConversation(options) {
   function beginTurn(text) {
     const content = String(text == null ? '' : text);
     const turnId = 't' + (++turnSeq) + '-' + store.newId();
-    const result = { turnId, userMessageId: null, assistantMessageId: null, historyBefore: [] };
+    const result = {
+      turnId, userMessageId: null, assistantMessageId: null,
+      historyBefore: [],
+      /* The text being asked right now. messagesFor must put this last: without it the
+       * model receives a conversation that ends on the assistant's previous reply and
+       * simply continues from there, which reads as "answering the previous question". */
+      userText: content,
+    };
 
     if (!available) return result;
 
@@ -158,8 +165,9 @@ function openConversation(options) {
     return result;
   }
 
-  /* The messages to send to the API for an open turn. Remembered on the turn so the
-   * diagnostics written alongside the reply reflect what was actually sent. */
+  /* The messages to send to the API for an open turn: system, then the stored history,
+   * then the message being answered. Remembered on the turn so the diagnostics written
+   * alongside the reply reflect what was actually sent. */
   function messagesFor(turn) {
     const messages = buildMessages({
       persona: opts.persona,
@@ -169,6 +177,9 @@ function openConversation(options) {
       pickExample: opts.pickExample,
       now: Date.now(),
     });
+    if (turn && turn.userText) {
+      messages.push({ role: 'user', content: turn.userText });
+    }
     if (turn) {
       turn.contextMessages = messages.length;
       turn.promptChars = messages[0] && messages[0].content ? messages[0].content.length : 0;
