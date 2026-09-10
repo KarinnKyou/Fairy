@@ -38,8 +38,10 @@ was said, and the state lives in a database instead of nowhere.
   it. This is a deliberate visual regression against the 0.0.1 demo, which did embed it.
 - No cancel button: a reply in progress cannot be interrupted.
 - One implicit conversation — no topics, no switching (Phase 2).
-- The packaged data-directory branch (`app.getPath('userData')`) is verified by running a
-  built exe, not by the automated tests, which run outside Electron.
+- The packaged data-directory branch (`app.getPath('userData')`) is not covered by the
+  automated tests, which run outside Electron. It was verified by launching the built exe
+  and confirming it created `%APPDATA%\HDD\data\hdd.db` at schema version 2 — and that the
+  store reopened cleanly after the app was killed without a shutdown.
 
 The interface invariants listed under 0.0.1 (font-weight override, fade mask on `#out`,
 unconditional `pinBottom()`) still hold and are still asserted by the tests.
