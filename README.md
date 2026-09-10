@@ -190,13 +190,29 @@ publishes the GitHub release.
 
 Your real API key is restored in a `finally` block, so it survives even a failed build.
 
+**Re-cutting the same version** is supported: pass the version the packages already hold and
+step 1 reports "already 0.1.0" instead of failing. That requires the tag not to exist yet, so
+delete the old release and tag first:
+
+```powershell
+gh release delete v0.1 --yes --cleanup-tag
+git tag -d v0.1
+.\release.ps1 -Version 0.1.0
+```
+
+Only do this while the old artifact is unreferenced — check its download count first. Once
+someone has downloaded a release, cut a new version instead of moving the tag.
+
 **What the artifact checks cover** (`Assert-PackagedContents`): no real key in the exe; the
 fade mask, `pinBottom()` and the font-weight override are present in the packaged page;
 **every module the app `require`s is inside the asar**; and **no font files are embedded**.
-The last two exist because both failed in practice — `build.files` was not updated when
-`main.js` gained `conversation.js`/`personality.js` (the exe died on startup), and the font
-in `app/fonts/` was being embedded in every build. `-VerifyOnly` is how those checks are
-tested: point it at a deliberately broken build and confirm it exits non-zero.
+The module and font checks exist because both failed in practice — `build.files` was not
+updated when `main.js` gained `conversation.js`/`personality.js` (the exe died on startup), and
+the font in `app/fonts/` was embedded in every build. The module check then caught the same
+mistake a second time, when `app/capabilities.js` was added, before anything was pushed.
+
+`-VerifyOnly` is how those checks are tested: point it at a deliberately broken build and
+confirm it exits non-zero.
 
 ### 3.4 Tests and asset rebuild (from the project root)
 

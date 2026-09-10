@@ -41,15 +41,27 @@ Delivered, each verified against the code rather than the docs:
 | Persona honest about its own limits (ADR-009, revised three times) | the prompt is a short positive list and claims nothing about completeness; the absences are data in `app/capabilities.js` deliberately left unrendered, and a test fails if any of it reaches the prompt |
 | The invariants that must not regress | font-weight override, fade mask on `#out`, unconditional `pinBottom()`, one line per reply |
 
-Two defects found while auditing this phase, both of which would have shipped a broken
-release, and both now covered by checks in `release.ps1`:
+Three packaging defects were found during this phase. The first shipped; the other two were
+caught before publishing, which is the point of the checks:
 
 1. `build.files` was never updated when the main process gained `conversation.js`,
-   `personality.js` and `store.js`. The packaged exe died on startup with
-   `MODULE_NOT_FOUND`. A check now walks the actual `require()` graph inside the asar.
-2. The font in `app/fonts/` was embedded in every build, including published ones, while
-   the docs claimed no fonts were redistributed. `release.ps1` now builds with
-   `HDD_NO_FONTS=1` and fails if font bytes are found (ADR-011).
+   `personality.js` and `store.js`. This one reached users: the `v0.1` exe built from that tree
+   died on startup with `MODULE_NOT_FOUND`. A check now walks the actual `require()` graph
+   inside the asar.
+2. The font in `app/fonts/` was embedded in every build, including published ones, while the
+   docs claimed no fonts were redistributed. `release.ps1` now builds with `HDD_NO_FONTS=1` and
+   fails if font bytes are found (ADR-011).
+3. The same mistake as (1) happened again while adding `app/capabilities.js` — and the check
+   stopped it: `capabilities.js is not packaged (required by conversation.js)`, before any
+   push. A guard written after a real incident, firing on the next real incident of its own
+   kind, is the only evidence that it was worth writing.
+
+Two bugs in `release.ps1` itself surfaced while re-cutting `v0.1` at the same version, both
+previously unreachable: `Set-JsonVersion` reported a legitimate no-op as "could not update
+version", and step 4's message contained `$Version?`, which PowerShell parses as a variable
+named `Version?` and strict mode turns into a fatal error — reachable only when a release has
+nothing to commit, which aborted a run *after* the build and verification had passed. Re-cutting
+a version is now a supported path.
 
 ---
 
