@@ -122,6 +122,29 @@ node -e "console.log(require('./store.js').resetDataDir('data',{force:true})+' f
 `resetDataDir` refuses to delete anything without `{force:true}`, so a stray call cannot
 cost you a conversation.
 
+#### Seeing what actually happened
+
+The database is binary, so there is a one-command way to read it and, more usefully, to
+see the exact prompt that was sent. **Run this before theorising about a bad reply.**
+
+```sh
+npm run inspect              # the real store (app/data)
+npm run inspect:dev          # the scratch store used by npm run dev
+npm run inspect:dev -- --prompt    # also print the full system prompt
+```
+
+It prints the transcript, the profile facts (first seen, turns, last seen) and, for each
+reply, **how many messages went to the model and how long the system prompt was**:
+
+```
+[15:58:02] user      你好
+[15:58:02] assistant 主人，你好。  [context: 9 msg, system 2912 ch]
+```
+
+That `context:` figure is the important one. A reply that ignores the question is almost
+always a context problem, and this separates "no history was sent" from "history was sent"
+without guessing. The app also logs the same number to the console on every turn.
+
 ### 3.3 Building the release (single portable exe)
 
 ```sh

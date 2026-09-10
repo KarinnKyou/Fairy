@@ -158,9 +158,10 @@ function openConversation(options) {
     return result;
   }
 
-  /* The messages to send to the API for an open turn. */
+  /* The messages to send to the API for an open turn. Remembered on the turn so the
+   * diagnostics written alongside the reply reflect what was actually sent. */
   function messagesFor(turn) {
-    return buildMessages({
+    const messages = buildMessages({
       persona: opts.persona,
       examples: opts.examples,
       identity: identity(),
@@ -168,6 +169,11 @@ function openConversation(options) {
       pickExample: opts.pickExample,
       now: Date.now(),
     });
+    if (turn) {
+      turn.contextMessages = messages.length;
+      turn.promptChars = messages[0] && messages[0].content ? messages[0].content.length : 0;
+    }
+    return messages;
   }
 
   /* Persist the assistant reply. Called repeatedly while streaming: the row is created on
@@ -175,21 +181,25 @@ function openConversation(options) {
    * whatever text was received rather than nothing. */
   function recordAssistantDelta(turn, content, reasoning) {
     if (!available || !turn) return null;
+    const diagnostics = {
+      contextMessages: turn.contextMessages == null ? null : turn.contextMessages,
+      promptChars: turn.promptChars == null ? null : turn.promptChars,
+    };
     if (!turn.assistantMessageId) {
-      const row = store.appendMessage(s.db, {
+      const row = store.appendMessage(s.db, Object.assign({
         role: 'assistant',
         content: content == null ? '' : content,
         reasoning: reasoning == null ? null : reasoning,
         turnId: turn.turnId,
         model: opts.model || null,
-      });
+      }, diagnostics));
       turn.assistantMessageId = row.id;
       return row.id;
     }
-    store.updateMessage(s.db, turn.assistantMessageId, {
+    store.updateMessage(s.db, turn.assistantMessageId, Object.assign({
       content: content == null ? '' : content,
       reasoning: reasoning == null ? null : reasoning,
-    });
+    }, diagnostics));
     return turn.assistantMessageId;
   }
 

@@ -138,6 +138,16 @@ const MIGRATIONS = [
   //   CREATE TABLE topics (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
   //   CREATE INDEX idx_messages_topic ON messages(topic_id, created_at, id);
   // `],
+  [
+    2,
+    `
+    -- How many messages were sent to the model for this turn, and how long the system
+    -- prompt was. Stored so a bad reply can be diagnosed from the transcript alone:
+    -- "\u6ca1\u5e26\u5386\u53f2" and "\u5386\u53f2\u5f88\u957f" look identical on screen but differ here.
+    ALTER TABLE messages ADD COLUMN context_messages INTEGER;
+    ALTER TABLE messages ADD COLUMN prompt_chars INTEGER;
+    `,
+  ],
 ];
 
 const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
@@ -299,10 +309,13 @@ function appendMessage(db, msg) {
   const id = msg.id || newId(createdAt);
   const content = msg.content == null ? '' : String(msg.content);
   db.prepare(
-    'INSERT INTO messages (id, role, content, reasoning, turn_id, model, created_at) VALUES (?,?,?,?,?,?,?)'
+    'INSERT INTO messages (id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars) ' +
+    'VALUES (?,?,?,?,?,?,?,?,?)'
   ).run(id, msg.role, content, msg.reasoning == null ? null : String(msg.reasoning),
         msg.turnId == null ? null : String(msg.turnId), msg.model == null ? null : String(msg.model),
-        createdAt);
+        createdAt,
+        msg.contextMessages == null ? null : Number(msg.contextMessages),
+        msg.promptChars == null ? null : Number(msg.promptChars));
   if (content) {
     db.prepare('INSERT INTO messages_fts (content, tok, message_id) VALUES (?, ?, ?)')
       .run(content, tokenizeForIndex(content), id);
@@ -319,6 +332,8 @@ function updateMessage(db, id, patch) {
   const vals = [];
   if (patch.content != null) { sets.push('content = ?'); vals.push(String(patch.content)); }
   if (patch.reasoning != null) { sets.push('reasoning = ?'); vals.push(String(patch.reasoning)); }
+  if (patch.contextMessages != null) { sets.push('context_messages = ?'); vals.push(Number(patch.contextMessages)); }
+  if (patch.promptChars != null) { sets.push('prompt_chars = ?'); vals.push(Number(patch.promptChars)); }
   if (!sets.length) return existing;
   vals.push(id);
   db.prepare('UPDATE messages SET ' + sets.join(', ') + ' WHERE id = ?').run(...vals);
@@ -338,7 +353,8 @@ function updateMessage(db, id, patch) {
 function recentMessages(db, limit) {
   const n = Math.max(0, limit == null ? 30 : limit);
   const rows = db.prepare(
-    'SELECT id, role, content, reasoning, turn_id, model, created_at FROM messages ORDER BY created_at DESC, id DESC LIMIT ?'
+    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars ' +
+    'FROM messages ORDER BY created_at DESC, id DESC LIMIT ?'
   ).all(n);
   return rows.reverse().map(toMessage);
 }
@@ -348,7 +364,8 @@ function listMessages(db, options) {
   const limit = Math.max(1, Math.min(1000, opts.limit == null ? 100 : opts.limit));
   const offset = Math.max(0, opts.offset == null ? 0 : opts.offset);
   const rows = db.prepare(
-    'SELECT id, role, content, reasoning, turn_id, model, created_at FROM messages ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?'
+    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars ' +
+    'FROM messages ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?'
   ).all(limit, offset);
   return rows.map(toMessage);
 }
@@ -382,6 +399,8 @@ function toMessage(row) {
     turnId: row.turn_id,
     model: row.model,
     createdAt: row.created_at,
+    contextMessages: row.context_messages == null ? null : Number(row.context_messages),
+    promptChars: row.prompt_chars == null ? null : Number(row.prompt_chars),
   };
 }
 

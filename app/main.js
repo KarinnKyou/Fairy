@@ -120,6 +120,12 @@ ipcMain.on('fairy:ask', async (event, payload) => {
   const turn = conv.beginTurn(text);
   const messages = conv.messagesFor(turn);
 
+  /* Logged because a reply that ignores the question is usually a context problem, and the
+   * count is the fastest way to tell "no history" apart from "history present". It is also
+   * written to the store with the reply, so a past turn can be diagnosed later. */
+  console.log('turn ' + id + ': sending ' + messages.length + ' message(s), system prompt ' +
+    (messages[0].content ? messages[0].content.length : 0) + ' chars');
+
   let content = '';
   let reasoning = '';
 
