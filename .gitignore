@@ -10,6 +10,10 @@ app/package-lock.json
 # Private config (contains the API key) - never commit
 app/config.json
 
+# Conversation data and user profile (local state, never commit)
+app/data/
+app/.tmp-store-test/
+
 # Fonts are not redistributed here: supply your own .ttf/.otf in app/fonts/.
 # prep.cjs registers whatever it finds automatically; without it the UI falls
 # back to the system sans-serif.

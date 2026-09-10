@@ -7,6 +7,7 @@
   "scripts": {
     "prep": "node scripts/prep.cjs",
     "icon": "node scripts/icon.cjs",
+    "test:store": "node tests/store.test.cjs",
     "test:ui": "node scripts/prep.cjs && node tests/renderer.test.cjs && node tests/scroll-pin.test.cjs",
     "start": "npm run prep && electron .",
     "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"
