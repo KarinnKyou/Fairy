@@ -12,6 +12,10 @@ page itself is fully local (CSP blocks network access).
 > "Fairy / DeepSeek / related games and trademarks" are not covered by this license;
 > this project contains no official assets, game text or private corpora.
 
+**Where to look next:** `docs/ROADMAP.md` (the nine phases and how far along we are) ·
+`docs/COMMANDS.md` (every command, and the directory to run it from) · `docs/ADR.md`
+(why the architecture is what it is) · `VERSION.md` (what each version contains).
+
 ---
 
 ## 1. Features
@@ -269,7 +273,12 @@ HDD/
 ├── package.json               ← root aggregate scripts (assets:bake / app:test / ...)
 ├── LICENSE / NOTICE / THIRD_PARTY_NOTICES.md
 ├── MANIFEST.json              ← asset manifest: origin mapping + SHA-256
-├── VERSION.md                 ← version record and invariants
+├── VERSION.md                 ← version record: what each released version contains
+├── docs/
+│   ├── ADR.md                 ← architecture decision records (authoritative)
+│   ├── ROADMAP.md             ← the nine phases and current progress
+│   └── COMMANDS.md            ← every command, with the directory to run it from
+├── release.ps1                ← the release ritual (bump / build / verify / push / publish)
 ├── assets/                    ★ reusable visual asset layer (decoupled from the app)
 │   ├── bake.cjs               ← asset baker (SVG output / CSS extraction / tokens / manifest)
 │   ├── source/                ← asset source modules (verbatim copies, do not edit)

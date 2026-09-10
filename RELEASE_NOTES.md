@@ -95,10 +95,19 @@ Requires Node 22.5 or newer (24.x recommended) — the data layer uses the built
 `node:sqlite`.
 
 ```sh
-npm test                    # asset bake + all four test suites
+# still in Fairy/app
 npm run dev                 # run with a scratch data directory, so real history stays clean
 npm run inspect             # print the transcript and what was sent to the model
+
+# from the repository root — note that `npm test` only exists there
+cd ..
+npm test                    # asset bake + all four test suites
 ```
+
+`app/` and the repository root each have their own `package.json`, and they do not offer
+the same scripts: `dev`, `inspect`, `start` and `dist` live in `app/`; `test`, `assets:bake`
+and the `app:*` wrappers live in the root. Running the wrong one fails with "missing
+script". The full list is in `docs/COMMANDS.md`.
 
 ---
 
