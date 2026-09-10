@@ -11,7 +11,7 @@ was said, and the state lives in a database instead of nowhere.
   (`app/data/hdd.db` in development, `%APPDATA%\HDD\data\hdd.db` when packaged) and the
   window redraws the transcript on launch, so quitting no longer loses the conversation.
 - **Context is assembled per turn** from the store: system prompt → profile → the most
-  recent 32 messages. The renderer no longer builds any prompt.
+  recent 30 messages. The renderer no longer builds any prompt.
 - **The profile accumulates**: turns spoken, first meeting, last seen. Injected from the
   second turn onward.
 - **Fixed: the current question was never sent.** The message the user had just typed was

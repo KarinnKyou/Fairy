@@ -61,7 +61,7 @@ configuration changes needed**. Builds made by `release.ps1` deliberately exclud
   Data location: `%APPDATA%\HDD\data\hdd.db` for the packaged exe, `app/data/hdd.db` when
   running from source.
 - **Context is assembled per turn** from that store: system prompt, then what she knows
-  about you (turns spoken, first meeting), then the most recent 32 messages.
+  about you (turns spoken, first meeting), then the most recent 30 messages.
 - **Fixed a serious bug**: the message you had just typed was never sent to the model, so
   replies answered the *previous* question. If v0.01 felt like it was ignoring you, that
   was why.

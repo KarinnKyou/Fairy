@@ -186,10 +186,11 @@ function open(name, extra) {
 {
   const sys = conv.buildSystemPrompt(PERSONA, { firstSeen: Date.now(), turns: 5 }, Date.now());
   const personaAt = sys.indexOf('你是 Fairy');
+  const capsAt = sys.indexOf('# 你当前可以做什么');
   const profileAt = sys.indexOf('# 主人画像');
   const timeAt = sys.indexOf('# 当前时间');
-  check(personaAt >= 0 && profileAt > personaAt && timeAt > profileAt,
-    '拼装顺序为 性格 → 画像 → 时间');
+  check(personaAt >= 0 && capsAt > personaAt && profileAt > capsAt && timeAt > profileAt,
+    '拼装顺序为 性格 → 能力 → 画像 → 时间');
 
   const noProfile = conv.buildSystemPrompt(PERSONA, null, Date.now());
   check(noProfile.indexOf('# 主人画像') < 0, '无身份时不注入画像段落');
@@ -219,17 +220,51 @@ function open(name, extra) {
   check(real.PERSONA.length < 900,
     'persona 保持精简（' + real.PERSONA.length + ' < 900 字符；完整性格留给 v1.0）');
 
-  /* The capability boundary is the one thing that must never be dropped: without it she
-   * invents having done things. Check each denial is actually stated. */
-  for (const denied of ['没有摄像头', '读不到硬件状态', '不能执行任何操作', '工具调用']) {
-    check(sys.includes(denied), '明确否定能力「' + denied + '」');
+  /* Capability facts live in capabilities.js, NOT in the persona (ADR-009, revised).
+   *
+   * The old assertions looked for literal strings inside the persona. Those were fossils:
+   * they pinned the wording, not the guarantee, and they lived in the file the persona is
+   * edited in — so an edit about tone silently deleted a guarantee about correctness.
+   * Three things are checked now:
+   *   1. every declared fact reached the prompt (guards the renderer),
+   *   2. the persona has not taken the facts back (the split, enforced),
+   *   3. the declarations that can be checked against the code still match the code. */
+  const caps = require('../capabilities.js');
+  check(/# 你当前可以做什么/.test(sys), 'system prompt 含能力段（由 capabilities.js 渲染）');
+  for (const entry of caps.CAN_DO.concat(caps.CANNOT_DO)) {
+    check(sys.includes(entry.text), '能力段包含声明「' + entry.id + '」');
   }
   check(/如实说做不到/.test(sys), '要求如实说明做不到，而非编造完成');
+
+  /* The split itself: capability facts must not creep back into the persona. */
+  for (const entry of caps.CANNOT_DO) {
+    check(!real.PERSONA.includes(entry.text),
+      '性格文件里不出现能力事实「' + entry.id + '」（能力属于环境层）');
+  }
+  check(!/(没有摄像头|读不到硬件|工具调用|读写文件)/.test(real.PERSONA),
+    '性格文件未复述任何能力事实');
+
+  /* Cross-checks: a capability claim that can be verified against the code, is. If a phase
+   * adds tools or opens the page's network access, these fail until capabilities.js is
+   * updated — which is the point. Deriving capability awareness from actual state only
+   * works if something notices when the state changes. */
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  const sendsTools = /(^|[^.\w])tools\s*:/.test(mainSrc);
+  const declaresNoTools = caps.ids(caps.CANNOT_DO).includes('tools');
+  check(sendsTools !== declaresNoTools,
+    '「工具调用」的声明与 main.js 一致（main.js 发送 tools = ' + sendsTools + '）');
+
+  const liveSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'live.template.html'), 'utf8');
+  const pageOffline = /connect-src\s+'none'/.test(liveSrc);
+  const declaresNoNetwork = caps.ids(caps.CANNOT_DO).includes('network');
+  check(pageOffline === declaresNoNetwork,
+    '「自己上网」的声明与页面 CSP 一致（connect-src none = ' + pageOffline + '）');
+
   /* Claims of imaginary powers must not appear as assertions. The phrasing below is used
    * in the persona only as a PROHIBITION ("do not fabricate ..."), so a naive substring
    * check would fire on the rule itself — test the sentence it sits in. */
   for (const claim of ['我连接了主人的摄像头', '能看到主人']) {
-    check(!sys.includes(claim), 'persona 未声称不存在的能力：' + claim);
+    check(!sys.includes(claim), 'prompt 未声称不存在的能力：' + claim);
   }
   const fabricated = /(已经为您做好了|已为您完成|已经帮您)/.exec(sys);
   if (fabricated) {

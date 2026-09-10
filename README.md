@@ -219,51 +219,69 @@ npm run app:dist       # same as 3.3
 
 ## 4.1 Fairy's personality
 
-The persona lives in **`app/personality.js`** and is injected into the page at build
-time by `prep.cjs` (as JSON, so quotes and newlines in the prompt are safe). Edit that
-file, not `live.template.html`, then re-run `prep`.
+Two files, deliberately separate: **who she is** versus **what the program can do**.
 
-It exports three things:
+| File | Holds | Edit it when |
+| --- | --- | --- |
+| `app/personality.js` | Identity, the honesty rule, speech rules | You want a different tone or wording |
+| `app/capabilities.js` | The facts: what the app can and cannot do, as data | The program gains or loses a real capability |
 
-| Export | Purpose |
-| --- | --- |
-| `PERSONA` | The system prompt: identity, capability boundary, speech rules |
-| `EXAMPLES` | Pool of few-shot pairs; one is picked at random and injected **only while the history is short** (≤ 4 messages), as a voice cue. **Currently empty** — see below |
-| `TIME_FLAVOUR` | Time-of-day words available to the persona |
-
-The assembled prompt is:
+`personality.js` exports `PERSONA` and `EXAMPLES`. Neither is injected into the page: since
+ADR-001 the **main process** owns prompt assembly, so `conversation.js` reads them directly
+and `prep.cjs` is not involved. The assembled prompt is:
 
 ```
-PERSONA + "\n\n# 当前时间\n" + <local date and time>
+PERSONA
+  + capabilities.capabilitySection()      ← facts, from the running program
+  + "\n\n# 主人画像（核心记忆）\n" + ...    ← only once a turn has completed
+  + "\n\n# 当前时间\n" + <local date and time>
 ```
 
-so she always knows when "now" is. Rebuilt every turn.
+Rebuilt every turn, so "now" is always accurate.
+
+### Capability facts are not character
+
+The capability boundary used to be prose inside the persona. That was a layering mistake with
+a concrete cost: reading as character, it looked editable, and a tone edit deleted the whole
+boundary while five assertions went red — nobody had touched a guarantee, yet a guarantee was
+gone. Taste and correctness should not share a string.
+
+So the honesty *disposition* ("say plainly that you cannot; never invent a completed action")
+is one line in the persona, where it belongs, and the *facts* ("no camera", "no tool calling")
+are data in `capabilities.js`, rendered into the prompt every turn beside the profile and the
+time. The model cannot introspect its own host — it cannot notice it lacks a camera, and it
+cannot try and fail — so capability awareness is injected state either way; the only real
+choice is which layer supplies it.
+
+Two of those declarations are checked against the code rather than trusted:
+`conversation.test.cjs` requires the `tools` entry to disagree with whether `main.js` sends
+`tools` in the request body, and the `network` entry to disagree with whether the page CSP
+allows `connect-src`. Add a capability and the tests fail until the declaration matches
+reality again. Tests assert entry **ids**, not wording, so you can reword entries freely —
+and a separate assertion fails if capability facts reappear in the persona.
+
+```js
+// app/capabilities.js
+const CAN_DO = [{ id: 'chat', text: '和主人进行文字对话' }, ...];
+const CANNOT_DO = [{ id: 'camera', text: '摄像头：看不到主人的样子、表情，也看不到周围环境' }, ...];
+```
+
+Keep this block short. A long list of denials invites the model to talk about its limits, and
+naming a "camera" is itself an invitation to improvise one.
 
 ### The persona is intentionally minimal before v1.0
 
-At ~500 characters the persona says only what a build with no tools and no perception
-needs: who she is, what she cannot do, and how she speaks. The full character — cold
-humour, vanity, teasing — is **deferred to v1.0**, and a test pins the current prompt
-under a length ceiling so it cannot quietly grow back. The reasoning is in ADR-008: a
-character defined by what she does cannot be written before she can do it, and writing it
-early means describing abilities the app does not have (ADR-009).
+At ~360 characters the persona says only what a build with no tools and no perception needs:
+who she is, that she must not fake an action, and how she speaks. The full character — cold
+humour, vanity, teasing — is **deferred to v1.0**, and a test pins the prompt under a length
+ceiling so it cannot quietly grow back. The reasoning is in ADR-008: a character defined by
+what she does cannot be written before she can do it.
 
 `EXAMPLES` is an empty array rather than a deleted feature: the injection path stays
 tested, so v1.0 only has to fill the list. When it is filled, the samples must go into the
 **system prompt** as labelled fiction. Sending them as `user`/`assistant` message pairs was
 tried and reverted — the model treated them as real history and answered the examples
 instead of the user.
-
-### The capability boundary is deliberate — keep it
-
-HDD has no camera, no hardware sensing and no tool calling. The persona therefore
-states explicitly that she **cannot** perform actions, and that she must never claim to
-have done something she did not do. An earlier design asserted camera access and a
-"never say you cannot see the user" rule; copying that here would have the model fake
-results, which is exactly what the same design's own "never fake an action" rule
-forbids. `renderer.test.cjs` asserts that the capability boundary wording survives.
-
-If you later add real capabilities, add them to the boundary list **and** to the tests.
 
 ## 5. Project structure
 
@@ -298,7 +316,8 @@ HDD/
     ├── preload.cjs            ← secure bridge: getConfig / ask / onStream (contextBridge)
     ├── config.json            ← private config (key/model; gitignored)
     ├── config.example.json    ← config template
-    ├── personality.js         ← Fairy's persona (minimal until v1.0 — see 4.1)
+    ├── personality.js         ← Fairy's persona: identity, honesty rule, speech rules
+    ├── capabilities.js        ← what the app can/cannot do, as data (facts, not persona)
     ├── store.js               ← persistent state (SQLite via node:sqlite; main process only)
     ├── conversation.js        ← owns turns and assembles the prompt per turn
     ├── data/                  ← created at runtime: hdd.db (gitignored)

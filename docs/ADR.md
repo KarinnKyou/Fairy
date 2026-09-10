@@ -302,7 +302,8 @@ The full character (cold humour, vanity, teasing, the precedence levels 3 and 4 
 memory beyond recent turns and no perception actually needs:
 
 1. identity — she is Fairy, never another model's name;
-2. capability boundary — what she cannot do, stated plainly (ADR-009);
+2. honesty — one line: never invent a completed action (the *facts* about what the program
+   can do are not persona material; they live in `capabilities.js`, see ADR-009);
 3. speech rules —「主人」, one line per reply, no emoji, no invented actions.
 
 Writing the rest now would mean describing capabilities that do not exist yet, which
@@ -336,15 +337,46 @@ forbids.
 
 **Decision**
 
-The persona states, explicitly and in the prompt, what the app cannot do, and forbids
-claiming otherwise. `app/tests/renderer.test.cjs` asserts the capability-boundary wording
-survives edits.
+The prompt states, explicitly, what the app cannot do, and the persona forbids claiming
+otherwise.
+
+**Revised (still Accepted, same decision, different location).** The capability list was
+originally written as prose inside `personality.js`. That was a layering mistake: reading as
+character, it looked like fair game for a tone edit — and one did delete the entire
+boundary, turning five assertions red without anyone touching a guarantee. Taste and
+correctness should not share a string.
+
+The boundary now has two halves:
+
+- **Facts** live in `app/capabilities.js` as data (`CAN_DO`, `CANNOT_DO`) and are rendered
+  into the prompt every turn by `conversation.js`, beside the profile and the current time.
+  Facts only — no behaviour rules; that file must stay free of "do not apologise" and
+  similar.
+- **Disposition** stays in the persona: one line of honesty ("say plainly that you cannot,
+  never invent a completed action"). Honesty is a character trait, so it belongs there.
+
+Precedence in the prompt is persona → capabilities → profile → time: the facts that
+constrain what she may claim sit immediately after the character, not buried under flavour.
+
+Each declaration is a claim about the code, and the ones that can be checked are checked in
+`conversation.test.cjs`: a `tools` entry must disagree with whether `main.js` sends `tools`
+in the request body, and the `network` entry must disagree with whether the page CSP allows
+`connect-src`. The tests assert entry **ids**, not wording, so the text can be reworded
+freely. A separate test asserts the persona contains no capability facts, which enforces the
+split itself.
 
 **Consequences**
 
-- When a real capability is added (Phase 6 tools, Phase 5 file reading, Phase 7 calendar),
-  it must be added to **both** the boundary list and the tests in the same change.
-- A capability list that lags behind reality produces either false modesty or false claims.
+- Adding a real capability is a change to `capabilities.js` alone. The cross-checks then
+  fail until the declaration matches reality again, so a capability cannot be added
+  silently — nor left falsely denied.
+- Phase 6 should generate the tool entry from the actual tool registry rather than
+  hand-maintaining it; the cross-check is the interim guarantee.
+- The model cannot introspect its own host: it cannot notice a missing camera, and it cannot
+  try and fail. Capability awareness is injected state. The improvement here is which layer
+  injects it, not that it is no longer injected.
+- Keep the facts block short. A long list of denials invites the model to talk about its
+  limits, and mentioning a "camera" is itself an invitation to improvise one.
 
 ---
 
@@ -430,7 +462,9 @@ Short list, to be checked before any structural change:
    (CSP `connect-src 'none'`).
 3. Schema changes go through a migration; shipped migrations are never edited.
 4. Timestamps are UTC; IDs are stable and application-generated.
-5. The persona never claims a capability the app lacks.
+5. The prompt never claims a capability the app lacks. Capability **facts** live in
+   `capabilities.js` and reach the prompt every turn; the persona states the honesty rule but
+   never restates the facts (ADR-009).
 6. The font-weight override in `live.template.html` stays — removing it reintroduces the
    synthetic-bold blur described in README 7.1.
 7. The fade mask stays on `#out`, never on `#log`.

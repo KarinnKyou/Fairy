@@ -35,10 +35,10 @@ Delivered, each verified against the code rather than the docs:
 | Schema migrations, loud refusal to open a newer database (ADR-004) | fresh DB reaches v2; `db=999` is refused |
 | Stable, sortable, UTC IDs (ADR-005) | same-millisecond ordering is deterministic; zero-padding holds across digit boundaries |
 | Main process owns turns; renderer only draws (ADR-001) | the renderer no longer assembles a prompt; a test asserts it |
-| Per-turn prompt assembly from the store (ADR-008) | system → profile → last 32 messages |
+| Per-turn prompt assembly from the store (ADR-008) | system → capabilities → profile → last 30 messages |
 | Accumulating profile | turns spoken, first meeting, last seen; injected from turn 2 |
 | Full-text index with CJK unigram tokenisation | search works for two-character Chinese words; no UI yet (that is Phase 2) |
-| Persona honest about its own limits (ADR-009) | asserted strings in `conversation.test.cjs` — see "open decisions" below |
+| Persona honest about its own limits (ADR-009) | facts live in `app/capabilities.js`, rendered into the prompt each turn; two of them are cross-checked against `main.js` and the page CSP |
 | The invariants that must not regress | font-weight override, fade mask on `#out`, unconditional `pinBottom()`, one line per reply |
 
 Two defects found while auditing this phase, both of which would have shipped a broken
@@ -79,23 +79,28 @@ conversations, so expect the shape of it to change once there are some.
 
 Not blockers, but they should not be forgotten.
 
-1. **The capability boundary was removed from the persona (uncommitted, awaiting a
-   decision).** A local edit to `app/personality.js` deletes the whole "what you cannot do"
-   section. That section is what ADR-009 exists to guarantee, and five assertions in
-   `conversation.test.cjs` check it — so `npm test` currently fails and `release.ps1` would
-   refuse to build. Either restore the section, or change ADR-009 and the assertions
-   deliberately; leaving it half-done means the tests are red and the guarantee is gone.
-2. **The packaged data-directory branch is not covered by automation.** `getDataDir()`
+1. **Settled in `0.1.0`: the capability boundary moved out of the persona.** A local edit
+   deleted the capability list from `app/personality.js`, which revealed a layering mistake
+   rather than a mistake in the edit: capability is an environment fact, and putting it in a
+   character file meant a tone change could silently remove a guarantee. Facts now live in
+   `app/capabilities.js` as data, rendered into the prompt each turn (ADR-009, revised). The
+   layer split is itself asserted — capability facts must not reappear in the persona.
+2. **Two of the capability declarations are hand-maintained until Phase 6.** The `tools` and
+   `network` entries are cross-checked against `main.js` and the page CSP, so they cannot
+   drift silently; the rest (`camera`, `hardware`, `actions`, `files`) are statements about
+   absence that no test can meaningfully verify. Phase 6 should generate the tool entry from
+   the real tool registry.
+3. **The packaged data-directory branch is not covered by automation.** `getDataDir()`
    returns `app.getPath('userData')/data` when packaged, and the tests run outside Electron.
    Verified once by launching a built exe (it created `%APPDATA%\HDD\data\hdd.db` at schema
    v2 and reopened cleanly after a kill), but a regression here would only be caught by hand.
-3. **`NOTICE` is a verbatim copy of the upstream file** and references a `TRADEMARKS.md`
+4. **`NOTICE` is a verbatim copy of the upstream file** and references a `TRADEMARKS.md`
    that this repository does not contain. Left verbatim deliberately — it is the upstream
    project's notice — but the dangling reference should be resolved when the licensing
    files are next revisited.
-4. **Old artifacts pile up in `app/dist/`** (gitignored, so harmless): `HDD-0.01.exe` sits
+5. **Old artifacts pile up in `app/dist/`** (gitignored, so harmless): `HDD-0.01.exe` sits
    beside the current build.
-5. **Nothing evaluates reply *quality*.** ADR-010 defers this to a corpus built from real
+6. **Nothing evaluates reply *quality*.** ADR-010 defers this to a corpus built from real
    Phase 2 conversations. Until then, "the reply was bad" is diagnosed with
    `npm run inspect`, not measured.
 

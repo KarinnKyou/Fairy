@@ -144,4 +144,6 @@ pointed at a deliberately broken build and shown to fail — do that if you chan
 | The UI font is the system font | no font in `app/fonts/`, or you are running `release.ps1`'s build, which excludes it on purpose |
 | `Missing script` | wrong directory — see the table at the top |
 | `Cannot find module 'node:sqlite'` | Node is older than 22.5; use 24.x |
-| Tests fail in `conversation.test.cjs` about persona wording | the persona changed. Those assertions encode ADR-008/ADR-009 — decide whether the persona or the assertion is wrong before editing either |
+| `conversation.test.cjs` fails about persona wording | the persona changed. Those assertions encode ADR-008 — decide whether the persona or the assertion is wrong before editing either |
+| `conversation.test.cjs` fails about a capability (`工具调用`, `自己上网`, …) | the declaration in `app/capabilities.js` and the code disagree. The test is telling you which: add the capability to `capabilities.js`, or restore the code |
+| She claims to have done something she cannot | check the capability block actually reaches the prompt: `npm run inspect:dev -- --prompt` |

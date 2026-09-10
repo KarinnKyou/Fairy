@@ -11,6 +11,7 @@
  */
 
 const store = require('./store.js');
+const capabilities = require('./capabilities.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -43,11 +44,16 @@ function profileLine(identity) {
 }
 
 /*
- * Build the full system prompt: persona, then the observed profile, then the current
- * time. Rebuilt every turn so "now" is always accurate.
+ * Build the full system prompt: persona, then what the program can actually do, then the
+ * observed profile, then the current time. Rebuilt every turn so "now" is always accurate.
+ *
+ * Order matters at the top: the capability facts sit immediately after the persona because
+ * they constrain what she may claim, and they must not be buried under flavour. See
+ * capabilities.js for why they are not part of the persona.
  */
 function buildSystemPrompt(persona, identity, now) {
-  return String(persona) + profileLine(identity) + '\n\n# 当前时间\n' + nowLine(now);
+  return String(persona) + capabilities.capabilitySection() + profileLine(identity) +
+    '\n\n# 当前时间\n' + nowLine(now);
 }
 
 /*
