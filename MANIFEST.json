@@ -1,0 +1,161 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-10T04:14:24.635Z",
+  "note": "SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main.",
+  "files": [
+    {
+      "file": "assets/bake.cjs",
+      "kind": "authored",
+      "origin": null,
+      "bytes": 25729,
+      "sha256": "96b63b231ad8c6d8278c752773cb290217115a72ad274e86725529ed94fb5990"
+    },
+    {
+      "file": "assets/source/esm/constants.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/constants.js",
+      "bytes": 1228,
+      "sha256": "452ccda5b93b81efa28221bcd38b62a3de144e186ba594fea54004f58679a364"
+    },
+    {
+      "file": "assets/source/esm/package.json",
+      "kind": "authored",
+      "origin": null,
+      "bytes": 253,
+      "sha256": "0bf702ae648a6f5fd71ea0070a72450c0eb2484179528f5e21c6d7286bf9e1d9"
+    },
+    {
+      "file": "assets/source/esm/style.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/style.js",
+      "bytes": 149300,
+      "sha256": "4cfe01621133a7c6b8e8906792fff53fd2e776f92b4e5e4ee79927c5588e209c"
+    },
+    {
+      "file": "assets/source/mascot-effects-svg.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-effects-svg.js",
+      "bytes": 4882,
+      "sha256": "4a1d2738f69d571c21dc0eeeb5046d20df611f9fed52bbca44dd83fdcc929f7c"
+    },
+    {
+      "file": "assets/source/mascot-eye-svg.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-eye-svg.js",
+      "bytes": 9229,
+      "sha256": "f10f17880a4b4ba3cc05755a18110803a077ab39568c1222f5f0eaca3d3f3b60"
+    },
+    {
+      "file": "assets/source/mascot-geometry.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-geometry.js",
+      "bytes": 2419,
+      "sha256": "88cb748b3530111808fe6c5472bfe675a9d50dbb53eb85b3936e2b39f76745d0"
+    },
+    {
+      "file": "assets/source/mascot-style.js",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-style.js",
+      "bytes": 14679,
+      "sha256": "4a5cb1f7d59ec4c6b362778f428ecd0cf6dc28410f64c668f9cccb7faf399f54"
+    },
+    {
+      "file": "assets\\css\\fairy-hdd-theme.css",
+      "kind": "extracted",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/style.js",
+      "bytes": 134290,
+      "sha256": "45a6d984d00fb8a01af59f1f0c9e5c725cc1b470c9f578e7444441a121073a0b"
+    },
+    {
+      "file": "assets\\css\\fairy-mascot.css",
+      "kind": "extracted",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-style.js",
+      "bytes": 14625,
+      "sha256": "faec9d56093aa5cf85875fd857f688f326546cf2e17b5ffea840d83b7fc4a86b"
+    },
+    {
+      "file": "assets\\preview.html",
+      "kind": "generated",
+      "origin": "bake.cjs (embeds baked markup + palette)",
+      "bytes": 58087,
+      "sha256": "78724dcc8d4d926bebce7cd665ac017102721dd2e4426bde2a2c5b483bd45eed"
+    },
+    {
+      "file": "assets\\svg\\fairy-eye-comforting.svg",
+      "kind": "baked",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-eye-svg.js",
+      "bytes": 10432,
+      "sha256": "aef87a116874badd2629b8ea5f917d17950c8a3eca106fd139cc12364dac9f51"
+    },
+    {
+      "file": "assets\\svg\\fairy-eye-thinking.svg",
+      "kind": "baked",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-eye-svg.js",
+      "bytes": 10441,
+      "sha256": "8d164efff1437fb976eab9b72e1e40c1d4bd13541f45e728b6c143f95db8a5e0"
+    },
+    {
+      "file": "assets\\svg\\fairy-eye.svg",
+      "kind": "baked",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-eye-svg.js",
+      "bytes": 10096,
+      "sha256": "5d00c728a3f0b8fbee831c206e67388fd4fd1b418bee4410eaabf68e5cdb3624"
+    },
+    {
+      "file": "assets\\svg\\fairy-halo.svg",
+      "kind": "baked",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-effects-svg.js",
+      "bytes": 7681,
+      "sha256": "1b7f8e70957cf21c297ed3ae3adad00f9c9f12c086f8d33eb56071ee900955c2"
+    },
+    {
+      "file": "assets\\svg\\fairy-pulse.svg",
+      "kind": "baked",
+      "origin": "Fairy-DSH-main/fairy-visual/dsh-fairy-visual/src/client/mascot-effects-svg.js",
+      "bytes": 1241,
+      "sha256": "2db48365ef68d02baee8e299a00d928b0f5fd169613ad3d1566e02068159b713"
+    },
+    {
+      "file": "assets\\tokens\\fairy-palette.json",
+      "kind": "generated",
+      "origin": "derived from source/ + style.js extraction",
+      "bytes": 24621,
+      "sha256": "189ad07a655f4bb17d451197a8f39c0d85153d724140966ce26caeb35b89dbd0"
+    },
+    {
+      "file": "LICENSE",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/LICENSE",
+      "bytes": 11359,
+      "sha256": "8c6db340475136df3c1201d458fa5755698eace76e510471ecc9d857d6083dac"
+    },
+    {
+      "file": "NOTICE",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/NOTICE",
+      "bytes": 491,
+      "sha256": "314f4332288c6cc123bb3e0dc1841874c82f8b1b0546689360b44265c1eca203"
+    },
+    {
+      "file": "package.json",
+      "kind": "authored",
+      "origin": null,
+      "bytes": 601,
+      "sha256": "402ad02767194fb394e9f39fc568f9cc274c9524ef86e1d690c13d0909d160c8"
+    },
+    {
+      "file": "README.md",
+      "kind": "authored",
+      "origin": null,
+      "bytes": 12563,
+      "sha256": "856c471237e87c973b9890bb9a701436ba7688ca8590c82913eca99627171d7a"
+    },
+    {
+      "file": "THIRD_PARTY_NOTICES.md",
+      "kind": "verbatim-copy",
+      "origin": "Fairy-DSH-main/THIRD_PARTY_NOTICES.md",
+      "bytes": 1826,
+      "sha256": "ca88e777c8160af8fe06aa3c4055e5573ef9e5ebab056fbbef399e20760d02ad"
+    }
+  ]
+}

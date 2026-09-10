@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html id="hdd-root" lang="zh-CN" data-dsh-fairy-visual data-dsh-fairy-mode="hdd" data-dsh-fairy-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'">
+<title>HDD</title>
+<link rel="stylesheet" href="assets/css/fairy-mascot.css">
+<link rel="stylesheet" href="assets/css/fairy-hdd-theme.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    --fairy-size: 30px;
+    /* Keep this a literal value: var() falls back only when the custom property is
+       undefined, so an empty value would invalidate the whole declaration. */
+    --fairy-weight: 400;
+    font-family: "inpin hongmengti", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: var(--fairy-size, 30px);
+    font-weight: var(--fairy-weight, 400);
+    -webkit-font-smoothing: antialiased;
+  }
+  html[data-dsh-fairy-visual] body { overflow: hidden; }
+
+  /* Do not remove. assets/css/fairy-hdd-theme.css contains
+       html[data-dsh-fairy-visual] body :where(*) { font-weight: 800 !important }
+     which hits every element in the terminal. The bundled font has a single weight
+     (400, no fvar axis), so 800 makes Chromium synthesize a fake bold that smears
+     the glyphs and blurs CJK text. Two things are required to win here:
+       1. the #hdd-root id on <html> for higher specificity than the theme rule,
+          targeting every descendant of #out;
+       2. a literal weight value, because some CSS parsers drop !important when the
+          value contains var(). */
+  #hdd-root[data-dsh-fairy-visual] body #out,
+  #hdd-root[data-dsh-fairy-visual] body #out *,
+  #hdd-root[data-dsh-fairy-visual] body #log,
+  #hdd-root[data-dsh-fairy-visual] body #log *,
+  #hdd-root[data-dsh-fairy-visual] body #inputline,
+  #hdd-root[data-dsh-fairy-visual] body #term-input {
+    font-weight: 400 !important;
+  }
+
+  /* Mascot: centred, above the text layer (z 20 vs 5). */
+  #stage {
+    position: fixed; z-index: 20;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #stage [data-dsh-fairy-mascot-root="true"] { width: min(58vmin, 460px); height: min(58vmin, 460px); }
+
+  /* Terminal output: full-screen scroll container, content anchored to the bottom
+     so new lines grow upwards. */
+  #out {
+    position: fixed; z-index: 5; inset: 0;
+    overflow-y: auto;
+    display: flex; flex-direction: column;
+    padding: 14px 22px 18px;
+    font-family: "inpin hongmengti", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: var(--fairy-size, 30px);
+    line-height: 1.6;
+    font-weight: var(--fairy-weight, 400);
+    color: #eaf4fb;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: .02em;
+    text-shadow: none;
+    scrollbar-width: thin;
+    /* Fade: centred ellipse. The mask must live on the non-scrolling scroll
+       container (#out), never on #log, otherwise the fade band scrolls away with
+       the content and stops working. Text dims as it approaches the mascot. */
+    -webkit-mask-image: radial-gradient(ellipse 78vmin 58vmin at 50% 46%, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 42%, rgba(0,0,0,.55) 66%, #000 92%, #000 100%);
+    mask-image: radial-gradient(ellipse 78vmin 58vmin at 50% 46%, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 42%, rgba(0,0,0,.55) 66%, #000 92%, #000 100%);
+  }
+  #out::-webkit-scrollbar { width: 8px; }
+  #out::-webkit-scrollbar-thumb { background: rgba(126, 220, 255, .22); border-radius: 4px; }
+  #log {
+    flex: none;
+    margin-top: auto;      /* short content sticks to the bottom */
+    width: 100%;
+  }
+  .line {
+    display: block;
+    max-width: min(1500px, calc(100vw - 120px));
+    margin: 0 auto;
+    padding: 0 4px;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    text-shadow: none;
+  }
+  .line.in { color: #a9dcff; }
+  .line.in .p { color: #4f8fb3; user-select: none; }
+  .line.assistant { color: #e2f0fa; }
+  .line.err { color: #ff9e9e; }
+
+  /* Input row: the last line of the same flow, so it scrolls with history. */
+  #inputline {
+    display: flex; align-items: center;
+    max-width: min(1500px, calc(100vw - 120px));
+    margin: 0 auto;
+    padding: 0 4px;
+    font: inherit;
+  }
+  #term-input {
+    flex: 1 1 auto; min-width: 0;
+    border: 0; outline: 0; background: transparent;
+    color: #f4fbff; font: inherit;
+    caret-color: #8fd8ff;
+    caret-shape: block;
+    text-shadow: none;
+    letter-spacing: inherit;
+  }
+  #term-input::selection { background: rgba(98, 212, 255, .28); }
+</style>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+</head>
+<body>
+
+<div class="dsh-hdd-background-host" aria-hidden="true">
+  <div class="dsh-hdd-fx">
+    <div class="dsh-hdd-glow dsh-hdd-glow-a"></div>
+    <div class="dsh-hdd-glow dsh-hdd-glow-b"></div>
+    <div class="dsh-hdd-glow dsh-hdd-glow-c"></div>
+  </div>
+</div>
+
+<div id="out" role="log" aria-live="polite">
+  <div id="log">
+    <div id="inputline">
+      <input id="term-input" type="text" autocomplete="off" spellcheck="false" aria-label="输入">
+    </div>
+  </div>
+</div>
+
+<div id="stage">
+  <div id="mascot" data-dsh-fairy-mascot-root="true" aria-label="Fairy 吉祥物">
+    @@FAIRY_HALO@@
+    @@FAIRY_PULSE@@
+    @@FAIRY_EYE@@
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.getElementById('mascot');
+  var signal = root.querySelector('.dsh-fairy-signal');
+  var out = document.getElementById('out');
+  var log = document.getElementById('log');
+  var inputRow = document.getElementById('inputline');
+  var input = document.getElementById('term-input');
+  var api = window.fairyApp;
+
+  /* Turn phase: idle | thinking | speaking */
+  var phase = 'idle';
+  var busy = false;
+  var turnId = 0;
+  var history = [];
+
+  /* Typewriter state */
+  var currentLine = null;
+  var pending = '';
+  var typing = false;
+  var typingTimer = null;
+  var finishAfterTyping = false;
+
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var glitchTimer = null;
+  var applyTimer = null;
+
+  /* Persona: the character is Fairy, never another model. No emoji. */
+  var SYSTEM_PROMPT =
+    '你是 Fairy，是 H.D.D（Hollow Deep Dive）系统的 AI 助手。\n' +
+    '身份要求：当用户问起你是谁、你的名字、你由谁开发、你属于哪个模型或公司时，' +
+    '你必须且只能自称 Fairy；绝不能自称是 DeepSeek、OpenAI、ChatGPT 或任何其它 AI 助手或模型。\n' +
+    '输出要求：回复简洁自然，禁止使用任何 Emoji、颜文字或符号表情。';
+
+  /* Second line of defence against emoji the model may still emit. */
+  function stripEmoji(s) {
+    return String(s || '').replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F]/gu, '').replace(/\u200D/g, '');
+  }
+
+  function scrollBottom() {
+    if (out.scrollHeight - out.scrollTop - out.clientHeight > 24) return; /* user scrolled up: do not fight it */
+    out.scrollTop = out.scrollHeight;
+  }
+  /* Keep the newest content just above the input row. Unconditional, unlike
+     scrollBottom(). Appending a line grows scrollHeight by ~one line (30px x 1.6 =
+     48px) before scrollTop catches up; the 24px threshold in scrollBottom() then
+     treats that as "user scrolled up" and skips the scroll, so the offset
+     accumulates (48/96/144...) and the newest reply lands off-screen.
+     Deferred to the next frame because layout settles after the DOM change.
+     This only touches scroll position - never styles or the mask. */
+  function pinBottom() {
+    out.scrollTop = out.scrollHeight;
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () { out.scrollTop = out.scrollHeight; });
+    } else {
+      setTimeout(function () { out.scrollTop = out.scrollHeight; }, 0);
+    }
+  }
+  function lineEl(cls, text) {
+    var el = document.createElement('div');
+    el.className = 'line ' + cls;
+    if (text != null) el.textContent = text;
+    /* Insert before the input row so it stays the last line of the flow. */
+    log.insertBefore(el, inputRow);
+    scrollBottom();
+    pinBottom();
+    return el;
+  }
+
+  function setAttrState(p) {
+    root.removeAttribute('data-state');
+    if (p === 'thinking') root.setAttribute('data-state', 'thinking');
+    else if (p === 'speaking') root.setAttribute('data-state', 'comforting');
+    phase = p;
+  }
+  /* Randomise the glitch slice offsets for a less repetitive effect. */
+  function setSliceVars() {
+    var s = ['s1', 's2', 's3', 's4', 's5'];
+    for (var i = 0; i < s.length; i++) root.style.setProperty('--dsh-g-' + s[i] + '-x', Math.round((Math.random() * 2 - 1) * 16) + 'px');
+    root.style.setProperty('--dsh-g-x', Math.round((Math.random() * 2 - 1) * 6) + 'px');
+    root.style.setProperty('--dsh-g-skew', Math.round((Math.random() * 2 - 1) * 12) / 10 + 'deg');
+  }
+  function glitchClear() {
+    root.removeAttribute('data-transition-glitch');
+    if (signal) signal.removeAttribute('data-glitch');
+  }
+  function glitchFx(duration) {
+    if (glitchTimer) clearTimeout(glitchTimer);
+    glitchClear();
+    setSliceVars();
+    root.setAttribute('data-transition-glitch', 'true');
+    if (signal) signal.setAttribute('data-glitch', Math.random() < .5 ? 'threads' : 'blocks');
+    glitchTimer = setTimeout(glitchClear, duration);
+  }
+  /* Brief glitch on every phase change, then apply the new state. */
+  function changePhase(p) {
+    if (phase === p) return;
+    if (applyTimer) clearTimeout(applyTimer);
+    if (!reduceMotion.matches && !document.hidden) glitchFx(180 + Math.random() * 240);
+    applyTimer = setTimeout(function () { setAttrState(p); }, 130);
+  }
+
+  /* Typewriter: emit one character at a time. */
+  function ensureLine() {
+    if (!currentLine) currentLine = lineEl('assistant', '');
+    return currentLine;
+  }
+  function pump() {
+    if (!typing) return;
+    if (pending.length > 0) {
+      var ch = pending.charAt(0);
+      pending = pending.slice(1);
+      ensureLine().textContent += ch;
+      scrollBottom();
+      pinBottom();   /* keep long replies visible while they type */
+      /* Speed up as the backlog grows. */
+      var delay = pending.length > 400 ? 6 : (pending.length > 120 ? 10 : 20);
+      typingTimer = setTimeout(pump, delay);
+    } else {
+      typing = false;
+      typingTimer = null;
+      if (finishAfterTyping) { finishAfterTyping = false; finishTurn(); }
+    }
+  }
+  function startTyping() { if (!typing) { typing = true; pump(); } }
+  function pushText(text) { pending += text; startTyping(); }
+  function cancelTyping() {
+    typing = false;
+    if (typingTimer) { clearTimeout(typingTimer); typingTimer = null; }
+    pending = '';
+    finishAfterTyping = false;
+  }
+
+  function finishTurn() {
+    if (typing) { finishAfterTyping = true; return; } /* let the typewriter drain */
+    if (currentLine && !currentLine.textContent) currentLine.remove();
+    history.push({ role: 'assistant', content: currentLine ? currentLine.textContent : '' });
+    currentLine = null;
+    busy = false;
+    changePhase('idle');
+    input.focus();
+  }
+
+  function send() {
+    var text = input.value.trim();
+    if (!text || busy || !api) return;
+    lineEl('in', '> ' + text);
+    history.push({ role: 'user', content: text });
+    if (history.length > 30) history = history.slice(history.length - 30);
+    input.value = '';
+    busy = true;
+    turnId += 1;
+    currentLine = null;
+    pending = '';
+    finishAfterTyping = false;
+    changePhase('thinking');
+    api.ask([{ role: 'system', content: SYSTEM_PROMPT }].concat(history), 't' + turnId);
+  }
+
+  /* Stream events: reasoning -> thinking, content -> speaking, done/error -> idle. */
+  var offStream = api ? api.onStream(function (ev) {
+    if (!ev || ev.id !== 't' + turnId) return; /* ignore stale turns */
+    if (ev.type === 'reasoning') {
+      if (phase !== 'thinking') changePhase('thinking');
+    } else if (ev.type === 'content') {
+      if (phase !== 'speaking') changePhase('speaking');
+      var clean = stripEmoji(ev.text);
+      if (clean) pushText(clean);
+    } else if (ev.type === 'done') {
+      finishTurn();
+    } else if (ev.type === 'error') {
+      cancelTyping();
+      if (currentLine && !currentLine.textContent) currentLine.remove();
+      currentLine = null;
+      lineEl('err', '! ' + ev.message);
+      busy = false;
+      changePhase('idle');
+    }
+  }) : null;
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); send(); }
+  });
+  out.addEventListener('mousedown', function () { input.focus(); });
+
+  if (api) {
+    api.getConfig().then(function (cfg) {
+      if (!cfg || !cfg.configured) {
+        lineEl('err', '! No API key configured (app/config.json or DEEPSEEK_API_KEY)');
+        input.disabled = true;
+      } else {
+        input.focus();
+      }
+    });
+  }
+
+  /* Idle life: occasional subtle glitch while nothing else is happening. */
+  var idleTimer = null;
+  function idleTick() {
+    idleTimer = null;
+    if (phase !== 'idle' || busy || reduceMotion.matches || document.hidden) { scheduleIdle(1800); return; }
+    if (Math.random() < .4) glitchFx(80 + Math.random() * 160);
+    scheduleIdle(5000 + Math.random() * 9000);
+  }
+  function scheduleIdle(ms) {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(idleTick, ms);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) scheduleIdle(1200);
+  });
+  scheduleIdle(2600);
+})();
+</script>
+</body>
+</html>

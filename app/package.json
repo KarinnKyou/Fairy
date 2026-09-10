@@ -1,0 +1,49 @@
+{
+  "name": "hdd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HDD — Fairy 终端桌面应用（Electron，接入 DeepSeek API）",
+  "main": "main.js",
+  "scripts": {
+    "prep": "node scripts/prep.cjs",
+    "icon": "node scripts/icon.cjs",
+    "test:ui": "node scripts/prep.cjs && node tests/renderer.test.cjs && node tests/scroll-pin.test.cjs",
+    "start": "npm run prep && electron .",
+    "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest",
+    "jsdom": "^30.0.1"
+  },
+  "build": {
+    "appId": "com.hdd.app",
+    "productName": "HDD",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build-res"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "config.json",
+      "www/**/*"
+    ],
+    "win": {
+      "icon": "build-res/icon.png",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "HDD-${version}.${ext}"
+    },
+    "compression": "normal"
+  }
+}

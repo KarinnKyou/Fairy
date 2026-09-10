@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-dsh-fairy-visual data-dsh-fairy-mode="hdd" data-dsh-fairy-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fairy Visual Assets — H.D.D 资产画廊</title>
+<link rel="stylesheet" href="css/fairy-mascot.css">
+<link rel="stylesheet" href="css/fairy-hdd-theme.css">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; }
+  html[data-dsh-fairy-visual] body { background: #07101c; }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] body { background: #f7fafc; }
+  body { color: #cfe2f0; font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] body { color: #23384a; }
+  header.page { max-width: 1080px; margin: 0 auto; padding: 34px 24px 6px; }
+  header.page h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .02em; }
+  header.page .sub { opacity: .75; font-size: 13px; line-height: 1.7; }
+  section { max-width: 1080px; margin: 0 auto; padding: 26px 24px; }
+  section > h2 { font-size: 15px; margin: 0 0 14px; letter-spacing: .1em; text-transform: uppercase; opacity: .8; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 18px 0 4px; }
+  .controls .group { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid rgba(126,220,255,.25); border-radius: 999px; background: rgba(10,24,48,.55); }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] .controls .group { background: rgba(255,255,255,.75); border-color: rgba(32,111,149,.25); }
+  .controls .group > b { font-size: 11px; font-weight: 600; padding: 0 10px; opacity: .75; letter-spacing: .06em; }
+  .controls button { border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 999px; cursor: pointer; opacity: .72; }
+  .controls button:hover { background: rgba(126,220,255,.14); opacity: 1; }
+  .controls button.on { background: #1688ce; color: #f4fbff; opacity: 1; }
+  #demo-stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 66vh; border: 1px solid rgba(126,220,255,.16); border-radius: 18px; overflow: hidden; }
+  #demo-stage .dsh-hdd-background-host { border-radius: inherit; }
+  #mascot-demo { --dsh-fairy-steady-rate: 1; position: relative; }
+  #demo-stage [data-dsh-fairy-mascot-root="true"] { width: min(72%, 46vh, 460px); height: min(72%, 46vh); }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .card { border: 1px solid rgba(126,220,255,.18); border-radius: 14px; padding: 14px; background: rgba(14,36,61,.35); display: flex; flex-direction: column; gap: 10px; }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] .card { background: rgba(255,255,255,.7); border-color: rgba(32,111,149,.22); }
+  .card .frame { border-radius: 10px; background: repeating-linear-gradient(0deg, rgba(255,255,255,.02) 0 1px, transparent 1px 22px); display: grid; place-items: center; min-height: 190px; }
+  .card img, .card svg { width: 100%; height: auto; }
+  .card .name { font-size: 13px; font-weight: 600; }
+  .card .path { font-size: 11px; opacity: .6; word-break: break-all; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .sw { font: inherit; font-size: 10px; color: #fff; text-align: left; padding: 8px 9px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; cursor: copy; text-shadow: 0 1px 2px rgba(0,0,0,.55); }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] .sw { text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; line-height: 1; }
+  .chip { font-size: 11px; padding: 5px 8px; border-radius: 999px; background: rgba(126,220,255,.10); border: 1px solid rgba(126,220,255,.22); color: #9fd8ef; }
+  html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] .chip { color: #1d5f86; background: rgba(22,136,206,.08); border-color: rgba(22,136,206,.25); }
+  .hint { font-size: 12px; opacity: .7; line-height: 1.8; }
+  code.inline { background: rgba(126,220,255,.12); border-radius: 5px; padding: 1px 6px; font-size: 12px; }
+  footer { max-width: 1080px; margin: 0 auto; padding: 10px 24px 40px; font-size: 12px; opacity: .6; line-height: 1.8; }
+  .btn-copy { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(126,220,255,.35); background: transparent; color: inherit; cursor: pointer; }
+  .btn-copy:hover { background: rgba(126,220,255,.16); }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>Fairy Visual Assets · H.D.D 视觉资产画廊</h1>
+  <p class="sub">从 <code class="inline">Fairy-DSH-main</code> 的 <code class="inline">dsh-fairy-visual</code> 插件中提取的纯视觉资产（无插件运行时）。
+  吉祥物为内联 SVG 实时渲染；下方 <b>静态文件</b> 为烘焙后可独立使用的 SVG。</p>
+  <div class="controls" id="top-controls">
+    <span class="group" id="g-theme"><b>主题</b><button data-act="theme" data-v="dark">深色</button><button data-act="theme" data-v="light">浅色</button></span>
+    <span class="group" id="g-state"><b>状态</b><button data-act="state" data-v="">正常</button><button data-act="state" data-v="thinking">思考</button><button data-act="state" data-v="comforting">安慰</button></span>
+    <span class="group" id="g-glitch"><b>故障</b><button data-act="glitch" data-v="none">无</button><button data-act="glitch" data-v="threads">线程</button><button data-act="glitch" data-v="blocks">切片</button><button data-act="glitch" data-v="rand">随机</button></span>
+    <span class="group" id="g-power"><b>模式</b><button data-act="power" data-v="normal">标准</button><button data-act="power" data-v="low">低功耗</button></span>
+    <span class="group" id="g-speed"><b>节奏</b><button data-act="speed" data-v="0.7">0.7×</button><button data-act="speed" data-v="1">1×</button><button data-act="speed" data-v="1.5">1.5×</button></span>
+  </div>
+</header>
+
+<section>
+  <h2>实时演示（交互版）</h2>
+  <div id="demo-stage">
+    <div class="dsh-hdd-background-host" aria-hidden="true"><div class="dsh-hdd-fx"><div class="dsh-hdd-glow dsh-hdd-glow-a"></div><div class="dsh-hdd-glow dsh-hdd-glow-b"></div><div class="dsh-hdd-glow dsh-hdd-glow-c"></div></div></div>
+    <div id="mascot-demo" data-dsh-fairy-mascot-root="true" aria-label="Fairy H.D.D 吉祥物演示">
+      
+<svg class="dsh-fairy-halo dsh-fairy-halo-layer" viewBox="-180 -70 520 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" role="presentation">
+	<defs>
+		<radialGradient id="dsh-fairy-halo-layer-fade" gradientUnits="userSpaceOnUse" color-interpolation="linearRGB" cx="80" cy="80" r="124">
+			<stop offset="0" stop-color="black"/>
+			<stop offset=".44" stop-color="black"/>
+			<stop offset=".45" stop-color="white" stop-opacity=".08"/>
+			<stop offset=".46" stop-color="white" stop-opacity=".30"/>
+			<stop offset=".47" stop-color="white" stop-opacity=".65"/>
+			<stop offset=".48" stop-color="white"/>
+			<stop offset=".52" stop-color="white" stop-opacity=".72"/>
+			<stop offset=".56" stop-color="white" stop-opacity=".56"/>
+			<stop offset=".60" stop-color="white" stop-opacity=".44"/>
+			<stop offset=".65" stop-color="white" stop-opacity=".30"/>
+			<stop offset=".71" stop-color="white" stop-opacity=".19"/>
+			<stop offset=".77" stop-color="white" stop-opacity=".135"/>
+			<stop offset=".83" stop-color="white" stop-opacity=".09"/>
+			<stop offset=".89" stop-color="white" stop-opacity=".058"/>
+			<stop offset=".90" stop-color="white" stop-opacity=".052"/>
+			<stop offset=".91" stop-color="white" stop-opacity=".046"/>
+			<stop offset=".92" stop-color="white" stop-opacity=".039"/>
+			<stop offset=".93" stop-color="white" stop-opacity=".032"/>
+			<stop offset=".94" stop-color="white" stop-opacity=".025"/>
+			<stop offset=".95" stop-color="white" stop-opacity=".019"/>
+			<stop offset=".96" stop-color="white" stop-opacity=".013"/>
+			<stop offset=".97" stop-color="white" stop-opacity=".0075"/>
+			<stop offset=".98" stop-color="white" stop-opacity=".0035"/>
+			<stop offset=".99" stop-color="white" stop-opacity=".001"/>
+			<stop offset="1" stop-color="white" stop-opacity="0"/>
+		</radialGradient>
+		<mask id="dsh-fairy-halo-layer-mask" mask-type="luminance" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="-260" y="-120" width="680" height="440">
+			<rect x="-260" y="-120" width="680" height="440" fill="url(#dsh-fairy-halo-layer-fade)"/>
+		</mask>
+	</defs>
+	<g mask="url(#dsh-fairy-halo-layer-mask)" opacity=".99"><path d="M-96.61 -33.75h368.45M-96.16 -32.75h366.78M-95.68 -31.75h365.14M-95.21 -30.75h363.55M-94.76 -29.75h362.05M-94.37 -28.75h360.67M-94.05 -27.75h359.44M-93.85 -26.75h358.39M-98.42 -18.75h358.49M-99.92 -17.75h359.63M-101.62 -16.75h360.98M-103.50 -15.75h362.53M-105.55 -14.75h364.24M-107.74 -13.75h366.10M-110.03 -12.75h368.05M-112.41 -11.75h370.09M-114.82 -10.75h372.15M-117.24 -9.75h374.22M-119.62 -8.75h376.25M-121.93 -7.75h378.21M-124.13 -6.75h380.06M-126.17 -5.75h381.77M-128.02 -4.75h383.32M-129.65 -3.75h384.68M-131.03 -2.75h385.83M-129.09 6.25h385.76M-127.28 7.25h384.76M-125.20 8.25h383.64M-122.89 9.25h382.43M-120.39 10.25h381.17M-117.73 11.25h379.87M-114.96 12.25h378.58M-112.11 13.25h377.33M-109.24 14.25h376.14M-106.37 15.25h375.05M-103.57 16.25h374.07M-100.86 17.25h373.22M-98.28 18.25h372.51M-95.88 19.25h371.97M-93.67 20.25h371.59M-91.69 21.25h371.37M-89.96 22.25h371.31M-88.50 23.25h371.40M-87.31 24.25h371.62M-86.40 25.25h371.95M-85.78 26.25h372.38M-85.44 27.25h372.87M-85.36 28.25h373.39M-85.54 29.25h373.92M-85.95 30.25h374.42M-86.58 31.25h374.86M-87.39 32.25h375.21M-88.35 33.25h375.43M-89.45 34.25h375.50M-90.63 35.25h375.38M-91.89 36.25h375.07M-93.17 37.25h374.55M-94.45 38.25h373.79M-95.71 39.25h372.81M-96.92 40.25h371.58M-98.06 41.25h370.13M-99.10 42.25h368.47M-100.04 43.25h366.60M-100.85 44.25h364.57M-101.54 45.25h362.40M-102.11 46.25h360.12M-109.48 66.25h358.93M-110.88 67.25h362.93M-112.40 68.25h367.22M-114.02 69.25h371.73M-115.71 70.25h376.41M-117.44 71.25h381.18M-119.18 72.25h385.97M-106.15 95.25h385.36M-103.18 96.25h380.13M-100.23 97.25h374.84M-97.35 98.25h369.60M-94.59 99.25h364.45M-91.97 100.25h359.49M-103.19 124.25h359.39M-104.89 125.25h362.12M-106.45 126.25h364.71M-107.84 127.25h367.13M-109.07 128.25h369.35M-110.12 129.25h371.36M-110.99 130.25h373.15M-111.68 131.25h374.72M-112.20 132.25h376.07M-112.57 133.25h377.21M-112.79 134.25h378.17M-112.90 135.25h378.94M-112.90 136.25h379.58M-112.82 137.25h380.09M-112.69 138.25h380.51M-112.52 139.25h380.88M-112.36 140.25h381.22M-112.21 141.25h381.57M-112.11 142.25h381.95M-112.06 143.25h382.39M-112.10 144.25h382.91M-112.23 145.25h383.54M-112.46 146.25h384.29M-112.80 147.25h385.17M-113.11 172.25h384.75M-110.80 173.25h380.83M-108.33 174.25h376.62M-105.74 175.25h372.18M-103.06 176.25h367.57M-100.34 177.25h362.84M-97.60 178.25h358.05" fill="none" stroke="currentColor" stroke-width=".62" stroke-linecap="butt" opacity="0.750"/><path d="M-93.77 -25.75h357.55M-93.85 -24.75h356.93M-94.10 -23.75h356.55M-94.55 -22.75h356.42M-95.19 -21.75h356.55M-96.05 -20.75h356.94M-97.13 -19.75h357.59M-102.55 47.25h357.78M-102.88 48.25h355.42M-103.09 49.25h353.09M-103.22 50.25h350.84M-103.27 51.25h348.72M-103.27 52.25h346.79M-103.24 53.25h345.09M-103.19 54.25h343.66M-103.16 55.25h342.57M-103.18 56.25h341.83M-103.25 57.25h341.51M-103.41 58.25h341.61M-103.68 59.25h342.16M-104.07 60.25h343.19M-104.59 61.25h344.68M-105.27 62.25h346.66M-106.09 63.25h349.09M-107.07 64.25h351.97M-108.20 65.25h355.26M-89.55 101.25h354.78M-87.35 102.25h350.37M-85.40 103.25h346.33M-83.73 104.25h342.70M-82.37 105.25h339.52M-81.32 106.25h336.83M-80.59 107.25h334.65M-80.20 108.25h332.99M-80.13 109.25h331.86M-80.38 110.25h331.26M-80.93 111.25h331.16M-81.77 112.25h331.56M-82.88 113.25h332.42M-84.22 114.25h333.70M-85.77 115.25h335.37M-87.49 116.25h337.38M-89.35 117.25h339.67M-91.31 118.25h342.21M-93.33 119.25h344.92M-95.38 120.25h347.77M-97.43 121.25h350.69M-99.43 122.25h353.63M-101.36 123.25h356.54M-94.90 179.25h353.28M-92.27 180.25h348.60M-89.76 181.25h344.07M-87.41 182.25h339.77M-85.25 183.25h335.76M-83.32 184.25h332.10" fill="none" stroke="currentColor" stroke-width=".62" stroke-linecap="butt" opacity="0.625"/><path d="M-132.12 -1.75h386.75M-132.91 -0.75h387.44M-133.37 0.25h387.88M-133.50 1.25h388.08M-133.29 2.25h388.04M-132.73 3.25h387.78M-131.84 4.25h387.29M-130.62 5.25h386.62M-120.91 73.25h390.71M-122.58 74.25h395.33M-124.16 75.25h399.76M-125.61 76.25h403.91M-126.91 77.25h407.73M-128.02 78.25h411.15M-122.13 89.25h411.73M-119.88 90.25h408.28M-117.42 91.25h404.37M-114.78 92.25h400.05M-112.00 93.25h395.40M-109.10 94.25h390.48M-113.26 148.25h386.17M-113.82 149.25h387.31M-114.49 150.25h388.56M-115.26 151.25h389.92M-116.10 152.25h391.36M-117.00 153.25h392.86M-117.94 154.25h394.39M-118.89 155.25h395.91M-119.83 156.25h397.38M-120.73 157.25h398.76M-121.56 158.25h400.01M-122.28 159.25h401.09M-122.88 160.25h401.96M-123.32 161.25h402.56M-123.57 162.25h402.87M-123.62 163.25h402.84M-123.45 164.25h402.46M-123.03 165.25h401.68M-122.37 166.25h400.50M-121.45 167.25h398.90M-120.26 168.25h396.88M-118.83 169.25h394.44M-117.14 170.25h391.59M-115.23 171.25h388.35" fill="none" stroke="currentColor" stroke-width=".62" stroke-linecap="butt" opacity="0.875"/><path d="M-128.91 79.25h414.12M-129.56 80.25h416.57M-129.93 81.25h418.48M-130.02 82.25h419.80M-129.81 83.25h420.50M-129.29 84.25h420.58M-128.46 85.25h420.03M-127.31 86.25h418.85M-125.87 87.25h417.05M-124.13 88.25h414.67" fill="none" stroke="currentColor" stroke-width=".62" stroke-linecap="butt" opacity="1.000"/><path d="M-81.66 185.25h328.86M-80.28 186.25h326.08M-79.22 187.25h323.82M-78.49 188.25h322.12M-78.09 189.25h321.01M-78.05 190.25h320.51M-78.35 191.25h320.63M-78.99 192.25h321.38M-79.96 193.25h322.76M-81.24 194.25h324.74" fill="none" stroke="currentColor" stroke-width=".62" stroke-linecap="butt" opacity="0.500"/></g>
+</svg>
+      
+<svg class="dsh-fairy-pulse-layer" viewBox="-160 -160 480 480" xmlns="http://www.w3.org/2000/svg" role="presentation">
+	<g class="dsh-fairy-lash-pulse" fill="none" stroke="#f4fdff">
+		<g class="dsh-fairy-lash-pulse-wave">
+			<circle cx="80" cy="80" r="52" stroke-width="20" stroke-opacity=".05"/>
+			<circle cx="80" cy="80" r="52" stroke-width="16" stroke-opacity=".06"/>
+			<circle cx="80" cy="80" r="52" stroke-width="12" stroke-opacity=".08"/>
+			<circle cx="80" cy="80" r="52" stroke-width="8" stroke-opacity=".10"/>
+			<circle cx="80" cy="80" r="52" stroke-width="4.5" stroke-opacity=".09"/>
+		</g>
+	</g>
+</svg>
+      
+<svg class="dsh-fairy-main" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" role="presentation">
+	<defs>
+		<!-- Color, glow, scanline, and horizontal-only displacement resources. -->
+		<linearGradient id="dsh-fairy-outer-gradient" x1=".2" y1="0" x2=".8" y2="1">
+			<stop stop-color="#4053f0"/>
+			<stop offset=".54" stop-color="#3045dc"/>
+			<stop offset="1" stop-color="#3d50c8"/>
+		</linearGradient>
+		<!-- One static radial field replaces separate halo strokes, avoiding alpha seams. -->
+		<radialGradient id="dsh-fairy-sclera-halo-gradient" gradientUnits="userSpaceOnUse" cx="80" cy="80" r="56" color-interpolation="linearRGB">
+			<stop offset=".82" stop-color="#ffffff" stop-opacity="0"/>
+			<stop offset=".864" stop-color="#ffffff" stop-opacity=".22"/>
+			<stop offset=".875" stop-color="#ffffff" stop-opacity=".28"/>
+			<stop offset=".89" stop-color="#ffffff" stop-opacity=".19"/>
+			<stop offset=".91" stop-color="#ffffff" stop-opacity=".11"/>
+			<stop offset=".94" stop-color="#ffffff" stop-opacity=".07"/>
+			<stop offset=".96" stop-color="#ffffff" stop-opacity=".035"/>
+			<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+		</radialGradient>
+		<radialGradient id="dsh-fairy-outer-halo-gradient" gradientUnits="userSpaceOnUse" cx="80" cy="80" r="79" color-interpolation="linearRGB">
+			<stop offset=".80" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity="0"/>
+			<stop offset=".84" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity=".10"/>
+			<stop offset=".868" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity=".28"/>
+			<stop offset=".90" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity=".18"/>
+			<stop offset=".95" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity=".06"/>
+			<stop offset=".99" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity=".02"/>
+			<stop offset="1" stop-color="var(--dsh-fairy-outer-halo-color)" stop-opacity="0"/>
+		</radialGradient>
+		<radialGradient id="dsh-fairy-highlight-halo-gradient" gradientUnits="userSpaceOnUse" cx="98" cy="100.5" r="18" color-interpolation="linearRGB">
+			<stop offset=".53" stop-color="#f5f8fd" stop-opacity="0"/>
+			<stop offset=".56" stop-color="#f5f8fd" stop-opacity=".16"/>
+			<stop offset=".611" stop-color="#f5f8fd" stop-opacity=".43"/>
+			<stop offset=".72" stop-color="#f5f8fd" stop-opacity=".19"/>
+			<stop offset=".77" stop-color="#f5f8fd" stop-opacity=".12"/>
+			<stop offset=".83" stop-color="#f5f8fd" stop-opacity=".055"/>
+			<stop offset=".89" stop-color="#f5f8fd" stop-opacity=".02"/>
+			<stop offset=".96" stop-color="#f5f8fd" stop-opacity=".004"/>
+			<stop offset="1" stop-color="#f5f8fd" stop-opacity="0"/>
+		</radialGradient>
+		<pattern id="dsh-fairy-lines" width="4" height="4" patternUnits="userSpaceOnUse">
+			<!-- Keep the internal scanline texture present but quieter against the eye. -->
+			<rect width="4" height="1" fill="#c9f8ff" opacity=".055"/>
+		</pattern>
+			<!-- Blue is forced to 0.5 so the displacement map moves pixels horizontally only. -->
+			<!-- Horizontal glitch noise is intentionally low-resolution. The map never
+			     moves pixels vertically, so its filter cache needs less vertical coverage
+			     and resolution while interpolation keeps the tear continuous. -->
+			<filter id="dsh-fairy-interference" x="-30%" y="0%" width="160%" height="100%" filterRes="96 72" color-interpolation-filters="sRGB">
+			<feTurbulence id="dsh-fairy-noise" type="fractalNoise" baseFrequency=".012 .72" numOctaves="1" seed="1" result="noise"/>
+			<feColorMatrix in="noise" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 0 0 .5  0 0 0 1 0" result="horizontal-noise"/>
+			<feDisplacementMap id="dsh-fairy-displace" in="SourceGraphic" in2="horizontal-noise" scale="5" xChannelSelector="R" yChannelSelector="B"/>
+		</filter>
+		<clipPath id="dsh-fairy-disc-clip"><circle cx="80" cy="80" r="67"/></clipPath>
+		<clipPath id="dsh-fairy-thinking-eye-clip">
+			<path class="dsh-fairy-thinking-clip-shape" d="M20 60 Q80 90 140 60 V160 H20 Z"/>
+			<!-- This fixed lower region prevents curve scaling from clipping the lower eye. -->
+			<rect x="0" y="108" width="160" height="52"/>
+		</clipPath>
+		<!-- A shallow reversed arc gives Fairy the gentle, slightly drooped brow. -->
+		<clipPath id="dsh-fairy-comforting-eye-clip">
+			<path class="dsh-fairy-comforting-clip-shape" d="M20 60 Q80 30 140 60 V160 H20 Z"/>
+			<rect x="0" y="108" width="160" height="52"/>
+		</clipPath>
+		<!-- These five rectangles are resized slightly for every block-glitch event. -->
+		<clipPath id="dsh-fairy-slice-1"><rect x="4" y="12" width="152" height="25"/></clipPath>
+		<clipPath id="dsh-fairy-slice-2"><rect x="4" y="37" width="152" height="28"/></clipPath>
+		<clipPath id="dsh-fairy-slice-3"><rect x="4" y="65" width="152" height="26"/></clipPath>
+		<clipPath id="dsh-fairy-slice-4"><rect x="4" y="91" width="152" height="30"/></clipPath>
+		<clipPath id="dsh-fairy-slice-5"><rect x="4" y="121" width="152" height="27"/></clipPath>
+		</defs>
+	
+		<g class="dsh-fairy-body">
+	<!-- Stable outer radial halo stays outside the fault signal so it is not
+	     filtered or duplicated by the block-glitch clones. -->
+		<circle class="dsh-fairy-outer-halo" cx="80" cy="80" r="79" fill="url(#dsh-fairy-outer-halo-gradient)"/>
+	<g class="dsh-fairy-signal" data-fault-source="true">
+	<!-- The complete normal visual. Glitch modes filter or slice this entire group. -->
+	<g id="dsh-fairy-image" class="dsh-fairy-image">
+		<circle class="dsh-fairy-outer-disc" cx="80" cy="80" r="68" fill="url(#dsh-fairy-outer-gradient)" stroke="#f2fbff" stroke-width="1.2"/>
+	<!-- Dark circle + square form the four rotating lashes / eyelids. -->
+	<g class="dsh-fairy-corners" clip-path="url(#dsh-fairy-disc-clip)" fill="#2b3388">
+		<!-- Slightly open the eye: reduce the lid ring without changing its silhouette. -->
+		<circle cx="80" cy="80" r="51.75"/>
+		<rect x="37" y="37" width="86" height="86" rx="2" transform="rotate(3 80 80)"/>
+	</g>
+
+	<!-- Eye anatomy: sclera, layered eyeball, pupil, then highlight. -->
+	<g class="dsh-fairy-eye">
+			<!-- One animated group keeps the vector rim pixel-locked to the sclera. -->
+			<g class="dsh-fairy-sclera">
+				<circle cx="80" cy="80" r="48" fill="#eef0f5"/>
+				<circle class="dsh-fairy-sclera-halo" cx="80" cy="80" r="56" fill="url(#dsh-fairy-sclera-halo-gradient)"/>
+				<!-- A thin contact rim closes subpixel seams at the sclera/halo boundary. -->
+				<circle class="dsh-fairy-sclera-contact" cx="80" cy="80" r="48" fill="none" stroke="#ffffff" stroke-width="0.8" stroke-opacity=".16"/>
+			</g>
+		<g class="dsh-fairy-eyeball">
+			<circle class="dsh-fairy-layer-three" cx="80" cy="80" r="33" fill="#9daee0"/>
+			<circle class="dsh-fairy-layer-two" cx="80" cy="80" r="24.15" fill="#eef0f5"/>
+			<circle class="dsh-fairy-layer-two" cx="80" cy="80" r="23.5" fill="#317bcf"/>
+			<circle class="dsh-fairy-layer-one" cx="80" cy="80" r="16.6" fill="none" stroke="#f5f8fd" stroke-width=".1"/>
+			<circle class="dsh-fairy-layer-one" cx="80" cy="80" r="16" fill="#3b3d8a"/>
+				<g class="dsh-fairy-highlight dsh-fairy-layer-two">
+					<circle class="dsh-fairy-highlight-halo" cx="98" cy="100.5" r="18" fill="url(#dsh-fairy-highlight-halo-gradient)"/>
+					<circle class="dsh-fairy-highlight-glow" cx="98" cy="100.5" r="11" fill="#f5f8fd"/>
+			</g>
+		</g>
+	</g>
+	<!-- Full-eye flicker layer stays outside the scaled eye group and is not part
+	     of the fault clone source; it covers the disc and brows only. -->
+	<circle class="dsh-fairy-eye-flicker" cx="80" cy="80" r="68.6" fill="#ffffff" pointer-events="none"/>
+
+	<g clip-path="url(#dsh-fairy-disc-clip)" opacity=".42">
+		<rect class="dsh-fairy-scanlines" x="12" y="10" width="136" height="146" fill="url(#dsh-fairy-lines)"/>
+	</g>
+	</g>
+	<!-- Five complete-image clones clipped into horizontal blocks for left/right displacement. -->
+	<g class="dsh-fairy-glitch-blocks">
+		<use href="#dsh-fairy-image" class="dsh-fairy-glitch-1" clip-path="url(#dsh-fairy-slice-1)"/>
+		<use href="#dsh-fairy-image" class="dsh-fairy-glitch-2" clip-path="url(#dsh-fairy-slice-2)"/>
+		<use href="#dsh-fairy-image" class="dsh-fairy-glitch-3" clip-path="url(#dsh-fairy-slice-3)"/>
+		<use href="#dsh-fairy-image" class="dsh-fairy-glitch-4" clip-path="url(#dsh-fairy-slice-4)"/>
+		<use href="#dsh-fairy-image" class="dsh-fairy-glitch-5" clip-path="url(#dsh-fairy-slice-5)"/>
+	</g>
+	</g>
+	</g>
+		</svg>
+    </div>
+  </div>
+  <p class="hint">拖动开关观察：主题深/浅色、思考/安慰眼睑（<code class="inline">data-state</code>）、线程/切片故障（复用 <code class="inline">--dsh-g-*</code> 位移变量）、低功耗（隐藏光晕/辉光层）与动画节奏。静态文件图例见下节。</p>
+</section>
+
+<section>
+  <h2>烘焙 SVG（独立静态文件）</h2>
+  <div class="gallery">
+    <div class="card"><div class="frame"><img src="svg/fairy-eye.svg" alt="fairy-eye"></div><div class="name">Fairy 大眼睛 · 常态</div><div class="path">svg/fairy-eye.svg</div></div>
+    <div class="card"><div class="frame"><img src="svg/fairy-eye-thinking.svg" alt="fairy-eye-thinking"></div><div class="name">思考态眼睑</div><div class="path">svg/fairy-eye-thinking.svg</div></div>
+    <div class="card"><div class="frame"><img src="svg/fairy-eye-comforting.svg" alt="fairy-eye-comforting"></div><div class="name">安慰态眼睑</div><div class="path">svg/fairy-eye-comforting.svg</div></div>
+    <div class="card"><div class="frame"><img src="svg/fairy-halo.svg" alt="fairy-halo"></div><div class="name">光环层 Halo</div><div class="path">svg/fairy-halo.svg</div></div>
+    <div class="card"><div class="frame"><img src="svg/fairy-pulse.svg" alt="fairy-pulse"></div><div class="name">睫毛脉冲 Pulse</div><div class="path">svg/fairy-pulse.svg</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>配色 Token（自动提取）</h2>
+  <div class="swatches">
+    <button type="button" class="sw" style="background:#30353a" data-hex="#30353a" title="#30353a">#30353a</button>
+      <button type="button" class="sw" style="background:#f4f5f6" data-hex="#f4f5f6" title="#f4f5f6">#f4f5f6</button>
+      <button type="button" class="sw" style="background:#fff" data-hex="#fff" title="#fff">#fff</button>
+      <button type="button" class="sw" style="background:#f5f8fd" data-hex="#f5f8fd" title="#f5f8fd">#f5f8fd</button>
+      <button type="button" class="sw" style="background:#555f68" data-hex="#555f68" title="#555f68">#555f68</button>
+      <button type="button" class="sw" style="background:#c1c8ce" data-hex="#c1c8ce" title="#c1c8ce">#c1c8ce</button>
+      <button type="button" class="sw" style="background:#ffffff" data-hex="#ffffff" title="#ffffff">#ffffff</button>
+      <button type="button" class="sw" style="background:#3d444b" data-hex="#3d444b" title="#3d444b">#3d444b</button>
+      <button type="button" class="sw" style="background:#dce2e6" data-hex="#dce2e6" title="#dce2e6">#dce2e6</button>
+      <button type="button" class="sw" style="background:#dfe5e9" data-hex="#dfe5e9" title="#dfe5e9">#dfe5e9</button>
+      <button type="button" class="sw" style="background:#4e5861" data-hex="#4e5861" title="#4e5861">#4e5861</button>
+      <button type="button" class="sw" style="background:#0e243d" data-hex="#0e243d" title="#0e243d">#0e243d</button>
+      <button type="button" class="sw" style="background:#103052" data-hex="#103052" title="#103052">#103052</button>
+      <button type="button" class="sw" style="background:#172531" data-hex="#172531" title="#172531">#172531</button>
+      <button type="button" class="sw" style="background:#38bdf8" data-hex="#38bdf8" title="#38bdf8">#38bdf8</button>
+      <button type="button" class="sw" style="background:#07101c" data-hex="#07101c" title="#07101c">#07101c</button>
+      <button type="button" class="sw" style="background:#0a1c30" data-hex="#0a1c30" title="#0a1c30">#0a1c30</button>
+      <button type="button" class="sw" style="background:#0b1025" data-hex="#0b1025" title="#0b1025">#0b1025</button>
+      <button type="button" class="sw" style="background:#cfd2d5" data-hex="#cfd2d5" title="#cfd2d5">#cfd2d5</button>
+      <button type="button" class="sw" style="background:#f4f7fb" data-hex="#f4f7fb" title="#f4f7fb">#f4f7fb</button>
+      <button type="button" class="sw" style="background:#f7fafc" data-hex="#f7fafc" title="#f7fafc">#f7fafc</button>
+      <button type="button" class="sw" style="background:#1688ce" data-hex="#1688ce" title="#1688ce">#1688ce</button>
+      <button type="button" class="sw" style="background:#293139" data-hex="#293139" title="#293139">#293139</button>
+      <button type="button" class="sw" style="background:#d9dde1" data-hex="#d9dde1" title="#d9dde1">#d9dde1</button>
+      <button type="button" class="sw" style="background:#e7f2f9" data-hex="#e7f2f9" title="#e7f2f9">#e7f2f9</button>
+      <button type="button" class="sw" style="background:#000" data-hex="#000" title="#000">#000</button>
+      <button type="button" class="sw" style="background:#143553" data-hex="#143553" title="#143553">#143553</button>
+      <button type="button" class="sw" style="background:#7898aa" data-hex="#7898aa" title="#7898aa">#7898aa</button>
+      <button type="button" class="sw" style="background:#a8bac9" data-hex="#a8bac9" title="#a8bac9">#a8bac9</button>
+      <button type="button" class="sw" style="background:#d4d8dc" data-hex="#d4d8dc" title="#d4d8dc">#d4d8dc</button>
+      <button type="button" class="sw" style="background:#e8f2fa" data-hex="#e8f2fa" title="#e8f2fa">#e8f2fa</button>
+      <button type="button" class="sw" style="background:#f1f6fa" data-hex="#f1f6fa" title="#f1f6fa">#f1f6fa</button>
+      <button type="button" class="sw" style="background:#000000" data-hex="#000000" title="#000000">#000000</button>
+      <button type="button" class="sw" style="background:#17456f" data-hex="#17456f" title="#17456f">#17456f</button>
+      <button type="button" class="sw" style="background:#25313b" data-hex="#25313b" title="#25313b">#25313b</button>
+      <button type="button" class="sw" style="background:#267fc4" data-hex="#267fc4" title="#267fc4">#267fc4</button>
+      <button type="button" class="sw" style="background:#30363b" data-hex="#30363b" title="#30363b">#30363b</button>
+      <button type="button" class="sw" style="background:#36519a" data-hex="#36519a" title="#36519a">#36519a</button>
+      <button type="button" class="sw" style="background:#3b4148" data-hex="#3b4148" title="#3b4148">#3b4148</button>
+      <button type="button" class="sw" style="background:#454f58" data-hex="#454f58" title="#454f58">#454f58</button>
+      <button type="button" class="sw" style="background:#4b555e" data-hex="#4b555e" title="#4b555e">#4b555e</button>
+      <button type="button" class="sw" style="background:#4f6d83" data-hex="#4f6d83" title="#4f6d83">#4f6d83</button>
+      <button type="button" class="sw" style="background:#607f96" data-hex="#607f96" title="#607f96">#607f96</button>
+      <button type="button" class="sw" style="background:#624d9f" data-hex="#624d9f" title="#624d9f">#624d9f</button>
+      <button type="button" class="sw" style="background:#7895a9" data-hex="#7895a9" title="#7895a9">#7895a9</button>
+      <button type="button" class="sw" style="background:#8bb9c8" data-hex="#8bb9c8" title="#8bb9c8">#8bb9c8</button>
+      <button type="button" class="sw" style="background:#8fcfff" data-hex="#8fcfff" title="#8fcfff">#8fcfff</button>
+      <button type="button" class="sw" style="background:#93abb9" data-hex="#93abb9" title="#93abb9">#93abb9</button>
+      <button type="button" class="sw" style="background:#aeb6bc" data-hex="#aeb6bc" title="#aeb6bc">#aeb6bc</button>
+      <button type="button" class="sw" style="background:#b26b99" data-hex="#b26b99" title="#b26b99">#b26b99</button>
+      <button type="button" class="sw" style="background:#b997ed" data-hex="#b997ed" title="#b997ed">#b997ed</button>
+      <button type="button" class="sw" style="background:#c7cfdb" data-hex="#c7cfdb" title="#c7cfdb">#c7cfdb</button>
+      <button type="button" class="sw" style="background:#c9f8ff" data-hex="#c9f8ff" title="#c9f8ff">#c9f8ff</button>
+      <button type="button" class="sw" style="background:#d7dde1" data-hex="#d7dde1" title="#d7dde1">#d7dde1</button>
+      <button type="button" class="sw" style="background:#dcebf5" data-hex="#dcebf5" title="#dcebf5">#dcebf5</button>
+      <button type="button" class="sw" style="background:#dde1e5" data-hex="#dde1e5" title="#dde1e5">#dde1e5</button>
+      <button type="button" class="sw" style="background:#e24b4b" data-hex="#e24b4b" title="#e24b4b">#e24b4b</button>
+      <button type="button" class="sw" style="background:#eef0f5" data-hex="#eef0f5" title="#eef0f5">#eef0f5</button>
+      <button type="button" class="sw" style="background:#efa5cc" data-hex="#efa5cc" title="#efa5cc">#efa5cc</button>
+      <button type="button" class="sw" style="background:#f0f5f8" data-hex="#f0f5f8" title="#f0f5f8">#f0f5f8</button>
+      <button type="button" class="sw" style="background:#f3f7fa" data-hex="#f3f7fa" title="#f3f7fa">#f3f7fa</button>
+      <button type="button" class="sw" style="background:#08090b" data-hex="#08090b" title="#08090b">#08090b</button>
+      <button type="button" class="sw" style="background:#080b14" data-hex="#080b14" title="#080b14">#080b14</button>
+      <button type="button" class="sw" style="background:#0a1828" data-hex="#0a1828" title="#0a1828">#0a1828</button>
+  </div>
+  <p class="hint">点击色块复制 <code class="inline">#hex</code>。完整统计（含 rgba()/渐变函数与计数）见 <code class="inline">tokens/fairy-palette.json</code>。</p>
+</section>
+
+<section>
+  <h2>CSS 变量与字体</h2>
+  <div class="chips"><code class="chip" title="出现 17 次">--dsh-fairy-input-control-siz</code> <code class="chip" title="出现 16 次">--dsh-card-fil</code> <code class="chip" title="出现 12 次">--dsh-fairy-composer-win</code> <code class="chip" title="出现 12 次">--dsh-fairy-scal</code> <code class="chip" title="出现 12 次">--dsw-alias-border-l</code> <code class="chip" title="出现 10 次">--dsh-fairy-mas</code> <code class="chip" title="出现 10 次">--dsh-fairy-steady-rat</code> <code class="chip" title="出现 10 次">--dsw-alias-label-secondar</code> <code class="chip" title="出现 9 次">--dsh-fairy-scale-trac</code> <code class="chip" title="出现 8 次">--dsh-composer-hole-radiu</code> <code class="chip" title="出现 7 次">--dsh-fairy-outer-halo-colo</code> <code class="chip" title="出现 6 次">--dsh-card-borde</code> <code class="chip" title="出现 6 次">--dsh-card-sheen-dar</code> <code class="chip" title="出现 6 次">--dsh-card-sheen-ligh</code> <code class="chip" title="出现 6 次">--dsh-fade-soft-</code> <code class="chip" title="出现 6 次">--dsw-alias-brand-primar</code> <code class="chip" title="出现 5 次">--dsh-composer-edge-dar</code> <code class="chip" title="出现 5 次">--dsh-fairy-input-control-ga</code> <code class="chip" title="出现 5 次">--dsh-fairy-input-sid</code> <code class="chip" title="出现 4 次">--dsh-card-grain-dar</code> <code class="chip" title="出现 4 次">--dsh-card-grain-ligh</code> <code class="chip" title="出现 4 次">--dsh-composer-edge-ligh</code> <code class="chip" title="出现 4 次">--dsh-fade-</code> <code class="chip" title="出现 4 次">--dsh-fade-r</code> <code class="chip" title="出现 4 次">--dsw-font-xs-strong-1</code> <code class="chip" title="出现 3 次">--dsh-fairy-composer-hole-botto</code> <code class="chip" title="出现 3 次">--dsh-fairy-composer-hole-to</code> <code class="chip" title="出现 3 次">--dsh-fairy-composer-voice-widt</code> <code class="chip" title="出现 3 次">--dsh-fairy-reasoning-ga</code> <code class="chip" title="出现 3 次">--dsh-fairy-scale-track-res</code> <code class="chip" title="出现 3 次">--dsh-input-glow-</code> <code class="chip" title="出现 3 次">--dsh-sidebar-ridge-widt</code> <code class="chip" title="出现 3 次">--dsw-alias-bg-layer-</code> <code class="chip" title="出现 3 次">--dsw-alias-interactive-bg-hove</code> <code class="chip" title="出现 3 次">--dsw-alias-label-primar</code> <code class="chip" title="出现 3 次">--dsw-alias-label-tertiar</code> <code class="chip" title="出现 2 次">--dsh-composer-top-fac</code> <code class="chip" title="出现 2 次">--dsh-composer-top-highligh</code> <code class="chip" title="出现 2 次">--dsh-composer-top-shad</code> <code class="chip" title="出现 2 次">--dsh-fade-cor</code> <code class="chip" title="出现 2 次">--dsh-fairy-composer-reasoning-widt</code> <code class="chip" title="出现 2 次">--dsh-fairy-flicker-opacity-</code> <code class="chip" title="出现 2 次">--dsh-fairy-input-control-inse</code> <code class="chip" title="出现 2 次">--dsh-history-cutout-ambien</code> <code class="chip" title="出现 2 次">--dsh-history-cutout-contac</code> <code class="chip" title="出现 2 次">--dsh-history-cutout-shado</code> <code class="chip" title="出现 2 次">--dsh-input-gri</code> <code class="chip" title="出现 2 次">--dsh-input-substrat</code> <code class="chip" title="出现 2 次">--dsh-input-substrate-imag</code> <code class="chip" title="出现 2 次">--dsw-alias-interactive-bg-activ</code> <code class="chip" title="出现 2 次">--dsw-font-famil</code> <code class="chip" title="出现 1 次">--dsh-composer-polyme</code> <code class="chip" title="出现 1 次">--dsh-composer-polymer-dar</code> <code class="chip" title="出现 1 次">--dsh-composer-polymer-ligh</code> <code class="chip" title="出现 1 次">--dsh-fairy-chat-anchor-min-heigh</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-contact-heigh</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-contact-lef</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-contact-to</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-contact-widt</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-lef</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-hole-righ</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-voice-inse</code> <code class="chip" title="出现 1 次">--dsh-fairy-composer-voice-righ</code> <code class="chip" title="出现 1 次">--dsh-fairy-flicker-duratio</code> <code class="chip" title="出现 1 次">--dsh-fairy-flicker-opacity-mi</code> <code class="chip" title="出现 1 次">--dsh-fairy-lef</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-g-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-s1-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-s2-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-s3-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-thread-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-thread-2-</code> <code class="chip" title="出现 1 次">--dsh-fairy-mark-thread-3-</code> <code class="chip" title="出现 1 次">--dsh-fairy-pulse-cycl</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-fil</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-gradient-blu</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-gradient-en</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-gradient-purpl</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-gradient-star</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-inset-shado</code> <code class="chip" title="出现 1 次">--dsh-fairy-scale-res</code> <code class="chip" title="出现 1 次">--dsh-fairy-to-bottom-botto</code> <code class="chip" title="出现 1 次">--dsh-fairy-to-bottom-offse</code> <code class="chip" title="出现 1 次">--dsh-fairy-widt</code> <code class="chip" title="出现 1 次">--dsh-g-</code> <code class="chip" title="出现 1 次">--dsh-g-brigh</code> <code class="chip" title="出现 1 次">--dsh-g-contras</code> <code class="chip" title="出现 1 次">--dsh-g-s1-</code> <code class="chip" title="出现 1 次">--dsh-g-s2-</code> <code class="chip" title="出现 1 次">--dsh-g-s3-</code> <code class="chip" title="出现 1 次">--dsh-g-s4-</code> <code class="chip" title="出现 1 次">--dsh-g-s5-</code> <code class="chip" title="出现 1 次">--dsh-g-ske</code> <code class="chip" title="出现 1 次">--dsh-input-glow-a-fad</code> <code class="chip" title="出现 1 次">--dsh-input-glow-b-fad</code> <code class="chip" title="出现 1 次">--dsh-input-glow-c-fad</code></div>
+  <p class="hint">变量取自 <code class="inline">var(--…)</code> 引用计数（含 <code class="inline">--dsw-*</code> 官方 token 与 <code class="inline">--dsh-fairy-*</code> 插件 token）。品牌字族优先序列：
+  <code class="inline">"Avenir Next","Arial Narrow","DIN Condensed","Microsoft YaHei",sans-serif</code>。</p>
+</section>
+
+<footer>
+  Fairy Visual Assets — 从 Fairy-DSH-main 提取（Apache-2.0，© 2026 Chengzhibense，见 <code class="inline">NOTICE</code>）。
+  游戏文本/官方素材/商标不在本资产包内。来源映射与 SHA-256 见 <code class="inline">MANIFEST.json</code>，说明见 <code class="inline">README.md</code>。
+</footer>
+
+<script>
+var PALETTE = {"schema_version":"1.0","generated_at":"2026-09-10T04:14:24.626Z","origin":"Fairy-DSH-main (Apache-2.0) — 见 ../NOTICE 与 ../THIRD_PARTY_NOTICES.md","counts_per_source":{"fairy-hdd-theme.css":{"hex":323,"colorFunctions":355,"cssVariables":285},"fairy-mascot.css":{"hex":5,"colorFunctions":0,"cssVariables":26},"mascot-eye-svg.js":{"hex":32,"colorFunctions":0,"cssVariables":7},"mascot-effects-svg.js":{"hex":1,"colorFunctions":0,"cssVariables":0}},"hex":[{"value":"#30353a","count":26},{"value":"#f4f5f6","count":23},{"value":"#fff","count":12},{"value":"#f5f8fd","count":11},{"value":"#555f68","count":10},{"value":"#c1c8ce","count":10},{"value":"#ffffff","count":10},{"value":"#3d444b","count":9},{"value":"#dce2e6","count":9},{"value":"#dfe5e9","count":9},{"value":"#4e5861","count":8},{"value":"#0e243d","count":7},{"value":"#103052","count":7},{"value":"#172531","count":6},{"value":"#38bdf8","count":6},{"value":"#07101c","count":5},{"value":"#0a1c30","count":5},{"value":"#0b1025","count":5},{"value":"#cfd2d5","count":5},{"value":"#f4f7fb","count":5},{"value":"#f7fafc","count":5},{"value":"#1688ce","count":4},{"value":"#293139","count":4},{"value":"#d9dde1","count":4},{"value":"#e7f2f9","count":4},{"value":"#000","count":3},{"value":"#143553","count":3},{"value":"#7898aa","count":3},{"value":"#a8bac9","count":3},{"value":"#d4d8dc","count":3},{"value":"#e8f2fa","count":3},{"value":"#f1f6fa","count":3},{"value":"#000000","count":2},{"value":"#17456f","count":2},{"value":"#25313b","count":2},{"value":"#267fc4","count":2},{"value":"#30363b","count":2},{"value":"#36519a","count":2},{"value":"#3b4148","count":2},{"value":"#454f58","count":2},{"value":"#4b555e","count":2},{"value":"#4f6d83","count":2},{"value":"#607f96","count":2},{"value":"#624d9f","count":2},{"value":"#7895a9","count":2},{"value":"#8bb9c8","count":2},{"value":"#8fcfff","count":2},{"value":"#93abb9","count":2},{"value":"#aeb6bc","count":2},{"value":"#b26b99","count":2},{"value":"#b997ed","count":2},{"value":"#c7cfdb","count":2},{"value":"#c9f8ff","count":2},{"value":"#d7dde1","count":2},{"value":"#dcebf5","count":2},{"value":"#dde1e5","count":2},{"value":"#e24b4b","count":2},{"value":"#eef0f5","count":2},{"value":"#efa5cc","count":2},{"value":"#f0f5f8","count":2},{"value":"#f3f7fa","count":2},{"value":"#08090b","count":1},{"value":"#080b14","count":1},{"value":"#0a1828","count":1},{"value":"#0b1e34","count":1},{"value":"#0f78b8","count":1},{"value":"#102944","count":1},{"value":"#1b2b38","count":1},{"value":"#26343e","count":1},{"value":"#263b4b","count":1},{"value":"#2aa9e8","count":1},{"value":"#2b3388","count":1},{"value":"#2d45ee","count":1},{"value":"#30363d","count":1},{"value":"#3045dc","count":1},{"value":"#317bcf","count":1},{"value":"#353d45","count":1},{"value":"#373d44","count":1},{"value":"#3a4047","count":1},{"value":"#3b3d8a","count":1},{"value":"#3b434b","count":1},{"value":"#3d434b","count":1},{"value":"#3d50c8","count":1},{"value":"#4053f0","count":1},{"value":"#424b54","count":1},{"value":"#4d5660","count":1},{"value":"#526675","count":1},{"value":"#5d82a0","count":1},{"value":"#5e6973","count":1},{"value":"#607585","count":1},{"value":"#62d4ff","count":1},{"value":"#667b8b","count":1},{"value":"#69747c","count":1},{"value":"#748694","count":1},{"value":"#7897d8","count":1},{"value":"#7d8790","count":1},{"value":"#7f93a5","count":1},{"value":"#7f9fb8","count":1},{"value":"#8bc9f4","count":1},{"value":"#8ea6b5","count":1},{"value":"#93a2b6","count":1},{"value":"#9daee0","count":1},{"value":"#9eb5c4","count":1},{"value":"#a7c2d4","count":1},{"value":"#a8bfce","count":1},{"value":"#ae91e2","count":1},{"value":"#aebbc9","count":1},{"value":"#b29be8","count":1},{"value":"#bec5cb","count":1},{"value":"#c3c8cd","count":1},{"value":"#c9cfd4","count":1},{"value":"#c9dce9","count":1},{"value":"#c9efff","count":1},{"value":"#cbd1d6","count":1},{"value":"#d2e0e9","count":1},{"value":"#d6f5ff","count":1},{"value":"#d7e7f3","count":1},{"value":"#dfebf3","count":1},{"value":"#e1edf5","count":1},{"value":"#e5f0f7","count":1},{"value":"#e6eaed","count":1},{"value":"#e8edf5","count":1},{"value":"#e8f0f5","count":1},{"value":"#e8f8ff","count":1},{"value":"#e9f0f5","count":1},{"value":"#e9f1f6","count":1},{"value":"#eaf1f5","count":1},{"value":"#eca3c9","count":1},{"value":"#edf4f8","count":1},{"value":"#eef1f4","count":1},{"value":"#f2fbff","count":1},{"value":"#f4fdff","count":1},{"value":"#f7bbdc","count":1},{"value":"#f8fafb","count":1}],"color_functions":[{"value":"rgba(0,0,0,.13)","count":24},{"value":"rgba(255,255,255,.06)","count":14},{"value":"rgba(255,255,255,.03)","count":13},{"value":"rgba(255,255,255,.58)","count":13},{"value":"rgba(52,63,73,.10)","count":13},{"value":"rgba(52,63,73,.08)","count":12},{"value":"rgba(0,0,0,calc(1 - var(--dsh-fairy-mask)","count":10},{"value":"rgba(255,255,255,.46)","count":10},{"value":"rgba(255,255,255,.18)","count":8},{"value":"rgba(0,0,0,.42)","count":6},{"value":"rgba(255,255,255,.12)","count":5},{"value":"rgba(0,0,0,.18)","count":4},{"value":"rgba(0,0,0,.56)","count":4},{"value":"rgba(0,0,0,.16)","count":3},{"value":"rgba(0,0,0,.58)","count":3},{"value":"rgba(255,255,255,.04)","count":3},{"value":"rgba(255,255,255,.055)","count":3},{"value":"rgba(255,255,255,.13)","count":3},{"value":"rgba(255,255,255,.22)","count":3},{"value":"rgba(255,255,255,.78)","count":3},{"value":"rgba(52,63,73,.18)","count":3},{"value":"rgba(52,63,73,.22)","count":3},{"value":"rgba(64,74,84,.055)","count":3},{"value":"rgba(0,0,0,.024)","count":2},{"value":"rgba(0,0,0,.038)","count":2},{"value":"rgba(0,0,0,.07)","count":2},{"value":"rgba(0,0,0,.14)","count":2},{"value":"rgba(0,0,0,.24)","count":2},{"value":"rgba(0,0,0,.32)","count":2},{"value":"rgba(0,0,0,.82)","count":2},{"value":"rgba(100,210,255,.042)","count":2},{"value":"rgba(103,176,243,.96)","count":2},{"value":"rgba(119,91,255,.078)","count":2},{"value":"rgba(119,91,255,.115)","count":2},{"value":"rgba(139,115,241,.17)","count":2},{"value":"rgba(143,94,233,.075)","count":2},{"value":"rgba(143,94,255,.12)","count":2},{"value":"rgba(154,91,233,.17)","count":2},{"value":"rgba(157,132,255,.23)","count":2},{"value":"rgba(174,112,255,.24)","count":2},{"value":"rgba(196,113,231,.96)","count":2},{"value":"rgba(247,142,194,.94)","count":2},{"value":"rgba(255,255,255,.022)","count":2},{"value":"rgba(255,255,255,.028)","count":2},{"value":"rgba(255,255,255,.045)","count":2},{"value":"rgba(255,255,255,.07)","count":2},{"value":"rgba(255,255,255,.085)","count":2},{"value":"rgba(255,255,255,.16)","count":2},{"value":"rgba(255,255,255,.20)","count":2},{"value":"rgba(255,255,255,.42)","count":2},{"value":"rgba(255,255,255,.48)","count":2},{"value":"rgba(255,255,255,.52)","count":2},{"value":"rgba(255,255,255,.72)","count":2},{"value":"rgba(34,126,166,.055)","count":2},{"value":"rgba(48,180,229,.22)","count":2},{"value":"rgba(49,58,67,.28)","count":2},{"value":"rgba(52,63,73,.48)","count":2},{"value":"rgba(54,184,255,.10)","count":2},{"value":"rgba(54,184,255,.135)","count":2},{"value":"rgba(74,87,98,.032)","count":2},{"value":"rgba(74,87,98,.048)","count":2},{"value":"rgba(82,112,132,.42)","count":2},{"value":"rgba(96,212,255,.27)","count":2},{"value":"rgba(0,0,0,.028)","count":1},{"value":"rgba(0,0,0,.045)","count":1},{"value":"rgba(0,0,0,.055)","count":1},{"value":"rgba(0,0,0,.06)","count":1},{"value":"rgba(0,0,0,.09)","count":1},{"value":"rgba(0,0,0,.11)","count":1},{"value":"rgba(0,0,0,.12)","count":1},{"value":"rgba(0,0,0,.17)","count":1},{"value":"rgba(0,0,0,.20)","count":1},{"value":"rgba(0,0,0,.30)","count":1},{"value":"rgba(0,0,0,.34)","count":1},{"value":"rgba(0,0,0,.36)","count":1},{"value":"rgba(0,0,0,.44)","count":1},{"value":"rgba(0,0,0,.46)","count":1},{"value":"rgba(0,0,0,.48)","count":1},{"value":"rgba(0,0,0,.52)","count":1},{"value":"rgba(0,0,0,.68)","count":1},{"value":"rgba(0,0,0,.84)","count":1},{"value":"rgba(100,210,255,.0294)","count":1},{"value":"rgba(112,124,137,.72)","count":1},{"value":"rgba(119,91,255,.04)","count":1},{"value":"rgba(119,91,255,.06)","count":1},{"value":"rgba(119,91,255,.062)","count":1},{"value":"rgba(119,91,255,.09)","count":1},{"value":"rgba(126,220,255,.2)","count":1},{"value":"rgba(126,220,255,.24)","count":1},{"value":"rgba(126,220,255,.28)","count":1},{"value":"rgba(126,220,255,.3)","count":1},{"value":"rgba(139,115,241,.09)","count":1},{"value":"rgba(139,115,241,.135)","count":1},{"value":"rgba(143,94,255,.035)","count":1},{"value":"rgba(143,94,255,.058)","count":1},{"value":"rgba(143,94,255,.065)","count":1},{"value":"rgba(143,94,255,.095)","count":1},{"value":"rgba(15,18,22,.72)","count":1},{"value":"rgba(154,91,233,.085)","count":1},{"value":"rgba(154,91,233,.13)","count":1},{"value":"rgba(157,132,255,.12)","count":1},{"value":"rgba(157,132,255,.18)","count":1},{"value":"rgba(158,181,196,.30)","count":1},{"value":"rgba(168,186,201,.24)","count":1},{"value":"rgba(174,112,255,.13)","count":1},{"value":"rgba(174,112,255,.19)","count":1},{"value":"rgba(190,104,224,.98)","count":1},{"value":"rgba(190,107,232,.25)","count":1},{"value":"rgba(190,107,232,0)","count":1},{"value":"rgba(198,204,210,.58)","count":1},{"value":"rgba(20,16,32,.28)","count":1},{"value":"rgba(20,16,32,.38)","count":1},{"value":"rgba(225,232,238,.24)","count":1},{"value":"rgba(226,75,75,.12)","count":1},{"value":"rgba(241,126,187,.96)","count":1},{"value":"rgba(255,180,220,.28)","count":1},{"value":"rgba(255,180,220,0)","count":1},{"value":"rgba(255,255,255,.035)","count":1},{"value":"rgba(255,255,255,.10)","count":1},{"value":"rgba(255,255,255,.24)","count":1}],"css_variables":[{"name":"--dsh-fairy-input-control-siz","count":17},{"name":"--dsh-card-fil","count":16},{"name":"--dsh-fairy-composer-win","count":12},{"name":"--dsh-fairy-scal","count":12},{"name":"--dsw-alias-border-l","count":12},{"name":"--dsh-fairy-mas","count":10},{"name":"--dsh-fairy-steady-rat","count":10},{"name":"--dsw-alias-label-secondar","count":10},{"name":"--dsh-fairy-scale-trac","count":9},{"name":"--dsh-composer-hole-radiu","count":8},{"name":"--dsh-fairy-outer-halo-colo","count":7},{"name":"--dsh-card-borde","count":6},{"name":"--dsh-card-sheen-dar","count":6},{"name":"--dsh-card-sheen-ligh","count":6},{"name":"--dsh-fade-soft-","count":6},{"name":"--dsw-alias-brand-primar","count":6},{"name":"--dsh-composer-edge-dar","count":5},{"name":"--dsh-fairy-input-control-ga","count":5},{"name":"--dsh-fairy-input-sid","count":5},{"name":"--dsh-card-grain-dar","count":4},{"name":"--dsh-card-grain-ligh","count":4},{"name":"--dsh-composer-edge-ligh","count":4},{"name":"--dsh-fade-","count":4},{"name":"--dsh-fade-r","count":4},{"name":"--dsw-font-xs-strong-1","count":4},{"name":"--dsh-fairy-composer-hole-botto","count":3},{"name":"--dsh-fairy-composer-hole-to","count":3},{"name":"--dsh-fairy-composer-voice-widt","count":3},{"name":"--dsh-fairy-reasoning-ga","count":3},{"name":"--dsh-fairy-scale-track-res","count":3},{"name":"--dsh-input-glow-","count":3},{"name":"--dsh-sidebar-ridge-widt","count":3},{"name":"--dsw-alias-bg-layer-","count":3},{"name":"--dsw-alias-interactive-bg-hove","count":3},{"name":"--dsw-alias-label-primar","count":3},{"name":"--dsw-alias-label-tertiar","count":3},{"name":"--dsh-composer-top-fac","count":2},{"name":"--dsh-composer-top-highligh","count":2},{"name":"--dsh-composer-top-shad","count":2},{"name":"--dsh-fade-cor","count":2},{"name":"--dsh-fairy-composer-reasoning-widt","count":2},{"name":"--dsh-fairy-flicker-opacity-","count":2},{"name":"--dsh-fairy-input-control-inse","count":2},{"name":"--dsh-history-cutout-ambien","count":2},{"name":"--dsh-history-cutout-contac","count":2},{"name":"--dsh-history-cutout-shado","count":2},{"name":"--dsh-input-gri","count":2},{"name":"--dsh-input-substrat","count":2},{"name":"--dsh-input-substrate-imag","count":2},{"name":"--dsw-alias-interactive-bg-activ","count":2},{"name":"--dsw-font-famil","count":2},{"name":"--dsh-composer-polyme","count":1},{"name":"--dsh-composer-polymer-dar","count":1},{"name":"--dsh-composer-polymer-ligh","count":1},{"name":"--dsh-fairy-chat-anchor-min-heigh","count":1},{"name":"--dsh-fairy-composer-hole-contact-heigh","count":1},{"name":"--dsh-fairy-composer-hole-contact-lef","count":1},{"name":"--dsh-fairy-composer-hole-contact-to","count":1},{"name":"--dsh-fairy-composer-hole-contact-widt","count":1},{"name":"--dsh-fairy-composer-hole-lef","count":1},{"name":"--dsh-fairy-composer-hole-righ","count":1},{"name":"--dsh-fairy-composer-voice-inse","count":1},{"name":"--dsh-fairy-composer-voice-righ","count":1},{"name":"--dsh-fairy-flicker-duratio","count":1},{"name":"--dsh-fairy-flicker-opacity-mi","count":1},{"name":"--dsh-fairy-lef","count":1},{"name":"--dsh-fairy-mark-g-","count":1},{"name":"--dsh-fairy-mark-s1-","count":1},{"name":"--dsh-fairy-mark-s2-","count":1},{"name":"--dsh-fairy-mark-s3-","count":1},{"name":"--dsh-fairy-mark-thread-","count":1},{"name":"--dsh-fairy-mark-thread-2-","count":1},{"name":"--dsh-fairy-mark-thread-3-","count":1},{"name":"--dsh-fairy-pulse-cycl","count":1},{"name":"--dsh-fairy-scale-fil","count":1},{"name":"--dsh-fairy-scale-gradient-blu","count":1},{"name":"--dsh-fairy-scale-gradient-en","count":1},{"name":"--dsh-fairy-scale-gradient-purpl","count":1},{"name":"--dsh-fairy-scale-gradient-star","count":1},{"name":"--dsh-fairy-scale-inset-shado","count":1},{"name":"--dsh-fairy-scale-res","count":1},{"name":"--dsh-fairy-to-bottom-botto","count":1},{"name":"--dsh-fairy-to-bottom-offse","count":1},{"name":"--dsh-fairy-widt","count":1},{"name":"--dsh-g-","count":1},{"name":"--dsh-g-brigh","count":1},{"name":"--dsh-g-contras","count":1},{"name":"--dsh-g-s1-","count":1},{"name":"--dsh-g-s2-","count":1},{"name":"--dsh-g-s3-","count":1},{"name":"--dsh-g-s4-","count":1},{"name":"--dsh-g-s5-","count":1},{"name":"--dsh-g-ske","count":1},{"name":"--dsh-input-glow-a-fad","count":1},{"name":"--dsh-input-glow-b-fad","count":1},{"name":"--dsh-input-glow-c-fad","count":1},{"name":"--dsh-lash-angl","count":1},{"name":"--dsh-lash-dela","count":1},{"name":"--dsh-selected-fil","count":1},{"name":"--dsh-selected-tex","count":1},{"name":"--dsh-sidebar-board-cli","count":1},{"name":"--dsh-sidebar-board-colo","count":1},{"name":"--dsh-sidebar-board-imag","count":1},{"name":"--dsh-sidebar-elevation-ambien","count":1},{"name":"--dsh-sidebar-elevation-contac","count":1},{"name":"--dsh-sidebar-ridge-cast-lef","count":1},{"name":"--dsh-sidebar-ridge-cast-right-ambien","count":1},{"name":"--dsh-sidebar-ridge-cast-right-contac","count":1},{"name":"--dsh-sidebar-ridge-contac","count":1},{"name":"--dsh-sidebar-ridge-edg","count":1},{"name":"--dsh-sidebar-ridge-fac","count":1},{"name":"--dsh-sidebar-ridge-highligh","count":1},{"name":"--dsh-sidebar-ridge-shad","count":1},{"name":"--dsw-shadow-lv","count":1}],"font_families":[{"name":"Avenir Next","count":3}]};
+function demo(){ return document.getElementById('mascot-demo'); }
+function mark(groupId, activeBtn){ var g=document.getElementById(groupId); if(!g) return; var bs=g.querySelectorAll('button'); for(var i=0;i<bs.length;i++){ bs[i].classList.toggle('on', bs[i]===activeBtn); } }
+function syncOn(sel, val){ document.querySelectorAll(sel).forEach(function(b){ b.classList.toggle('on', b.dataset.v===String(val)); }); }
+function applyTheme(v){
+  document.documentElement.dataset.dshFairyTheme = v;
+  syncOn('#g-theme button', v);
+}
+function applyState(v){
+  var d=demo(); if(v===''){ d.removeAttribute('data-state'); } else { d.setAttribute('data-state', v); }
+  syncOn('#g-state button', v);
+}
+function setSliceRandoms(){
+  var d=demo();
+  var s=['s1','s2','s3','s4','s5'];
+  for(var i=0;i<s.length;i++){ d.style.setProperty('--dsh-g-'+s[i]+'-x', (Math.round((Math.random()*2-1)*14))+'px'); }
+  d.style.setProperty('--dsh-g-x', (Math.round((Math.random()*2-1)*5))+'px');
+  d.style.setProperty('--dsh-g-skew', (Math.round((Math.random()*2-1)*1.2*10)/10)+'deg');
+}
+function applyGlitch(v){
+  var d=demo();
+  var sig=d.querySelector('.dsh-fairy-signal');
+  if(v==='none'){ d.removeAttribute('data-transition-glitch'); if(sig) sig.removeAttribute('data-glitch'); syncOn('#g-glitch button', document.querySelector('#g-glitch button[data-v="none"]')); }
+  else if(v==='rand'){
+    d.setAttribute('data-transition-glitch','true'); setSliceRandoms();
+    var which=(Math.random()<.5)?'threads':'blocks'; if(sig) sig.setAttribute('data-glitch', which);
+    syncOn('#g-glitch button', document.querySelector('#g-glitch button[data-v="rand"]'));
+    var self=this; setTimeout(function(){ applyGlitch('none'); }, 420);
+  }
+  else if(v==='threads'){ setSliceRandoms(); d.setAttribute('data-transition-glitch','true'); if(sig) sig.setAttribute('data-glitch','threads'); syncOn('#g-glitch button', document.querySelector('#g-glitch button[data-v="threads"]')); }
+  else if(v==='blocks'){ setSliceRandoms(); d.setAttribute('data-transition-glitch','true'); if(sig) sig.setAttribute('data-glitch','blocks'); syncOn('#g-glitch button', document.querySelector('#g-glitch button[data-v="blocks"]')); }
+}
+function applyPower(v){
+  var d=demo();
+  if(v==='low'){ d.setAttribute('data-low-power',''); } else { d.removeAttribute('data-low-power'); }
+  syncOn('#g-power button', v==='low' ? document.querySelector('#g-power button[data-v="low"]') : document.querySelector('#g-power button[data-v="normal"]'));
+}
+function applySpeed(v){
+  var d=demo();
+  d.dataset.dshFairyAnimationRate = v;
+  d.style.setProperty('--dsh-fairy-steady-rate', v);
+  syncOn('#g-speed button', v);
+}
+document.getElementById('top-controls').addEventListener('click', function(ev){
+  var b=ev.target.closest('button'); if(!b||!b.dataset.act) return;
+  var act=b.dataset.act, v=b.dataset.v;
+  if(act==='theme') applyTheme(v);
+  else if(act==='state') applyState(v);
+  else if(act==='glitch') applyGlitch(v);
+  else if(act==='power') applyPower(v);
+  else if(act==='speed') applySpeed(v);
+});
+/* hex copy on click */
+document.querySelectorAll('.sw').forEach(function(sw){
+  sw.addEventListener('click', function(){ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(sw.dataset.hex); } });
+});
+</script>
+</body>
+</html>

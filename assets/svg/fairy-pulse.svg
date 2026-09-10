@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<svg class="dsh-fairy-pulse-layer" viewBox="-160 -160 480 480" xmlns="http://www.w3.org/2000/svg" role="presentation">
+	<g class="dsh-fairy-lash-pulse" fill="none" stroke="#f4fdff">
+		<g class="dsh-fairy-lash-pulse-wave">
+			<circle cx="80" cy="80" r="52" stroke-width="20" stroke-opacity=".05"/>
+			<circle cx="80" cy="80" r="52" stroke-width="16" stroke-opacity=".06"/>
+			<circle cx="80" cy="80" r="52" stroke-width="12" stroke-opacity=".08"/>
+			<circle cx="80" cy="80" r="52" stroke-width="8" stroke-opacity=".10"/>
+			<circle cx="80" cy="80" r="52" stroke-width="4.5" stroke-opacity=".09"/>
+		</g>
+	</g>
+<style>
+
+svg{display:block;width:min(80vw,720px);height:auto;overflow:visible}
+.dsh-fairy-lash-pulse{fill:none}
+.dsh-fairy-lash-pulse-wave{display:block;visibility:visible;opacity:1;transform-box:view-box;transform-origin:80px 80px;animation:dsh-fairy-lash-pulse 4s cubic-bezier(.42,0,.22,1) infinite;will-change:opacity,transform}
+@keyframes dsh-fairy-lash-pulse{0%{opacity:0;transform:scale(.98)}5%{opacity:.72}12%{opacity:.52}20%{opacity:.19}27%{opacity:0}36%,100%{opacity:0;transform:scale(2.78)}}
+@media (prefers-reduced-motion:reduce){svg *{animation:none!important}}
+
+</style>
+</svg>

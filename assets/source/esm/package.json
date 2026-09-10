@@ -1,0 +1,7 @@
+{
+  "name": "fairy-visual-assets-esm-src",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ESM asset source modules (verbatim copies of constants.js / style.js), kept ESM so style.js can be executed for CSS extraction."
+}

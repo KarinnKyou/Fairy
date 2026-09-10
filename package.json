@@ -1,0 +1,18 @@
+{
+  "name": "hdd",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "HDD — Fairy 桌面终端（视觉资产 + Electron 应用 + 构建脚本）的根工程",
+  "scripts": {
+    "assets:bake": "node assets/bake.cjs",
+    "app:prep": "node app/scripts/prep.cjs",
+    "app:test": "node app/scripts/prep.cjs && node app/tests/renderer.test.cjs && node app/tests/scroll-pin.test.cjs",
+    "app:start": "npm --prefix app start",
+    "app:dist": "npm --prefix app run dist",
+    "test": "npm run assets:bake && npm run app:test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

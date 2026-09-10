@@ -1,0 +1,22 @@
+# Runtime and build output (not committed)
+.cache/
+.npm-cache/
+app/node_modules/
+app/www/
+app/dist/
+app/build-res/
+app/package-lock.json
+
+# Private config (contains the API key) - never commit
+app/config.json
+
+# Fonts are not redistributed here: supply your own .ttf/.otf in app/fonts/.
+# prep.cjs registers whatever it finds automatically; without it the UI falls
+# back to the system sans-serif.
+app/fonts/*.ttf
+app/fonts/*.otf
+app/fonts/*.woff
+app/fonts/*.woff2
+
+# Logs
+*.log
