@@ -45,7 +45,7 @@ npm run test:ui     # or: node tests/renderer.test.cjs && node tests/scroll-pin.
 
 ```sh
 cd app
-npm run dist        # -> app/dist/HDD-0.01.exe  (portable, x64)
+npm run dist        # -> app/dist/HDD-<version>.exe  (portable, x64)
 ```
 
 Note: `npmRebuild` is set to `false` in `app/package.json`. The project has no native

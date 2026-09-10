@@ -42,7 +42,7 @@
       ]
     },
     "portable": {
-      "artifactName": "HDD-0.01.${ext}"
+      "artifactName": "HDD-${version}.${ext}"
     },
     "compression": "normal"
   }
