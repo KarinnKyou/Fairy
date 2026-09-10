@@ -107,10 +107,50 @@ async function emit(type, text) {
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await sleep(60);
   if (askCalls.length !== 1) throw new Error('api.ask 未被调用');
-  const sys = askCalls[0].messages[0];
+
+  // Built as: system persona, then (only while the history is short) one example pair,
+  // then the real history.
+  const sent = askCalls[0].messages;
+  const sys = sent[0];
   if (sys.role !== 'system' || !/Fairy/.test(sys.content)) throw new Error('缺少 Fairy 自我认知 system prompt');
-  if (!/Emoji/.test(sys.content)) throw new Error('system prompt 缺少禁 Emoji 指令');
-  console.log('PASS 发送回显 + system prompt（自我认知 Fairy + 禁 Emoji）');
+
+  // Persona must carry the character, the anti-emoji rule and the identity constraint.
+  if (!/emoji/i.test(sys.content)) throw new Error('system prompt 缺少禁 Emoji 指令');
+  if (!/DeepSeek/.test(sys.content)) throw new Error('system prompt 未禁止自称其它模型');
+  if (!/主人/.test(sys.content)) throw new Error('system prompt 缺少「主人」称呼设定');
+  if (!/核心性格/.test(sys.content)) throw new Error('system prompt 缺少性格设定（personality.js 未注入？）');
+  if (!/# 当前时间/.test(sys.content)) throw new Error('system prompt 缺少当前时间');
+  if (!/\d{4}年\d{2}月\d{2}日 \d{2}:\d{2}/.test(sys.content)) {
+    throw new Error('当前时间格式异常: ' + (sys.content.match(/# 当前时间[\s\S]{0,40}/) || [''])[0]);
+  }
+
+  // The persona must not claim abilities HDD does not have.
+  // A loose "does the prompt mention a boundary somewhere" check is not enough: the
+  // words 边界/无法 appear elsewhere in the persona, so any invented capability slips
+  // through. Assert on the capability section itself plus the exact denial wording.
+  const capIdx = sys.content.indexOf('能力边界');
+  if (capIdx < 0) throw new Error('system prompt 缺少「能力边界」小节');
+  const capEnd = sys.content.indexOf('\n# 说话规则', capIdx);
+  const cap = sys.content.slice(capIdx, capEnd < 0 ? undefined : capEnd);
+  for (const denied of ['没有摄像头', '无法读取硬件状态', '无法执行任何操作', '工具调用']) {
+    if (!cap.includes(denied)) throw new Error('能力边界段落缺少对「' + denied + '」的否定');
+  }
+  // Claims of imaginary powers: forbidden outright, anywhere in the prompt.
+  const fakeClaims = ['我连接了主人的摄像头', '能看到主人', '已经被我拉黑', '为您预订了'];
+  for (const claim of fakeClaims) {
+    if (sys.content.includes(claim)) throw new Error('persona 声称了不存在的能力: ' + claim);
+  }
+
+  // One example pair while the history is short, inserted right after the system prompt.
+  if (sent.length < 3) throw new Error('未注入 few-shot 示例');
+  if (sent[1].role !== 'user' || sent[2].role !== 'assistant') {
+    throw new Error('few-shot 示例位置异常: ' + sent.slice(1, 3).map((m) => m.role).join(','));
+  }
+  if (sent[1].content === '你是谁') throw new Error('few-shot 示例与真实输入混淆');
+  const last = sent[sent.length - 1];
+  if (last.role !== 'user' || last.content !== '你是谁') throw new Error('真实输入未置于消息末尾');
+
+  console.log('PASS 发送回显 + 性格 system prompt（性格设定 + 时间 + 能力边界 + few-shot 示例）');
 
   // --- reasoning -> thinking state ---
   await emit('reasoning', '思考片段');

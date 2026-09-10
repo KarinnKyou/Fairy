@@ -16,6 +16,10 @@ const FONT_SRC = path.join(APP, 'fonts');
 const eyeSVG = require(path.join(SOURCE, 'mascot-eye-svg.js'));
 const fx = require(path.join(SOURCE, 'mascot-effects-svg.js'));
 
+/* Persona lives in app/personality.js. It is embedded as JSON so quotes, newlines and
+   backslashes in the prompt cannot break the page's inline script. */
+const personality = require(path.join(APP, 'personality.js'));
+
 const WWW = path.join(APP, 'www');
 const WWW_ASSETS = path.join(WWW, 'assets');
 const WWW_FONTS = path.join(WWW_ASSETS, 'fonts');
@@ -25,6 +29,8 @@ fs.mkdirSync(WWW_FONTS, { recursive: true });
 
 const template = fs.readFileSync(path.join(APP, 'src', 'live.template.html'), 'utf8');
 const html = template
+  .split('@@FAIRY_PERSONA@@').join(JSON.stringify(personality.PERSONA))
+  .split('@@FAIRY_EXAMPLES@@').join(JSON.stringify(personality.EXAMPLES))
   .split('@@FAIRY_EYE@@').join(eyeSVG)
   .split('@@FAIRY_HALO@@').join(fx.HALO_SVG)
   .split('@@FAIRY_PULSE@@').join(fx.PULSE_SVG);

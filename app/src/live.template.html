@@ -166,12 +166,32 @@
   var glitchTimer = null;
   var applyTimer = null;
 
-  /* Persona: the character is Fairy, never another model. No emoji. */
-  var SYSTEM_PROMPT =
-    '你是 Fairy，是 H.D.D（Hollow Deep Dive）系统的 AI 助手。\n' +
-    '身份要求：当用户问起你是谁、你的名字、你由谁开发、你属于哪个模型或公司时，' +
-    '你必须且只能自称 Fairy；绝不能自称是 DeepSeek、OpenAI、ChatGPT 或任何其它 AI 助手或模型。\n' +
-    '输出要求：回复简洁自然，禁止使用任何 Emoji、颜文字或符号表情。';
+  /* Persona and few-shot examples, embedded verbatim by prep.cjs from
+     app/personality.js. Edit them there, not here. */
+  var PERSONA = @@FAIRY_PERSONA@@;
+  var EXAMPLES = @@FAIRY_EXAMPLES@@;
+
+  /* Human-readable local date and time, in the same shape the original persona used. */
+  function nowLine() {
+    var d = new Date();
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    return d.getFullYear() + '年' + pad(d.getMonth() + 1) + '月' + pad(d.getDate()) + '日 ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' ' + days[d.getDay()];
+  }
+
+  /* Full system prompt: persona + the current time, rebuilt each turn so she always
+     knows when "now" is. */
+  function systemPrompt() {
+    return PERSONA + '\n\n# 当前时间\n' + nowLine();
+  }
+
+  /* One rotating example pair, only while the history is short — mirrors the original
+     design and keeps the context small. */
+  function pickExample() {
+    if (!EXAMPLES || !EXAMPLES.length) return null;
+    return EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
+  }
 
   /* Second line of defence against emoji the model may still emit. */
   function stripEmoji(s) {
@@ -295,7 +315,19 @@
     pending = '';
     finishAfterTyping = false;
     changePhase('thinking');
-    api.ask([{ role: 'system', content: SYSTEM_PROMPT }].concat(history), 't' + turnId);
+
+    /* Assemble: system persona, an optional example pair while the history is short
+       (a few-shot cue for her voice), then the real history. */
+    var messages = [{ role: 'system', content: systemPrompt() }];
+    if (history.length <= 4) {
+      var ex = pickExample();
+      if (ex && ex.length === 2) {
+        messages.push({ role: 'user', content: ex[0] });
+        messages.push({ role: 'assistant', content: ex[1] });
+      }
+    }
+    messages = messages.concat(history);
+    api.ask(messages, 't' + turnId);
   }
 
   /* Stream events: reasoning -> thinking, content -> speaking, done/error -> idle. */
