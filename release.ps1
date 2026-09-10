@@ -60,6 +60,12 @@
 .PARAMETER DryRun
     Validate and print the plan without changing anything.
 
+.PARAMETER VerifyOnly
+    Run only the artifact checks against the build already sitting in app\dist, then stop.
+    No version bump, no build, no tests, no commit. Needs app\dist\win-unpacked, which the
+    portable target creates during a build and step 3 deletes afterwards — so this is for
+    inspecting a fresh unpacked build, and for testing the checks themselves.
+
 .EXAMPLE
     .\release.ps1 -Version 0.1.0
     Bump to 0.1.0, build, verify, commit, push and publish v0.1 as a pre-release,
@@ -78,6 +84,10 @@
     Show what would happen, change nothing.
 
 .EXAMPLE
+    .\release.ps1 -Version 0.1.0 -VerifyOnly
+    Re-run only the checks on the asar currently in app\dist.
+
+.EXAMPLE
     .\release.ps1 -Version 1.0.0 -Final
     Publish the final 1.0.0 as a normal (non-pre-release) release.
 #>
@@ -94,7 +104,8 @@ param(
     [switch]$Final,
     [switch]$SkipTests,
     [switch]$NoPush,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$VerifyOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,6 +117,74 @@ function Ok    { param([string]$m) Write-Host "  [ok]   $m" -ForegroundColor Gre
 function Warn  { param([string]$m) Write-Host "  [warn] $m" -ForegroundColor Yellow }
 function Fail  { param([string]$m) Write-Host "  [FAIL] $m" -ForegroundColor Red; exit 1 }
 function Step  { param([string]$m) Write-Host "`n=== $m ===" -ForegroundColor White }
+
+# Checks on what actually landed inside the packaged asar. Split out from step 3 so it can
+# also be run on its own against an existing build (-VerifyOnly), which is how the checks
+# themselves get tested — a check that cannot be shown to fail is not a check.
+function Assert-PackagedContents {
+    param([string]$AsarFile, [string]$RealKey)
+
+    if (-not (Test-Path $AsarFile)) {
+        Warn "no unpacked asar at $AsarFile — skipped the deep verification of the exe contents"
+        return
+    }
+    $asarTool = Join-Path $root 'app\node_modules\@electron\asar\bin\asar.js'
+    if (-not (Test-Path $asarTool)) {
+        Warn "asar tool not available — skipped the deep verification of the exe contents"
+        return
+    }
+
+    $tmp = Join-Path $env:TEMP ("hdd-verify-" + [guid]::NewGuid().ToString('N'))
+    try {
+        Push-Location (Join-Path $root 'app')
+        try { node $asarTool extract $AsarFile $tmp 2>&1 | Out-Null } finally { Pop-Location }
+
+        if ($RealKey) {
+            $packedCfg = Get-Content (Join-Path $tmp 'config.json') -Raw
+            if ($packedCfg.Contains($RealKey)) { Fail "SECURITY: the built exe contains your real API key. Do not distribute it!" }
+            Ok "exe contains no real API key"
+        } else {
+            Warn "no API key on hand — skipped the key-leak check"
+        }
+
+        $packedLive = Get-Content (Join-Path $tmp 'www\live.html') -Raw
+        if ($packedLive -notmatch 'radial-gradient\(ellipse 78vmin 58vmin at 50% 46%') { Warn "the fade mask looks unexpected" } else { Ok "fade mask present" }
+        if ($packedLive -notmatch 'function pinBottom\(\)') { Warn "pinBottom() is missing (auto-scroll will not work)" } else { Ok "auto-scroll (pinBottom) present" }
+        if ($packedLive -notmatch 'font-weight:\s*400\s*!important') { Warn "the font-weight override is missing (text will look blurry)" } else { Ok "font-weight override present" }
+
+        # Every local module the app pulls in must actually be inside the asar. The list is
+        # derived from the require() calls rather than hardcoded, because hardcoding is what
+        # failed: build.files was not updated when main.js gained conversation.js and
+        # personality.js, and the resulting exe died on startup with MODULE_NOT_FOUND.
+        $missing = [System.Collections.Generic.List[string]]::new()
+        foreach ($src in @('main.js', 'conversation.js', 'personality.js', 'store.js')) {
+            $srcPath = Join-Path $tmp $src
+            if (-not (Test-Path $srcPath)) {
+                if (-not $missing.Contains("$src is not packaged")) { $missing.Add("$src is not packaged") }
+                continue
+            }
+            foreach ($m in [regex]::Matches((Get-Content $srcPath -Raw), "require\(['""]\./([^'""]+)['""]\)")) {
+                $dep = $m.Groups[1].Value
+                $note = "$dep is not packaged (required by $src)"
+                if (-not (Test-Path (Join-Path $tmp $dep)) -and -not $missing.Contains($note)) { $missing.Add($note) }
+            }
+        }
+        if ($missing.Count) {
+            Fail "the packaged app cannot start — modules it requires are missing from the asar: $($missing -join '; ')"
+        }
+        Ok "all required modules are inside the asar"
+
+        # A published artifact must not redistribute the font from app/fonts/ (ADR-011).
+        $packedFonts = Get-ChildItem (Join-Path $tmp 'www\assets\fonts') -ErrorAction SilentlyContinue |
+            Where-Object { @('.ttf', '.otf', '.woff', '.woff2') -contains $_.Extension.ToLower() }
+        if ($packedFonts) {
+            Fail "the exe embeds font files ($($packedFonts.Name -join ', ')). Published artifacts must not redistribute them — check that HDD_NO_FONTS=1 reached prep."
+        }
+        Ok "no font files in the exe"
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 # ---------------------------------------------------------------- locate repo
 $root = $PSScriptRoot
@@ -127,6 +206,21 @@ $parts = $Version -split '\.'
 $short = if ($parts[2] -eq '0') { "$($parts[0]).$($parts[1])" } else { $Version }
 if (-not $Tag) { $Tag = "v$short" }
 $exeName = "HDD-$Version.exe"
+
+# ---------------------------------------------------------------- verify-only
+# Checking the artifact is the one step worth being able to repeat on its own: it needs no
+# key, changes nothing, and is the only way to test the checks against a known-bad build.
+if ($VerifyOnly) {
+    Step "Verify the artifact (no build, no commit)"
+    $knownKey = ''
+    if (Test-Path $cfgPath) {
+        $km = [regex]::Match((Get-Content $cfgPath -Raw), '"apiKey"\s*:\s*"([^"]*)"')
+        if ($km.Success) { $knownKey = $km.Groups[1].Value }
+    }
+    Assert-PackagedContents -AsarFile (Join-Path $root 'app\dist\win-unpacked\resources\app.asar') -RealKey $knownKey
+    Info "`nVerify-only run complete."
+    exit 0
+}
 
 # ---------------------------------------------------------------- preflight
 Step "0. Preflight"
@@ -291,17 +385,29 @@ $keyRestored = Invoke-WithPlaceholderConfig -CfgPath $cfgPath -ExamplePath $exam
             try { npm test 2>&1 | Out-Null; if ($LASTEXITCODE -ne 0) { throw "tests failed — fix them before releasing" } }
             finally { Pop-Location }
             Ok "tests passed"
-            # asset re-bake noise is not part of a release commit
-            git -C $root checkout -- MANIFEST.json assets/preview.html assets/tokens/fairy-palette.json 2>$null
+            # Baking is reproducible now, so a diff here means a source asset really
+            # changed. Report it and let step 4 commit it: silently reverting would ship an
+            # exe built from assets the repository does not describe.
+            $rebaked = git -C $root status --porcelain -- MANIFEST.json assets/preview.html assets/tokens/fairy-palette.json
+            if ($rebaked) {
+                Warn "re-baking changed committed asset output (these will be committed):"
+                $rebaked | ForEach-Object { Write-Host "         $_" -ForegroundColor DarkGray }
+            }
         }
 
         Info "  running npm run dist (this takes a few minutes)..."
         Push-Location (Join-Path $root 'app')
         try {
+            # Published artifacts must not embed the font from app/fonts/ (ADR-011).
+            # prep.cjs reads this and skips font registration entirely.
+            $env:HDD_NO_FONTS = '1'
             npm run dist 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
             if ($LASTEXITCODE -ne 0) { throw "build failed" }
-        } finally { Pop-Location }
-        Ok "build finished"
+        } finally {
+            Remove-Item Env:HDD_NO_FONTS -ErrorAction SilentlyContinue
+            Pop-Location
+        }
+        Ok "build finished (fonts excluded)"
     }
 if ($keyRestored) { Ok "your real API key was restored into app/config.json" }
 else { Fail "COULD NOT restore app/config.json — put your real key back before running the app!" }
@@ -318,27 +424,9 @@ if (-not (Test-Path $exePath)) {
 $exeSizeMb = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
 Ok "artifact: app/dist/$exeName  ($exeSizeMb MB)"
 
-$asarTool = Join-Path $root 'app\node_modules\@electron\asar\bin\asar.js'
 $asarFile = Join-Path $root 'app\dist\win-unpacked\resources\app.asar'
-if ((Test-Path $asarTool) -and (Test-Path $asarFile)) {
-    $tmp = Join-Path $env:TEMP ("hdd-verify-" + [guid]::NewGuid().ToString('N'))
-    try {
-        Push-Location (Join-Path $root 'app')
-        try { node $asarTool extract $asarFile $tmp 2>&1 | Out-Null } finally { Pop-Location }
-        $packedCfg = Get-Content (Join-Path $tmp 'config.json') -Raw
-        if ($packedCfg.Contains($realKey)) { Fail "SECURITY: the built exe contains your real API key. Do not distribute it!" }
-        Ok "exe contains no real API key"
-        $packedLive = Get-Content (Join-Path $tmp 'www\live.html') -Raw
-        if ($packedLive -notmatch 'radial-gradient\(ellipse 78vmin 58vmin at 50% 46%') { Warn "the fade mask looks unexpected" } else { Ok "fade mask present" }
-        if ($packedLive -notmatch 'function pinBottom\(\)') { Warn "pinBottom() is missing (auto-scroll will not work)" } else { Ok "auto-scroll (pinBottom) present" }
-        if ($packedLive -notmatch 'font-weight:\s*400\s*!important') { Warn "the font-weight override is missing (text will look blurry)" } else { Ok "font-weight override present" }
-    } finally {
-        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item (Join-Path $root 'app\dist\win-unpacked') -Recurse -Force -ErrorAction SilentlyContinue
-    }
-} else {
-    Warn "asar tool or win-unpacked not available — skipped the deep verification of the exe contents"
-}
+Assert-PackagedContents -AsarFile $asarFile -RealKey $realKey
+Remove-Item (Join-Path $root 'app\dist\win-unpacked') -Recurse -Force -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------- 4. commit
 Step "4. Commit"
