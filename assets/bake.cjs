@@ -1,19 +1,20 @@
 'use strict';
 /*
- * bake.cjs — Fairy Visual Assets 生成器
+ * bake.cjs — Fairy Visual Assets generator
  * ---------------------------------------------------------------------------
- * 输入：source/ 下的资产源模块（自 Fairy-DSH-main/fairy-visual/dsh-fairy-visual
- *       src/client 逐字复制；CJS 与 ESM 分区保存，保证可原样执行）。
- * 输出（assets/）：
+ * Input: the asset source modules under source/ (copied verbatim from Fairy-DSH-main/
+ *       fairy-visual/dsh-fairy-visual/src/client; CJS and ESM stored separately, runnable as-is).
+ * Output (assets/):
  *   svg/    fairy-eye.svg / fairy-eye-thinking.svg / fairy-eye-comforting.svg
- *           fairy-halo.svg / fairy-pulse.svg        （可独立打开的 SVG）
- *   css/    fairy-mascot.css / fairy-hdd-theme.css  （抽取自源码的原始 CSS）
- *   tokens/ fairy-palette.json                      （配色/变量/字体统计）
- *   preview.html                                    （资产画廊 + 交互演示）
- *   ../MANIFEST.json                                （来源映射 + SHA-256）
+ *           fairy-halo.svg / fairy-pulse.svg        (SVG files that open standalone)
+ *   css/    fairy-mascot.css / fairy-hdd-theme.css  (raw CSS extracted from the sources)
+ *   tokens/ fairy-palette.json                      (palette / variable / font statistics)
+ *   preview.html                                    (asset gallery + interactive demo)
+ *   ../MANIFEST.json                                (origin mapping + SHA-256)
  *
- * 只读依赖：mascot-geometry / mascot-eye-svg / mascot-effects-svg / mascot-style
- * 为纯 CommonJS 自包含模块；style.js 为 ESM，经最小 document 桩执行以抽取 CSS。
+ * Read-only dependencies: mascot-geometry / mascot-eye-svg / mascot-effects-svg / mascot-style
+ * are pure self-contained CommonJS modules; style.js is ESM and is run through a minimal
+ * document stub to extract CSS.
  */
 const fs = require('fs');
 const path = require('path');
@@ -80,12 +81,12 @@ function sourceDigest() {
 
 const SOURCE_DIGEST = sourceDigest();
 
-/* ============================== 载入 CJS 资产模块 ============================== */
+/* ============================== Load CJS asset modules ============================== */
 const eyeSVG = require(path.join(SOURCE, 'mascot-eye-svg.js'));
 const fx = require(path.join(SOURCE, 'mascot-effects-svg.js'));
 const mascotCSS = require(path.join(SOURCE, 'mascot-style.js'));
 
-/* ============================== 独立 SVG 默认样式 ============================== */
+/* ============================== Standalone SVG default styles ============================== */
 const BASE_EYE_CSS = `
 svg{display:block;width:100%;height:auto;overflow:visible}
 :root{--dsh-fairy-outer-halo-color:#c9f8ff}
@@ -137,7 +138,7 @@ const injectStyle = (markup, css) => {
   return markup.slice(0, idx) + '<style>\n' + css + '\n</style>\n' + markup.slice(idx);
 };
 
-/* ============================== 烘焙 SVG 文件 ============================== */
+/* ============================== Bake SVG files ============================== */
 const XML = '<?xml version="1.0" encoding="UTF-8"?>\n';
 const variants = [
   ['fairy-eye.svg', BASE_EYE_CSS],
@@ -150,13 +151,13 @@ for (const [name, css] of variants) {
 writeFile(path.join('assets/svg', 'fairy-pulse.svg'), XML + injectStyle(fx.PULSE_SVG, PULSE_SVG_CSS) + '\n', 'baked', ORIGIN_BASE + '/mascot-effects-svg.js');
 writeFile(path.join('assets/svg', 'fairy-halo.svg'), XML + injectStyle(fx.HALO_SVG, HALO_SVG_CSS) + '\n', 'baked', ORIGIN_BASE + '/mascot-effects-svg.js');
 
-/* ============================== CSS 抽取 ============================== */
+/* ============================== CSS extraction ============================== */
 writeFile(path.join('assets/css', 'fairy-mascot.css'), mascotCSS, 'extracted', ORIGIN_BASE + '/mascot-style.js');
 
 let themeCSS = '';
 (async () => {
-  /* 最小 document 桩：让 ESM 版 style.js 的 injectStyles() 在 Node 中把全部
-     section 文本收集进一个 style 元素，从而原样导出整套 HDD 主题 CSS。 */
+  /* Minimal document stub: lets the ESM build of style.js have injectStyles(), under Node,
+     collect every section's text into one style element, exporting the full HDD theme CSS as-is. */
   globalThis.document = {
     getElementById: () => null,
     createElement: () => {
@@ -183,7 +184,7 @@ let themeCSS = '';
     ' */\n';
   writeFile(path.join('assets/css', 'fairy-hdd-theme.css'), header + themeCSS, 'extracted', ORIGIN_BASE + '/style.js');
 
-  /* ============================== 配色 token ============================== */
+  /* ============================== Palette token ============================== */
   const sources = {
     'fairy-hdd-theme.css': themeCSS,
     'fairy-mascot.css': mascotCSS,
@@ -254,7 +255,7 @@ let themeCSS = '';
     note: 'SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main. Baking is reproducible: unchanged sources produce identical bytes, so these hashes can be re-derived from a clean checkout.',
     files: manifest.slice().sort((a, b) => a.file.localeCompare(b.file)),
   };
-  /* MANIFEST.json 不列入自身（自引用哈希无意义）；files 为快照数组。 */
+  /* MANIFEST.json omits itself (self-hashing is meaningless); files is a snapshot array. */
   fs.writeFileSync(path.join(ROOT, 'MANIFEST.json'), JSON.stringify(manifestDoc, null, 2) + '\n');
 
   console.log('bake OK — produced:');
@@ -263,7 +264,7 @@ let themeCSS = '';
   }
 })();
 
-/* ============================== preview.html 组装 ============================== */
+/* ============================== preview.html assembly ============================== */
 function buildPreview({ palette }) {
   const eyeMarkup = eyeSVG;
   const pulseMarkup = fx.PULSE_SVG;
