@@ -1,6 +1,6 @@
 {
   "name": "hdd",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "commonjs",
   "description": "HDD - Fairy desktop terminal (visual assets + Electron app + build scripts)",
