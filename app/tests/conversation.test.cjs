@@ -210,27 +210,45 @@ function open(name, extra) {
   check(/emoji/i.test(sys), 'system prompt 包含禁 emoji 指令');
   check(/DeepSeek/.test(sys), 'system prompt 禁止自称其它模型');
   check(/主人/.test(sys), 'system prompt 规定「主人」称呼');
-  check(/# 核心性格/.test(sys), 'system prompt 含核心性格段');
-  check(/# 说话规则/.test(sys), 'system prompt 含说话规则段');
+  check(/说话规则/.test(sys), 'system prompt 含说话规则段');
   check(/\d{4}年\d{2}月\d{2}日 \d{2}:\d{2}/.test(sys), 'system prompt 含格式正确的当前时间');
 
-  /* The capability boundary must survive edits. Asserting merely that some boundary-ish
-   * word appears anywhere is too loose (边界/无法 occur elsewhere in the persona), so
-   * check the section itself for each explicit denial. */
-  const capIdx = sys.indexOf('能力边界');
-  check(capIdx >= 0, 'system prompt 含「能力边界」小节');
-  const capEnd = sys.indexOf('\n# 说话规则', capIdx);
-  const cap = sys.slice(capIdx, capEnd < 0 ? undefined : capEnd);
-  for (const denied of ['没有摄像头', '无法读取硬件状态', '无法执行任何操作', '工具调用']) {
-    check(cap.includes(denied), '能力边界段落明确否定「' + denied + '」');
+  /* The persona is intentionally MINIMAL until v1.0. Guard the size so a rich character
+   * cannot creep back in before the architecture behind it exists — a large persona made
+   * her perform personality instead of answering questions. Raise this limit deliberately. */
+  check(real.PERSONA.length < 900,
+    'persona 保持精简（' + real.PERSONA.length + ' < 900 字符；完整性格留给 v1.0）');
+
+  /* The capability boundary is the one thing that must never be dropped: without it she
+   * invents having done things. Check each denial is actually stated. */
+  for (const denied of ['没有摄像头', '读不到硬件状态', '不能执行任何操作', '工具调用']) {
+    check(sys.includes(denied), '明确否定能力「' + denied + '」');
   }
-  for (const claim of ['我连接了主人的摄像头', '能看到主人', '已经被我拉黑', '为您预订了']) {
+  check(/如实说做不到/.test(sys), '要求如实说明做不到，而非编造完成');
+  /* Claims of imaginary powers must not appear as assertions. The phrasing below is used
+   * in the persona only as a PROHIBITION ("do not fabricate ..."), so a naive substring
+   * check would fire on the rule itself — test the sentence it sits in. */
+  for (const claim of ['我连接了主人的摄像头', '能看到主人']) {
     check(!sys.includes(claim), 'persona 未声称不存在的能力：' + claim);
   }
+  const fabricated = /(已经为您做好了|已为您完成|已经帮您)/.exec(sys);
+  if (fabricated) {
+    const around = sys.slice(Math.max(0, fabricated.index - 20), fabricated.index + 20);
+    check(/不要编造|绝不|禁止|不得/.test(around),
+      '「' + fabricated[0] + '」只作为禁令出现，未作为声称：' + JSON.stringify(around));
+  } else {
+    check(true, 'persona 未出现任何「已完成」式声称');
+  }
 
-  /* Few-shot pool sanity: buildMessages relies on each entry being exactly one pair. */
-  check(Array.isArray(real.EXAMPLES) && real.EXAMPLES.length > 0, '示例池非空');
-  check(real.EXAMPLES.every((e) => Array.isArray(e) && e.length === 2), '每个示例都是恰好一問一答');
+  /* No voice samples while the persona is minimal. buildMessages only injects them when
+   * the pool is non-empty, so an empty pool must produce no sample section at all. */
+  check(real.EXAMPLES.length === 0, '示例池为空（精简期不注入语气样例）');
+  const msgs = conv.buildMessages({
+    persona: real.PERSONA, examples: real.EXAMPLES,
+    identity: { firstSeen: Date.now(), turns: 1 }, history: [], now: Date.now(),
+  });
+  check(!/# 语气样例/.test(msgs[0].content), '空的示例池不会产生样例段落');
+  check(msgs.length === 1, '无历史时只发 system，不掺入任何伪造轮次');
 }
 
 /* ---------------------------------------------------------------- cleanup */

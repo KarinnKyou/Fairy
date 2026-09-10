@@ -169,9 +169,17 @@
      assembled by the main process (app/conversation.js) - this layer never builds a
      prompt. It draws the transcript and sends one message at a time. */
 
-  /* Second line of defence against emoji the model may still emit. */
+  /* Second line of defence against emoji the model may still emit.
+     Also flattens the reply to a single line: the output container uses
+     `white-space: pre-wrap`, so a "\n\n" in the model's text renders as a blank line.
+     A terminal transcript is one line per reply, so any run of newlines and surrounding
+     spaces collapses to a single space. */
   function stripEmoji(s) {
-    return String(s || '').replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F]/gu, '').replace(/\u200D/g, '');
+    return String(s || '')
+      .replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F]/gu, '')
+      .replace(/\u200D/g, '')
+      .replace(/\s*\n\s*/g, ' ')
+      .trim();
   }
 
   function scrollBottom() {
