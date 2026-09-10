@@ -138,11 +138,15 @@ function fresh(name) {
 /* ---------------------------------------------------------------- 7. identity meta */
 {
   const { s } = fresh('identity');
-  const id1 = store.ensureIdentity(s.db);
-  check(typeof id1.firstSeen === 'number' && id1.firstSeen > 0, 'first_seen 已写入');
-  check(id1.turns === 0, '初始轮数为 0');
+  const id0 = store.ensureIdentity(s.db);
+  check(id0.turns === 0, '初始轮数为 0');
+  check(id0.firstSeen === 0, '尚未发生对话时 first_seen 为 0（打开库不算"首次见面"）');
 
-  store.bumpTurns(s.db);
+  store.bumpTurns(s.db);          /* the first completed turn establishes first_seen */
+  const id1 = store.ensureIdentity(s.db);
+  check(id1.firstSeen > 0, '首个完成的回合写入 first_seen');
+  check(id1.turns === 1, '轮数为 1');
+
   store.bumpTurns(s.db);
   const id2 = store.ensureIdentity(s.db);
   check(id2.turns === 2, '轮数累加到 2');

@@ -152,8 +152,7 @@
   /* Turn phase: idle | thinking | speaking */
   var phase = 'idle';
   var busy = false;
-  var turnId = 0;
-  var history = [];
+  var turnId = 0;   /* only used to ignore stale stream events; the store owns turn ids */
 
   /* Typewriter state */
   var currentLine = null;
@@ -166,32 +165,9 @@
   var glitchTimer = null;
   var applyTimer = null;
 
-  /* Persona and few-shot examples, embedded verbatim by prep.cjs from
-     app/personality.js. Edit them there, not here. */
-  var PERSONA = @@FAIRY_PERSONA@@;
-  var EXAMPLES = @@FAIRY_EXAMPLES@@;
-
-  /* Human-readable local date and time, in the same shape the original persona used. */
-  function nowLine() {
-    var d = new Date();
-    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-    var days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-    return d.getFullYear() + '年' + pad(d.getMonth() + 1) + '月' + pad(d.getDate()) + '日 ' +
-      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' ' + days[d.getDay()];
-  }
-
-  /* Full system prompt: persona + the current time, rebuilt each turn so she always
-     knows when "now" is. */
-  function systemPrompt() {
-    return PERSONA + '\n\n# 当前时间\n' + nowLine();
-  }
-
-  /* One rotating example pair, only while the history is short — mirrors the original
-     design and keeps the context small. */
-  function pickExample() {
-    if (!EXAMPLES || !EXAMPLES.length) return null;
-    return EXAMPLES[Math.floor(Math.random() * EXAMPLES.length)];
-  }
+  /* The persona, the few-shot examples, the profile and the current time are all
+     assembled by the main process (app/conversation.js) - this layer never builds a
+     prompt. It draws the transcript and sends one message at a time. */
 
   /* Second line of defence against emoji the model may still emit. */
   function stripEmoji(s) {
@@ -295,7 +271,8 @@
   function finishTurn() {
     if (typing) { finishAfterTyping = true; return; } /* let the typewriter drain */
     if (currentLine && !currentLine.textContent) currentLine.remove();
-    history.push({ role: 'assistant', content: currentLine ? currentLine.textContent : '' });
+    /* The transcript is owned by the main process (docs/ADR.md ADR-001); this layer only
+       draws what it is given, so there is no local history to maintain here. */
     currentLine = null;
     busy = false;
     changePhase('idle');
@@ -306,8 +283,6 @@
     var text = input.value.trim();
     if (!text || busy || !api) return;
     lineEl('in', '> ' + text);
-    history.push({ role: 'user', content: text });
-    if (history.length > 30) history = history.slice(history.length - 30);
     input.value = '';
     busy = true;
     turnId += 1;
@@ -316,18 +291,9 @@
     finishAfterTyping = false;
     changePhase('thinking');
 
-    /* Assemble: system persona, an optional example pair while the history is short
-       (a few-shot cue for her voice), then the real history. */
-    var messages = [{ role: 'system', content: systemPrompt() }];
-    if (history.length <= 4) {
-      var ex = pickExample();
-      if (ex && ex.length === 2) {
-        messages.push({ role: 'user', content: ex[0] });
-        messages.push({ role: 'assistant', content: ex[1] });
-      }
-    }
-    messages = messages.concat(history);
-    api.ask(messages, 't' + turnId);
+    /* One message goes out. The main process assembles the prompt from the stored
+       transcript, the persona and the profile, then calls the model. */
+    api.ask(text, 't' + turnId);
   }
 
   /* Stream events: reasoning -> thinking, content -> speaking, done/error -> idle. */
@@ -356,8 +322,25 @@
   });
   out.addEventListener('mousedown', function () { input.focus(); });
 
+  /* Repaint the stored transcript so the conversation survives a restart. Errors are
+     shown as they were recorded; system rows are not part of the visible transcript. */
+  function restoreHistory() {
+    if (!api || !api.listHistory) return Promise.resolve();
+    return api.listHistory(60).then(function (rows) {
+      if (!rows || !rows.length) return;
+      for (var i = 0; i < rows.length; i++) {
+        var m = rows[i];
+        if (m.role === 'user') lineEl('in', '> ' + m.content);
+        else if (m.role === 'assistant') lineEl('assistant', m.content);
+        else if (m.role === 'error') lineEl('err', '! ' + m.content);
+      }
+    }).catch(function () { /* a repaint failure must never block the input */ });
+  }
+
   if (api) {
-    api.getConfig().then(function (cfg) {
+    restoreHistory().then(function () {
+      return api.getConfig();
+    }).then(function (cfg) {
       if (!cfg || !cfg.configured) {
         lineEl('err', '! No API key configured (app/config.json or DEEPSEEK_API_KEY)');
         input.disabled = true;

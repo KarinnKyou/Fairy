@@ -242,17 +242,22 @@ function metaSet(db, key, value) {
   ).run(key, String(value));
 }
 
-/* Initialise the few identity facts Phase 1 needs, without overwriting them later. */
+/* Initialise the identity facts Phase 1 needs, without overwriting them later.
+ *
+ * `first_seen` is NOT stamped here: opening a database is not a first meeting. It is
+ * stamped by the first completed turn (see bumpTurns), so "first seen" means "when we
+ * first talked", not "when the file appeared". */
 function ensureIdentity(db) {
-  if (metaGet(db, 'first_seen') == null) metaSet(db, 'first_seen', nowMs());
   if (metaGet(db, 'turns') == null) metaSet(db, 'turns', 0);
   return {
-    firstSeen: Number(metaGet(db, 'first_seen')),
-    turns: Number(metaGet(db, 'turns')),
+    firstSeen: Number(metaGet(db, 'first_seen') || 0),
+    turns: Number(metaGet(db, 'turns') || 0),
   };
 }
 
 function bumpTurns(db, delta) {
+  /* The first completed turn is what establishes the relationship. */
+  if (metaGet(db, 'first_seen') == null) metaSet(db, 'first_seen', nowMs());
   const n = Number(metaGet(db, 'turns') || 0) + (delta == null ? 1 : delta);
   metaSet(db, 'turns', n);
   metaSet(db, 'last_seen', nowMs());

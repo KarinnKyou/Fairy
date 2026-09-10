@@ -7,7 +7,7 @@
   "scripts": {
     "assets:bake": "node assets/bake.cjs",
     "app:prep": "node app/scripts/prep.cjs",
-    "app:test": "node app/tests/store.test.cjs && node app/scripts/prep.cjs && node app/tests/renderer.test.cjs && node app/tests/scroll-pin.test.cjs",
+    "app:test": "node app/tests/store.test.cjs && node app/tests/conversation.test.cjs && node app/scripts/prep.cjs && node app/tests/renderer.test.cjs && node app/tests/scroll-pin.test.cjs",
     "app:start": "npm --prefix app start",
     "app:dist": "npm --prefix app run dist",
     "test": "npm run assets:bake && npm run app:test"

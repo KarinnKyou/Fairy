@@ -1,8 +1,14 @@
 'use strict';
 /*
- * renderer.test.cjs — terminal UI regression tests (jsdom; no Electron, no network).
- * Covers: centred mascot + fade mask, no bubbles/prompts, persona system prompt,
- * emoji stripping, typewriter output, thinking/speaking state switching.
+ * renderer.test.cjs — display-layer regression tests (jsdom; no Electron, no network).
+ *
+ * Since ADR-001 the renderer holds no authoritative state and builds no prompt: it paints
+ * the transcript and sends one message at a time. Prompt assembly (persona, profile,
+ * history, few-shot examples) is covered by tests/conversation.test.cjs instead.
+ *
+ * Covered here: layout and fade mask invariants, no bubbles/prompt text, history repaint
+ * on startup, sending exactly the typed text, emoji stripping, typewriter, state machine.
+ *
  * Run: node tests/renderer.test.cjs
  */
 const fs = require('fs');
@@ -14,10 +20,17 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'www', 'live.html'), 'ut
 let streamCb = null;
 let askCalls = [];
 let lastId = null;
+/* Transcript the main process would return on startup. Set before the DOM is built. */
+let historyRows = [
+  { id: '1', role: 'user', content: '上次说过的话' },
+  { id: '2', role: 'assistant', content: '主人，我记得。' },
+];
 
 const fakeApi = {
   getConfig: () => Promise.resolve({ configured: true, model: 'deepseek-v4-flash' }),
-  ask: (messages, id) => { askCalls.push({ messages, id }); lastId = id; },
+  listHistory: () => Promise.resolve(historyRows.slice()),
+  /* The real contract: one user message, not a whole history. */
+  ask: (text, id) => { askCalls.push({ text, id }); lastId = id; },
   onStream: (cb) => { streamCb = cb; return () => { streamCb = null; }; },
 };
 
@@ -102,55 +115,49 @@ async function emit(type, text) {
 
   await sleep(80);
 
-  // --- Send + system prompt ---
+  // --- Startup: the stored transcript is repainted, and the renderer builds no prompt ---
+  // historyRows was set before the DOM was created; restoreHistory() runs on startup.
+  {
+    const painted = [...out.querySelectorAll('.line')].map((n) => n.textContent);
+    if (!painted.some((t) => t.includes('上次说过的话'))) {
+      throw new Error('启动时未重绘历史记录，实际绘制了: ' + JSON.stringify(painted));
+    }
+    if (!painted.some((t) => t.startsWith('> '))) {
+      throw new Error('历史里的用户消息缺少终端提示符前缀');
+    }
+    console.log('PASS 启动时重绘历史记录（用户行 + 助手行）');
+  }
+
+  // The renderer must not assemble a prompt any more (ADR-001).
+  if (/var PERSONA\s*=/.test(html)) throw new Error('渲染层仍内嵌 PERSONA（prompt 应归主进程）');
+  if (/function systemPrompt\s*\(/.test(html)) throw new Error('渲染层仍在组装 system prompt');
+  if (/var history\s*=\s*\[/.test(html)) throw new Error('渲染层仍维护自己的 history');
+
+  // --- Send: exactly the typed text, and nothing else ---
   input.value = '你是谁';
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   await sleep(60);
   if (askCalls.length !== 1) throw new Error('api.ask 未被调用');
-
-  // Built as: system persona, then (only while the history is short) one example pair,
-  // then the real history.
-  const sent = askCalls[0].messages;
-  const sys = sent[0];
-  if (sys.role !== 'system' || !/Fairy/.test(sys.content)) throw new Error('缺少 Fairy 自我认知 system prompt');
-
-  // Persona must carry the character, the anti-emoji rule and the identity constraint.
-  if (!/emoji/i.test(sys.content)) throw new Error('system prompt 缺少禁 Emoji 指令');
-  if (!/DeepSeek/.test(sys.content)) throw new Error('system prompt 未禁止自称其它模型');
-  if (!/主人/.test(sys.content)) throw new Error('system prompt 缺少「主人」称呼设定');
-  if (!/核心性格/.test(sys.content)) throw new Error('system prompt 缺少性格设定（personality.js 未注入？）');
-  if (!/# 当前时间/.test(sys.content)) throw new Error('system prompt 缺少当前时间');
-  if (!/\d{4}年\d{2}月\d{2}日 \d{2}:\d{2}/.test(sys.content)) {
-    throw new Error('当前时间格式异常: ' + (sys.content.match(/# 当前时间[\s\S]{0,40}/) || [''])[0]);
+  if (askCalls[0].text !== '你是谁') {
+    throw new Error('发送的不是原始文本，而是: ' + JSON.stringify(askCalls[0].text).slice(0, 80));
   }
-
-  // The persona must not claim abilities HDD does not have.
-  // A loose "does the prompt mention a boundary somewhere" check is not enough: the
-  // words 边界/无法 appear elsewhere in the persona, so any invented capability slips
-  // through. Assert on the capability section itself plus the exact denial wording.
-  const capIdx = sys.content.indexOf('能力边界');
-  if (capIdx < 0) throw new Error('system prompt 缺少「能力边界」小节');
-  const capEnd = sys.content.indexOf('\n# 说话规则', capIdx);
-  const cap = sys.content.slice(capIdx, capEnd < 0 ? undefined : capEnd);
-  for (const denied of ['没有摄像头', '无法读取硬件状态', '无法执行任何操作', '工具调用']) {
-    if (!cap.includes(denied)) throw new Error('能力边界段落缺少对「' + denied + '」的否定');
+  if (typeof askCalls[0].id !== 'string' || !askCalls[0].id) throw new Error('缺少回合 id');
+  if (askCalls[0].messages !== undefined) throw new Error('仍在向主进程发送整份 messages');
+  {
+    const painted = [...out.querySelectorAll('.line.in')].map((n) => n.textContent);
+    if (!painted.some((t) => t === '> 你是谁')) {
+      throw new Error('发送后未在终端回显，实际: ' + JSON.stringify(painted));
+    }
   }
-  // Claims of imaginary powers: forbidden outright, anywhere in the prompt.
-  const fakeClaims = ['我连接了主人的摄像头', '能看到主人', '已经被我拉黑', '为您预订了'];
-  for (const claim of fakeClaims) {
-    if (sys.content.includes(claim)) throw new Error('persona 声称了不存在的能力: ' + claim);
-  }
+  console.log('PASS 发送单条文本（不再传整份 messages，且已回显）');
 
-  // One example pair while the history is short, inserted right after the system prompt.
-  if (sent.length < 3) throw new Error('未注入 few-shot 示例');
-  if (sent[1].role !== 'user' || sent[2].role !== 'assistant') {
-    throw new Error('few-shot 示例位置异常: ' + sent.slice(1, 3).map((m) => m.role).join(','));
-  }
-  if (sent[1].content === '你是谁') throw new Error('few-shot 示例与真实输入混淆');
-  const last = sent[sent.length - 1];
-  if (last.role !== 'user' || last.content !== '你是谁') throw new Error('真实输入未置于消息末尾');
+  console.log('PASS 发送回显 + 会话由主进程接管（渲染层不再组装 prompt）');
 
-  console.log('PASS 发送回显 + 性格 system prompt（性格设定 + 时间 + 能力边界 + few-shot 示例）');
+  // The restored history is already on screen, so later assertions must look only at the
+  // assistant lines produced by this turn, not at every assistant line in the window.
+  const restoredCount = out.querySelectorAll('.line.assistant').length;
+  const liveAssistant = () =>
+    [...out.querySelectorAll('.line.assistant')].slice(restoredCount).map((n) => n.textContent).join('');
 
   // --- reasoning -> thinking state ---
   await emit('reasoning', '思考片段');
@@ -164,7 +171,7 @@ async function emit(type, text) {
   await emit('content', chunk1);
   await waitFor(() => mascot.getAttribute('data-state') === 'comforting', 1500, '安慰态');
   await sleep(90); // ~20ms per char: only a short prefix should be out by now
-  const partial = [...out.querySelectorAll('.line.assistant')].map((n) => n.textContent).join('');
+  const partial = liveAssistant();
   if (partial.length === 0) throw new Error('打字机尚未输出任何字符');
   if (!expectFull.startsWith(partial)) throw new Error('打字机前缀异常: ' + JSON.stringify(partial));
   if (partial.length >= expectFull.length) throw new Error('打字机一次性输出过多（不是逐字）: ' + JSON.stringify(partial));
@@ -175,7 +182,7 @@ async function emit(type, text) {
   await emit('done');
   await waitFor(() => !input.disabled && mascot.getAttribute('data-state') === null, 6000, '回常态');
   await waitFor(() => {
-    const t = [...out.querySelectorAll('.line.assistant')].map((n) => n.textContent).join('');
+    const t = liveAssistant();
     return t === expectFull;
   }, 6000, '整句打完');
   const finalText = [...out.querySelectorAll('.line.assistant')].map((n) => n.textContent).join('');
