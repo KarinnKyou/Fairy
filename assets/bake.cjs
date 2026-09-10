@@ -43,6 +43,43 @@ const writeFile = (rel, content, kind, origin) => {
   record(rel, kind, origin);
 };
 
+/*
+ * Source digest, recorded in the palette and the manifest as `source_digest`.
+ *
+ * This replaces a `generated_at` wall-clock stamp. That stamp lands in
+ * assets/tokens/fairy-palette.json, assets/preview.html and MANIFEST.json, so every run
+ * rewrote three tracked files with no content change: `npm test` (which bakes) left the
+ * tree dirty, and MANIFEST.json's promise of "SHA-256 over the exact file bytes" could not
+ * be reproduced from a clean checkout.
+ *
+ * A digest of the inputs is reproducible anywhere, needs no subprocess (a `git log` shell
+ * call behaved differently inside a sandbox, silently changing the output), and answers the
+ * more useful question: which sources produced this. Use git history for "when".
+ */
+function sourceDigest() {
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else files.push(p);
+    }
+  };
+  walk(SOURCE);
+
+  const h = crypto.createHash('sha256');
+  for (const f of files) {
+    /* Name as well as bytes, so renaming a source changes the digest. */
+    h.update(path.relative(ROOT, f).split(path.sep).join('/'));
+    h.update('\0');
+    h.update(fs.readFileSync(f));
+    h.update('\0');
+  }
+  return 'sha256:' + h.digest('hex');
+}
+
+const SOURCE_DIGEST = sourceDigest();
+
 /* ============================== 载入 CJS 资产模块 ============================== */
 const eyeSVG = require(path.join(SOURCE, 'mascot-eye-svg.js'));
 const fx = require(path.join(SOURCE, 'mascot-effects-svg.js'));
@@ -178,8 +215,8 @@ let themeCSS = '';
   }
   const sortDesc = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const palette = {
-    schema_version: '1.0',
-    generated_at: new Date().toISOString(),
+    schema_version: '1.1',   /* 1.1: generated_at (wall clock) -> source_digest */
+    source_digest: SOURCE_DIGEST,
     origin: 'Fairy-DSH-main (Apache-2.0) — 见 ../NOTICE 与 ../THIRD_PARTY_NOTICES.md',
     counts_per_source: perSource,
     hex: sortDesc(hexMap).map(([value, count]) => ({ value, count })),
@@ -212,9 +249,9 @@ let themeCSS = '';
     if (fs.existsSync(path.join(ROOT, rel))) record(rel, kind, origin);
   }
   const manifestDoc = {
-    schema_version: '1.0',
-    generated_at: new Date().toISOString(),
-    note: 'SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main.',
+    schema_version: '1.1',   /* 1.1: generated_at (wall clock) -> source_digest */
+    source_digest: SOURCE_DIGEST,
+    note: 'SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main. Baking is reproducible: unchanged sources produce identical bytes, so these hashes can be re-derived from a clean checkout.',
     files: manifest.slice().sort((a, b) => a.file.localeCompare(b.file)),
   };
   /* MANIFEST.json 不列入自身（自引用哈希无意义）；files 为快照数组。 */

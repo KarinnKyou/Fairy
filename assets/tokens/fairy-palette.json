@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0",
-  "generated_at": "2026-09-10T04:14:24.626Z",
+  "schema_version": "1.1",
+  "source_digest": "sha256:3cadab12866443fbcea8c7d6dc4194463c813737fb418888c8d0b081ddb7d9c1",
   "origin": "Fairy-DSH-main (Apache-2.0) — 见 ../NOTICE 与 ../THIRD_PARTY_NOTICES.md",
   "counts_per_source": {
     "fairy-hdd-theme.css": {

@@ -33,6 +33,9 @@
     "files": [
       "main.js",
       "preload.cjs",
+      "conversation.js",
+      "personality.js",
+      "store.js",
       "config.json",
       "www/**/*"
     ],

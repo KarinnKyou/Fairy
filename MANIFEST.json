@@ -1,14 +1,14 @@
 {
-  "schema_version": "1.0",
-  "generated_at": "2026-09-10T04:14:24.635Z",
-  "note": "SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main.",
+  "schema_version": "1.1",
+  "source_digest": "sha256:3cadab12866443fbcea8c7d6dc4194463c813737fb418888c8d0b081ddb7d9c1",
+  "note": "SHA-256 over the exact file bytes as stored in this project. verbatim-copy files are byte-identical to the originals in Fairy-DSH-main. Baking is reproducible: unchanged sources produce identical bytes, so these hashes can be re-derived from a clean checkout.",
   "files": [
     {
       "file": "assets/bake.cjs",
       "kind": "authored",
       "origin": null,
-      "bytes": 25729,
-      "sha256": "96b63b231ad8c6d8278c752773cb290217115a72ad274e86725529ed94fb5990"
+      "bytes": 27364,
+      "sha256": "aaf946bc7220cd846804102c7a9f4e28e37b987803b3759a99331cd6bb3fa918"
     },
     {
       "file": "assets/source/esm/constants.js",
@@ -77,8 +77,8 @@
       "file": "assets\\preview.html",
       "kind": "generated",
       "origin": "bake.cjs (embeds baked markup + palette)",
-      "bytes": 58087,
-      "sha256": "78724dcc8d4d926bebce7cd665ac017102721dd2e4426bde2a2c5b483bd45eed"
+      "bytes": 58135,
+      "sha256": "eafe618bdbf238e7c50f5b297607b20920545560993d66aad37cfa68c4c3dac5"
     },
     {
       "file": "assets\\svg\\fairy-eye-comforting.svg",
@@ -119,8 +119,8 @@
       "file": "assets\\tokens\\fairy-palette.json",
       "kind": "generated",
       "origin": "derived from source/ + style.js extraction",
-      "bytes": 24621,
-      "sha256": "189ad07a655f4bb17d451197a8f39c0d85153d724140966ce26caeb35b89dbd0"
+      "bytes": 24669,
+      "sha256": "e453f564ce7568abfdf5f2d570b0bd00ea8a42113747c1ccd204911446772870"
     },
     {
       "file": "LICENSE",
@@ -140,22 +140,22 @@
       "file": "package.json",
       "kind": "authored",
       "origin": null,
-      "bytes": 601,
-      "sha256": "402ad02767194fb394e9f39fc568f9cc274c9524ef86e1d690c13d0909d160c8"
+      "bytes": 660,
+      "sha256": "e5360538ace5549ebd85c50d546f5c7eb86f511450db01047391e9830b307f66"
     },
     {
       "file": "README.md",
       "kind": "authored",
       "origin": null,
-      "bytes": 12563,
-      "sha256": "856c471237e87c973b9890bb9a701436ba7688ca8590c82913eca99627171d7a"
+      "bytes": 23594,
+      "sha256": "525b8d95dc13f60a829cf4d59e499736a48dd6b197fd60fe1dc628354caea5b3"
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
       "kind": "verbatim-copy",
       "origin": "Fairy-DSH-main/THIRD_PARTY_NOTICES.md",
-      "bytes": 1826,
-      "sha256": "ca88e777c8160af8fe06aa3c4055e5573ef9e5ebab056fbbef399e20760d02ad"
+      "bytes": 2140,
+      "sha256": "a8289a3642cfe65d919e4177308c52440fa6f5cc10ae5e44f647499564369d78"
     }
   ]
 }
