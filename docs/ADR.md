@@ -144,7 +144,7 @@ Persistent state lives in `app/data/` (gitignored): `hdd.db`, plus exports.
   explicit `dir` argument → `HDD_DATA_DIR` → `userData` (packaged) → `app/data`
   (development). The packaged branch is not covered by the automated tests, which run
   outside Electron; it is verified by running a built exe once and confirming
-  `%APPDATA%\hdd\data\hdd.db` appears.
+  `%APPDATA%\HDD\data\hdd.db` appears.
 
 **Alternatives rejected**
 

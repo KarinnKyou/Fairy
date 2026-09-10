@@ -8,7 +8,7 @@ was said, and the state lives in a database instead of nowhere.
 ### What is new
 
 - **Conversations persist.** The main process owns them in SQLite
-  (`app/data/hdd.db` in development, `%APPDATA%\hdd\data\hdd.db` when packaged) and the
+  (`app/data/hdd.db` in development, `%APPDATA%\HDD\data\hdd.db` when packaged) and the
   window redraws the transcript on launch, so quitting no longer loses the conversation.
 - **Context is assembled per turn** from the store: system prompt → profile → the most
   recent 32 messages. The renderer no longer builds any prompt.

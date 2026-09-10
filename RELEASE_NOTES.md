@@ -58,7 +58,7 @@ configuration changes needed**. Builds made by `release.ps1` deliberately exclud
 ## What is new since v0.01
 
 - **Conversations persist.** They are stored in SQLite and redrawn when you reopen the app.
-  Data location: `%APPDATA%\hdd\data\hdd.db` for the packaged exe, `app/data/hdd.db` when
+  Data location: `%APPDATA%\HDD\data\hdd.db` for the packaged exe, `app/data/hdd.db` when
   running from source.
 - **Context is assembled per turn** from that store: system prompt, then what she knows
   about you (turns spoken, first meeting), then the most recent 32 messages.
