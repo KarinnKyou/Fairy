@@ -334,9 +334,18 @@ Step "1. Version $oldVersion -> $Version"
 function Set-JsonVersion {
     param([string]$Path, [string]$NewVersion)
     $raw = Get-Content $Path -Raw
-    $updated = [regex]::Replace($raw, '("version"\s*:\s*")[^"]*(")', "`${1}$NewVersion`${2}", 1)
-    if ($updated -eq $raw) { Fail "could not update 'version' in $Path" }
-    Set-Content -Path $Path -Value $updated -Encoding UTF8 -NoNewline
+    $m = [regex]::Match($raw, '"version"\s*:\s*"([^"]*)"')
+    if (-not $m.Success) { Fail "no 'version' field found in $Path" }
+    if ($m.Groups[1].Value -eq $NewVersion) { return $false }
+
+    # Replace only the captured value, keeping the file's own spacing. Comparing the result
+    # against the original would be wrong here: re-cutting the same version is a legitimate
+    # no-op, not a failure, and an earlier version of this function reported it as one.
+    $valueStart = $m.Groups[1].Index - $m.Index
+    $rebuilt = $m.Value.Substring(0, $valueStart) + $NewVersion +
+        $m.Value.Substring($valueStart + $m.Groups[1].Length)
+    Set-Content -Path $Path -Value ($raw.Substring(0, $m.Index) + $rebuilt + $raw.Substring($m.Index + $m.Length)) -Encoding UTF8 -NoNewline
+    return $true
 }
 
 <#
@@ -366,10 +375,13 @@ function Invoke-WithPlaceholderConfig {
     return (Get-Content $CfgPath -Raw).Contains($RealKey)
 }
 
-Set-JsonVersion -Path $appPkgPath  -NewVersion $Version
-Set-JsonVersion -Path $rootPkgPath -NewVersion $Version
-Ok "app/package.json  version = $Version"
-Ok "package.json      version = $Version"
+$appChanged = Set-JsonVersion -Path $appPkgPath  -NewVersion $Version
+$rootChanged = Set-JsonVersion -Path $rootPkgPath -NewVersion $Version
+if ($appChanged -or $rootChanged) {
+    Ok "version written: $Version"
+} else {
+    Ok "version already $Version (re-cutting the same version — the tag must not exist yet)"
+}
 
 # ---------------------------------------------------------------- 2. build with placeholder key
 Step "2. Build (placeholder key -> dist -> restore real key)"
