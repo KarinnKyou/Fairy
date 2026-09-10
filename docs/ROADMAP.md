@@ -38,7 +38,7 @@ Delivered, each verified against the code rather than the docs:
 | Per-turn prompt assembly from the store (ADR-008) | system → capabilities → profile → last 30 messages |
 | Accumulating profile | turns spoken, first meeting, last seen; injected from turn 2 |
 | Full-text index with CJK unigram tokenisation | search works for two-character Chinese words; no UI yet (that is Phase 2) |
-| Persona honest about its own limits (ADR-009) | facts live in `app/capabilities.js`, rendered into the prompt each turn; two of them are cross-checked against `main.js` and the page CSP |
+| Persona honest about its own limits (ADR-009, revised twice) | the prompt states only what she **can** do and that it is the whole of it; the absences are data in `app/capabilities.js` that is deliberately not rendered, and a test fails if any of it reaches the prompt |
 | The invariants that must not regress | font-weight override, fade mask on `#out`, unconditional `pinBottom()`, one line per reply |
 
 Two defects found while auditing this phase, both of which would have shipped a broken
@@ -79,17 +79,20 @@ conversations, so expect the shape of it to change once there are some.
 
 Not blockers, but they should not be forgotten.
 
-1. **Settled in `0.1.0`: the capability boundary moved out of the persona.** A local edit
-   deleted the capability list from `app/personality.js`, which revealed a layering mistake
-   rather than a mistake in the edit: capability is an environment fact, and putting it in a
-   character file meant a tone change could silently remove a guarantee. Facts now live in
-   `app/capabilities.js` as data, rendered into the prompt each turn (ADR-009, revised). The
-   layer split is itself asserted — capability facts must not reappear in the persona.
-2. **Two of the capability declarations are hand-maintained until Phase 6.** The `tools` and
-   `network` entries are cross-checked against `main.js` and the page CSP, so they cannot
-   drift silently; the rest (`camera`, `hardware`, `actions`, `files`) are statements about
-   absence that no test can meaningfully verify. Phase 6 should generate the tool entry from
-   the real tool registry.
+1. **Settled in `0.1.0`: how she talks about her own limits.** Two rounds of revision. First
+   the capability facts left `app/personality.js` for `app/capabilities.js` — a local edit had
+   deleted the whole boundary, which revealed a layering mistake rather than a mistake in the
+   edit: capability is an environment fact, and a character file meant a tone change could
+   silently remove a guarantee. Then a real conversation showed the rendered "cannot" list
+   being read back to the user verbatim, so the prompt now states only what she **can** do and
+   that it is the whole of it (ADR-009, revised twice). Verified by four behaviour probes
+   through the real assembly path, not only by assertions.
+2. **Capability declarations are hand-maintained until Phase 6.** `main.js` sending `tools` is
+   cross-checked against the declared `tools` capability, and the page CSP against a declared
+   network capability, so neither can drift silently. The remaining absences (`camera`,
+   `hardware`, `actions`, `files`) are statements about absence that no test can meaningfully
+   verify — they exist so whoever adds a capability sees what was already considered. Phase 6
+   should generate the tool entry from the real tool registry.
 3. **The packaged data-directory branch is not covered by automation.** `getDataDir()`
    returns `app.getPath('userData')/data` when packaged, and the tests run outside Electron.
    Verified once by launching a built exe (it created `%APPDATA%\HDD\data\hdd.db` at schema

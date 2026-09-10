@@ -232,7 +232,7 @@ and `prep.cjs` is not involved. The assembled prompt is:
 
 ```
 PERSONA
-  + capabilities.capabilitySection()      ← facts, from the running program
+  + capabilities.capabilitySection()      ← what she can do; the prompt says that is all
   + "\n\n# 主人画像（核心记忆）\n" + ...    ← only once a turn has completed
   + "\n\n# 当前时间\n" + <local date and time>
 ```
@@ -247,27 +247,35 @@ boundary while five assertions went red — nobody had touched a guarantee, yet 
 gone. Taste and correctness should not share a string.
 
 So the honesty *disposition* ("say plainly that you cannot; never invent a completed action")
-is one line in the persona, where it belongs, and the *facts* ("no camera", "no tool calling")
-are data in `capabilities.js`, rendered into the prompt every turn beside the profile and the
-time. The model cannot introspect its own host — it cannot notice it lacks a camera, and it
-cannot try and fail — so capability awareness is injected state either way; the only real
-choice is which layer supplies it.
+is one line in the persona, where it belongs, and the *facts* are data in `capabilities.js`,
+rendered into the prompt every turn beside the profile and the time. The model cannot
+introspect its own host — it cannot notice it lacks a camera, and it cannot try and fail — so
+capability awareness is injected state either way; the only real choice is which layer
+supplies it.
 
-Two of those declarations are checked against the code rather than trusted:
-`conversation.test.cjs` requires the `tools` entry to disagree with whether `main.js` sends
-`tools` in the request body, and the `network` entry to disagree with whether the page CSP
-allows `connect-src`. Add a capability and the tests fail until the declaration matches
-reality again. Tests assert entry **ids**, not wording, so you can reword entries freely —
-and a separate assertion fails if capability facts reappear in the persona.
+**Only the positives are rendered.** The prompt states what she can do and that this is the
+whole of it; everything else follows by subtraction, so she never has to recite a list of her
+own limitations. That is not just taste. An earlier version rendered a bulleted "cannot"
+section and a real conversation caught the model reading it back verbatim — "做不到的有：看摄像头、
+读硬件状态、替你操作电脑……" — which is not how anyone describes themselves, and which primes
+those exact tokens (camera, music, alarms) for improvising. `CANNOT_DO` is still in the file as
+data, deliberately unrendered, and a test fails if any of it reaches the prompt.
+
+Two declarations are checked against the code rather than trusted: `conversation.test.cjs`
+requires the `tools` capability to be declared exactly when `main.js` sends `tools` in the
+request body, and that a network capability is never declared while the page CSP keeps
+`connect-src 'none'`. Add a capability and the tests fail until the declaration matches reality
+again. Tests assert entry **ids**, not wording, so you can reword entries freely — and separate
+assertions fail if capability facts reappear in the persona.
 
 ```js
 // app/capabilities.js
-const CAN_DO = [{ id: 'chat', text: '和主人进行文字对话' }, ...];
-const CANNOT_DO = [{ id: 'camera', text: '摄像头：看不到主人的样子、表情，也看不到周围环境' }, ...];
+const CAN_DO = [{ id: 'chat', text: '和主人进行文字对话' }, ...];       // rendered
+const CANNOT_DO = [{ id: 'camera', text: '看不到主人的样子...' }, ...];  // data only, NOT rendered
 ```
 
-Keep this block short. A long list of denials invites the model to talk about its limits, and
-naming a "camera" is itself an invitation to improvise one.
+If she starts promising something she cannot do, sharpen the positive statement or the manner
+rules in the persona — do **not** turn the absences back into a list.
 
 ### The persona is intentionally minimal before v1.0
 

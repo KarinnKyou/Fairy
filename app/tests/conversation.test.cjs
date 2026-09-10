@@ -186,7 +186,7 @@ function open(name, extra) {
 {
   const sys = conv.buildSystemPrompt(PERSONA, { firstSeen: Date.now(), turns: 5 }, Date.now());
   const personaAt = sys.indexOf('你是 Fairy');
-  const capsAt = sys.indexOf('# 你当前可以做什么');
+  const capsAt = sys.indexOf('# 你能做什么');
   const profileAt = sys.indexOf('# 主人画像');
   const timeAt = sys.indexOf('# 当前时间');
   check(personaAt >= 0 && capsAt > personaAt && profileAt > capsAt && timeAt > profileAt,
@@ -220,21 +220,39 @@ function open(name, extra) {
   check(real.PERSONA.length < 900,
     'persona 保持精简（' + real.PERSONA.length + ' < 900 字符；完整性格留给 v1.0）');
 
-  /* Capability facts live in capabilities.js, NOT in the persona (ADR-009, revised).
+  /* Capability facts live in capabilities.js, NOT in the persona (ADR-009, revised twice).
    *
-   * The old assertions looked for literal strings inside the persona. Those were fossils:
-   * they pinned the wording, not the guarantee, and they lived in the file the persona is
-   * edited in — so an edit about tone silently deleted a guarantee about correctness.
-   * Three things are checked now:
-   *   1. every declared fact reached the prompt (guards the renderer),
-   *   2. the persona has not taken the facts back (the split, enforced),
-   *   3. the declarations that can be checked against the code still match the code. */
+   * The original assertions looked for literal denial strings inside the persona — fossils
+   * that pinned wording, in the file the persona is edited in, so a tone edit silently
+   * deleted a guarantee. The second version rendered the denials as a bulleted "cannot"
+   * list, and a real conversation showed the model reading the list back to the user
+   * ("做不到的有：看摄像头、读硬件状态、替你操作电脑……") — an assistant reciting an
+   * inventory of its own limitations, and the negative tokens primed for improvising.
+   *
+   * So the prompt states only what she CAN do, and says that is the whole of it; everything
+   * else follows by subtraction. These assertions hold that shape in place:
+   *   1. every declared capability reached the prompt (guards the renderer),
+   *   2. the prompt claims to be exhaustive (otherwise subtraction is unsound),
+   *   3. no denial is rendered as a list entry (the preference above, as a regression guard),
+   *   4. the persona states the manner rules and carries no capability facts,
+   *   5. declarations that can be checked against the code still match the code. */
   const caps = require('../capabilities.js');
-  check(/# 你当前可以做什么/.test(sys), 'system prompt 含能力段（由 capabilities.js 渲染）');
-  for (const entry of caps.CAN_DO.concat(caps.CANNOT_DO)) {
+  check(/# 你能做什么/.test(sys), 'system prompt 含能力段（由 capabilities.js 渲染）');
+  for (const entry of caps.CAN_DO) {
     check(sys.includes(entry.text), '能力段包含声明「' + entry.id + '」');
   }
+  check(/全部能力/.test(sys), '能力段声明这是全部能力（其余由减法推出）');
   check(/如实说做不到/.test(sys), '要求如实说明做不到，而非编造完成');
+
+  /* Not rendering the denials is a requirement, not an accident. */
+  for (const entry of caps.CANNOT_DO) {
+    check(!sys.includes(entry.text),
+      'prompt 未罗列做不到的项「' + entry.id + '」（避免她背清单）');
+  }
+
+  /* Manner rules live in the persona, where tone belongs. */
+  check(/不要罗列做不到的项目/.test(real.PERSONA), '性格要求：被问能做什么时不罗列负面清单');
+  check(/只说这一件做不到/.test(real.PERSONA), '性格要求：只说明当前这一件做不到');
 
   /* The split itself: capability facts must not creep back into the persona. */
   for (const entry of caps.CANNOT_DO) {
@@ -244,21 +262,21 @@ function open(name, extra) {
   check(!/(没有摄像头|读不到硬件|工具调用|读写文件)/.test(real.PERSONA),
     '性格文件未复述任何能力事实');
 
-  /* Cross-checks: a capability claim that can be verified against the code, is. If a phase
-   * adds tools or opens the page's network access, these fail until capabilities.js is
-   * updated — which is the point. Deriving capability awareness from actual state only
-   * works if something notices when the state changes. */
+  /* Cross-checks: a capability that exists in the code must be declared, and one that is
+   * declared must exist. If a phase adds tools or opens the page's network access, these
+   * fail until capabilities.js is updated — which is the point. Deriving capability
+   * awareness from actual state only works if something notices when the state changes. */
   const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
   const sendsTools = /(^|[^.\w])tools\s*:/.test(mainSrc);
-  const declaresNoTools = caps.ids(caps.CANNOT_DO).includes('tools');
-  check(sendsTools !== declaresNoTools,
-    '「工具调用」的声明与 main.js 一致（main.js 发送 tools = ' + sendsTools + '）');
+  const declaresTools = caps.ids(caps.CAN_DO).includes('tools');
+  check(declaresTools === sendsTools,
+    '「工具调用」的声明与 main.js 一致（main.js 发送 tools = ' + sendsTools + '，声明 = ' + declaresTools + '）');
 
   const liveSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'live.template.html'), 'utf8');
   const pageOffline = /connect-src\s+'none'/.test(liveSrc);
-  const declaresNoNetwork = caps.ids(caps.CANNOT_DO).includes('network');
-  check(pageOffline === declaresNoNetwork,
-    '「自己上网」的声明与页面 CSP 一致（connect-src none = ' + pageOffline + '）');
+  check(pageOffline, '渲染层仍然没有网络访问（CSP connect-src none）');
+  check(!caps.ids(caps.CAN_DO).includes('network'),
+    '未把联网声明为能力（她不能替主人上网查东西）');
 
   /* Claims of imaginary powers must not appear as assertions. The phrasing below is used
    * in the persona only as a PROHIBITION ("do not fabricate ..."), so a naive substring

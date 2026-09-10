@@ -340,43 +340,54 @@ forbids.
 The prompt states, explicitly, what the app cannot do, and the persona forbids claiming
 otherwise.
 
-**Revised (still Accepted, same decision, different location).** The capability list was
-originally written as prose inside `personality.js`. That was a layering mistake: reading as
-character, it looked like fair game for a tone edit — and one did delete the entire
-boundary, turning five assertions red without anyone touching a guarantee. Taste and
-correctness should not share a string.
+**Revised twice (still Accepted, same decision, different expression).**
 
-The boundary now has two halves:
+*Revision 1 — the facts left the persona.* The capability list was originally prose inside
+`personality.js`. That was a layering mistake: reading as character, it looked like fair game
+for a tone edit — and one did delete the entire boundary, turning five assertions red without
+anyone touching a guarantee. Taste and correctness should not share a string. Facts moved to
+`app/capabilities.js`, rendered into the prompt every turn by `conversation.js` beside the
+profile and the current time; the honesty *disposition* stayed in the persona as one line.
 
-- **Facts** live in `app/capabilities.js` as data (`CAN_DO`, `CANNOT_DO`) and are rendered
-  into the prompt every turn by `conversation.js`, beside the profile and the current time.
-  Facts only — no behaviour rules; that file must stay free of "do not apologise" and
-  similar.
-- **Disposition** stays in the persona: one line of honesty ("say plainly that you cannot,
-  never invent a completed action"). Honesty is a character trait, so it belongs there.
+*Revision 2 — the absences are no longer rendered.* Revision 1 rendered both lists, including
+a bulleted "cannot" section. A real conversation then showed the model reading that section
+straight back at the user:
 
-Precedence in the prompt is persona → capabilities → profile → time: the facts that
-constrain what she may claim sit immediately after the character, not buried under flavour.
+> 我只能做两件事：和你文字对话，以及知道当前日期时间。做不到的有：看摄像头、读硬件状态、
+> 替你操作电脑或发消息、读写文件、上网搜索。所以帮不了你查东西、定闹钟或放音乐。
 
-Each declaration is a claim about the code, and the ones that can be checked are checked in
-`conversation.test.cjs`: a `tools` entry must disagree with whether `main.js` sends `tools`
-in the request body, and the `network` entry must disagree with whether the page CSP allows
-`connect-src`. The tests assert entry **ids**, not wording, so the text can be reworded
-freely. A separate test asserts the persona contains no capability facts, which enforces the
-split itself.
+An assistant reciting an inventory of its own limitations is wrong twice over: it is not how
+anyone describes themselves, and naming the absences primes those exact tokens (camera, music,
+alarms), making her more likely to talk about — or improvise around — the very things she must
+not promise. So the prompt now states **only** what she can do and says that this is the whole
+of it; everything else follows by subtraction. `CANNOT_DO` is kept in `capabilities.js` as data
+that is deliberately **not** rendered, for three reasons: the test that forbids a denial list in
+the prompt uses it as its fixture, the cross-checks name it, and whoever adds a capability
+should see what was already considered.
+
+The persona carries the manner rules, because they are about tone: state only what you can do
+and stop; when a request hits a limit, name that one thing and offer what you can do instead.
+
+Precedence in the prompt is persona → capabilities → profile → time, so the facts sit
+immediately after the character rather than buried under flavour.
+
+**Verified by behaviour, not only by assertion.** Four probes through the real assembly path:
+"你能帮我做什么" answers in one sentence with no list; "帮我看看我现在的表情", "帮我放首歌"
+and "把这个对话存成文件吧" each name the single relevant limit and invent nothing.
 
 **Consequences**
 
-- Adding a real capability is a change to `capabilities.js` alone. The cross-checks then
-  fail until the declaration matches reality again, so a capability cannot be added
-  silently — nor left falsely denied.
+- Adding a real capability is a change to `capabilities.js` alone. The cross-checks then fail
+  until the declaration matches reality again, so a capability cannot be added silently — nor
+  left falsely denied.
 - Phase 6 should generate the tool entry from the actual tool registry rather than
   hand-maintaining it; the cross-check is the interim guarantee.
 - The model cannot introspect its own host: it cannot notice a missing camera, and it cannot
   try and fail. Capability awareness is injected state. The improvement here is which layer
   injects it, not that it is no longer injected.
-- Keep the facts block short. A long list of denials invites the model to talk about its
-  limits, and mentioning a "camera" is itself an invitation to improvise one.
+- **Do not turn the absences back into a list.** That is now enforced by a test, not by this
+  paragraph. If she starts promising something she cannot do, the fix is a sharper positive
+  statement or a sharper manner rule — not an inventory of refusals.
 
 ---
 
