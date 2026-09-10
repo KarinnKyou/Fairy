@@ -115,8 +115,19 @@ $realCfg = Get-Content $cfgPath -Raw
 $realKeyMatch = [regex]::Match($realCfg, '"apiKey"\s*:\s*"([^"]*)"')
 if (-not $realKeyMatch.Success) { Fail "app/config.json has no apiKey field." }
 $realKey = $realKeyMatch.Groups[1].Value
-if (-not $realKey -or $realKey -notmatch '^sk-\S{16,}$' -or $realKey -match 'REPLACE|YOUR|PLACEHOLDER') {
-    Fail "app/config.json does not contain a usable real key (got '$(if($realKey){$realKey.Substring(0,[Math]::Min(12,$realKey.Length))+'...'}else{'<empty>'} )'). Put your real key in before releasing."
+if (-not $realKey) {
+    Fail "app/config.json has an empty apiKey. Put your real key in before releasing."
+}
+# Compare against the placeholder rather than pattern-matching a key shape: this is
+# exact and cannot be fooled by a differently shaped placeholder.
+if (Test-Path $examplePath) {
+    $exKeyMatch = [regex]::Match((Get-Content $examplePath -Raw), '"apiKey"\s*:\s*"([^"]*)"')
+    if ($exKeyMatch.Success -and $exKeyMatch.Groups[1].Value -eq $realKey) {
+        Fail "app/config.json still holds the PLACEHOLDER key from config.example.json. Put your real key in before releasing."
+    }
+}
+if ($realKey -match 'REPLACE|YOUR_|PLACEHOLDER') {
+    Fail "app/config.json looks like a placeholder ('$($realKey.Substring(0,[Math]::Min(24,$realKey.Length)))...'). Put your real key in before releasing."
 }
 Ok "real API key present in app/config.json (will be swapped out for the build)"
 
@@ -139,8 +150,28 @@ Ok "version: $oldVersion -> $Version   (exe $exeName, tag $Tag)"
 if (-not (Test-Path $notesPath)) { Warn "release notes not found: $Notes (the release will be created without notes)" }
 else { Ok "release notes: $Notes" }
 
-$gh = Get-Command gh -ErrorAction SilentlyContinue
-if ($gh) { Ok "gh CLI found — will publish the GitHub release" }
+function Get-GhExe {
+    <#
+        Resolve the gh CLI. Get-Command alone is not enough: a freshly installed gh
+        lives on the machine PATH, but an already-running shell keeps its old PATH
+        snapshot and will not see it.
+    #>
+    $cmd = Get-Command gh -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'),
+        (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\gh.exe')
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    return $null
+}
+
+$gh = Get-GhExe
+if ($gh) { Ok "gh CLI found: $gh" }
 else { Warn "gh CLI not installed — the script will stop after pushing; publish the release manually" }
 
 if ($DryRun) {
@@ -312,7 +343,7 @@ if (Test-Path $notesPath) { $releaseArgs += @('--notes-file', $Notes) }
 else { $releaseArgs += @('--notes', "HDD $Tag") }
 if (-not $Final) { $releaseArgs += '--prerelease' }
 
-gh @releaseArgs 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+& $gh @releaseArgs 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
 if ($LASTEXITCODE -ne 0) {
     Warn "gh release create failed (already exists? not authenticated?). Publish manually:"
     Write-Host "    gh release create $Tag `"app\dist\$exeName`" --title `"HDD $Tag`" --notes-file $Notes $(if($Final){''}else{'--prerelease'})" -ForegroundColor Yellow
