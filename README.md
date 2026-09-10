@@ -210,8 +210,8 @@ It exports three things:
 
 | Export | Purpose |
 | --- | --- |
-| `PERSONA` | The system prompt: identity, core traits, capability boundary, speech rules, emotional responses, output bans |
-| `EXAMPLES` | Pool of few-shot pairs; one is picked at random and injected **only while the history is short** (≤ 4 messages), as a voice cue |
+| `PERSONA` | The system prompt: identity, capability boundary, speech rules |
+| `EXAMPLES` | Pool of few-shot pairs; one is picked at random and injected **only while the history is short** (≤ 4 messages), as a voice cue. **Currently empty** — see below |
 | `TIME_FLAVOUR` | Time-of-day words available to the persona |
 
 The assembled prompt is:
@@ -221,6 +221,21 @@ PERSONA + "\n\n# 当前时间\n" + <local date and time>
 ```
 
 so she always knows when "now" is. Rebuilt every turn.
+
+### The persona is intentionally minimal before v1.0
+
+At ~500 characters the persona says only what a build with no tools and no perception
+needs: who she is, what she cannot do, and how she speaks. The full character — cold
+humour, vanity, teasing — is **deferred to v1.0**, and a test pins the current prompt
+under a length ceiling so it cannot quietly grow back. The reasoning is in ADR-008: a
+character defined by what she does cannot be written before she can do it, and writing it
+early means describing abilities the app does not have (ADR-009).
+
+`EXAMPLES` is an empty array rather than a deleted feature: the injection path stays
+tested, so v1.0 only has to fill the list. When it is filled, the samples must go into the
+**system prompt** as labelled fiction. Sending them as `user`/`assistant` message pairs was
+tried and reverted — the model treated them as real history and answered the examples
+instead of the user.
 
 ### The capability boundary is deliberate — keep it
 
@@ -296,6 +311,16 @@ HDD/
   up when it grows); `done` waits for the queue to drain before finishing the turn.
 - **No emoji**: system prompt plus a second scrub in the renderer over
   `Extended_Pictographic` and related ranges.
+- **One line per reply**: `#out` is `white-space: pre-wrap`, so a `\n\n` in the model's
+  reply would render as a blank line in the terminal. Newlines are therefore folded into a
+  single space. This happens in two places for a reason: `cleanChunk` runs on every stream
+  delta and must **not** trim, because a delta can end mid-word ("hello" + " world" would
+  become "helloworld"); `cleanText` collapses runs and trims complete text (restored
+  history, prompt echo). `renderer.test.cjs` feeds a chunk containing a blank line and a
+  trailing space and asserts nothing with a newline reaches the screen.
+- **Scrolling**: every inserted line and every typed character calls `pinBottom()`, which
+  scrolls unconditionally — no "am I near the bottom?" threshold, because the error would
+  accumulate over a long session and leave the newest reply hidden below the input row.
 - **Font**: supply your own in `app/fonts/`. Tuning is in section 7.
 - **Centring and fade**: the mascot is fixed at 50%/50% with `translate(-50%,-50%)`;
   the text layer is `z-index: 5` and the mascot `z-index: 20`. The output container
@@ -376,9 +401,16 @@ Key points:
 
 ```sh
 # Renderer regression (jsdom; covers sending, thinking/comforting states, typewriter,
-# emoji scrubbing, layout assertions, and the font-weight override)
+# emoji scrubbing + newline flattening, layout assertions, and the font-weight override)
 npm run app:test
+
+# Everything, including the asset bake step
+npm test
 ```
+
+`app:test` runs four suites in order: `store.test.cjs` (schema, migrations, ID ordering,
+CJK full-text search), `conversation.test.cjs` (prompt assembly, persona scope, turn
+bookkeeping), then a `prep` rebuild, `renderer.test.cjs`, and `scroll-pin.test.cjs`.
 
 The tests never touch the network and never start Electron. `app/tests/renderer.test.cjs`
 injects a fake `fairyApp` and drives the full "send → reasoning → content → done" flow.

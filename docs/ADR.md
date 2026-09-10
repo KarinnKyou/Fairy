@@ -287,9 +287,28 @@ Keep the persona as source code in the repository, assembled per turn, with a st
 
 - Style can never override honesty or the user's state; this is what makes her behaviour
   consistent rather than merely colourful.
-- The prompt is ~1.4k tokens per turn. If memory and context layers grow it, revisit: a
-  static persona block should not be re-sent verbatim forever (cache it, or split stable
-  from dynamic parts).
+- The prompt is well under 1k tokens per turn. If memory and context layers grow it,
+  revisit: a static persona block should not be re-sent verbatim forever (cache it, or
+  split stable from dynamic parts).
+
+**Current scope — deliberately minimal persona**
+
+The full character (cold humour, vanity, teasing, the precedence levels 3 and 4 above) is
+**not** in this build. Until v1.0 the persona carries only what a build with no tools, no
+memory beyond recent turns and no perception actually needs:
+
+1. identity — she is Fairy, never another model's name;
+2. capability boundary — what she cannot do, stated plainly (ADR-009);
+3. speech rules —「主人」, one line per reply, no emoji, no invented actions.
+
+Writing the rest now would mean describing capabilities that do not exist yet, which
+ADR-009 forbids: a character defined by what she can do cannot be written before she can do
+it. The few-shot example mechanism is retained in `personality.js` as an **empty array** —
+the injection path is tested, so v1.0 only has to fill the list.
+
+The style examples, when they return, must stay in the system prompt as labelled fiction.
+Injecting them as `user`/`assistant` message pairs was tried and reverted: the model read
+them as real history and answered the examples instead of the user.
 
 **Alternatives rejected**
 
@@ -389,6 +408,7 @@ Recorded so they are not silently forgotten. None of these should be built early
 | Retrieval-based memory (vs recent-N + summary) | Memory volume makes summaries inadequate | Recent-N plus a profile covers Phase 1–3 |
 | Automated behaviour judging | After the manual evaluation set exists | Needs the corpus first (ADR-010) |
 | Packaging a writable data directory | Before shipping any build that persists | Portable builds unpack to `%TEMP%` (ADR-003) |
+| The full character (humour, vanity, teasing, style examples) | v1.0, once the capabilities it describes exist | A persona written now would claim abilities the build lacks (ADR-008, ADR-009) |
 
 ---
 
