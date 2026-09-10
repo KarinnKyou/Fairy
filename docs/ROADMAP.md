@@ -38,7 +38,7 @@ Delivered, each verified against the code rather than the docs:
 | Per-turn prompt assembly from the store (ADR-008) | system → capabilities → profile → last 30 messages |
 | Accumulating profile | turns spoken, first meeting, last seen; injected from turn 2 |
 | Full-text index with CJK unigram tokenisation | search works for two-character Chinese words; no UI yet (that is Phase 2) |
-| Persona honest about its own limits (ADR-009, revised twice) | the prompt states only what she **can** do and that it is the whole of it; the absences are data in `app/capabilities.js` that is deliberately not rendered, and a test fails if any of it reaches the prompt |
+| Persona honest about its own limits (ADR-009, revised three times) | the prompt is a short positive list and claims nothing about completeness; the absences are data in `app/capabilities.js` deliberately left unrendered, and a test fails if any of it reaches the prompt |
 | The invariants that must not regress | font-weight override, fade mask on `#out`, unconditional `pinBottom()`, one line per reply |
 
 Two defects found while auditing this phase, both of which would have shipped a broken
@@ -79,14 +79,15 @@ conversations, so expect the shape of it to change once there are some.
 
 Not blockers, but they should not be forgotten.
 
-1. **Settled in `0.1.0`: how she talks about her own limits.** Two rounds of revision. First
+1. **Settled in `0.1.0`: how she talks about her own limits.** Three rounds of revision. First
    the capability facts left `app/personality.js` for `app/capabilities.js` — a local edit had
    deleted the whole boundary, which revealed a layering mistake rather than a mistake in the
    edit: capability is an environment fact, and a character file meant a tone change could
    silently remove a guarantee. Then a real conversation showed the rendered "cannot" list
-   being read back to the user verbatim, so the prompt now states only what she **can** do and
-   that it is the whole of it (ADR-009, revised twice). Verified by four behaviour probes
-   through the real assembly path, not only by assertions.
+   being read back to the user verbatim. Then the replacement's "this is the whole of it"
+   sentence produced a closing "就这些". The prompt is now a heading and two bullets, and
+   nothing is claimed about completeness (ADR-009, revised three times). Verified by behaviour
+   probes through the real assembly path, not only by assertions.
 2. **Capability declarations are hand-maintained until Phase 6.** `main.js` sending `tools` is
    cross-checked against the declared `tools` capability, and the page CSP against a declared
    network capability, so neither can drift silently. The remaining absences (`camera`,

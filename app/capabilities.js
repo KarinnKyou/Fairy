@@ -52,16 +52,26 @@ const CANNOT_DO = [
   { id: 'tools', text: '没有工具调用能力' },
 ];
 
-/* Renders the block that goes into the system prompt: the positive list, plus the statement
- * that it is the whole of it. Built from the data above, so a declaration always reaches the
- * prompt; the test that compares the two guards the renderer against silently dropping an
- * entry. */
+/* Renders the block that goes into the system prompt: just the positive list, under a
+ * heading. Built from the data above, so a declaration always reaches the prompt; the test
+ * that compares the two guards the renderer against silently dropping an entry.
+ *
+ * Deliberately says nothing about the list being complete. An earlier version declared "this
+ * is the whole of it" and "everything else you cannot do", so that the absences could be
+ * derived by subtraction; asked what she could do, she answered with a closing "就这些".
+ * Removing the claim helped but did not settle it — "就这些" still appeared in one run out of
+ * three, so it is also the model's own habit of closing a short enumeration, and the persona
+ * carries a manner rule against that kind of closer.
+ *
+ * What actually prevents fabrication is the honesty rule in the persona ("say plainly that
+ * you cannot; never invent a completed action"), not a completeness claim here. That is
+ * verified by behaviour probes, since it is not something an assertion can establish: five
+ * questions written to invite a fabricated "已经为您做好了" (search the web, read my screen,
+ * rename a file, set an alarm, read my expression) were all refused honestly with the
+ * completeness claim absent. */
 function capabilitySection() {
   const bullet = CAN_DO.map((e) => '- ' + e.text).join('\n');
-  return '\n\n# 你能做什么\n' +
-    '这是这台程序此刻的全部能力：\n' + bullet + '\n' +
-    '除以上之外的事你都做不到——不是因为主人不给，也不是需要道歉的事，' +
-    '而是这台程序本身没有那样的能力。';
+  return '\n\n# 你能做什么\n' + bullet;
 }
 
 const ids = (list) => list.map((e) => e.id);

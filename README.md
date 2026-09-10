@@ -253,13 +253,19 @@ introspect its own host — it cannot notice it lacks a camera, and it cannot tr
 capability awareness is injected state either way; the only real choice is which layer
 supplies it.
 
-**Only the positives are rendered.** The prompt states what she can do and that this is the
-whole of it; everything else follows by subtraction, so she never has to recite a list of her
-own limitations. That is not just taste. An earlier version rendered a bulleted "cannot"
-section and a real conversation caught the model reading it back verbatim — "做不到的有：看摄像头、
-读硬件状态、替你操作电脑……" — which is not how anyone describes themselves, and which primes
-those exact tokens (camera, music, alarms) for improvising. `CANNOT_DO` is still in the file as
-data, deliberately unrendered, and a test fails if any of it reaches the prompt.
+**Only the positives are rendered, and nothing is claimed about completeness.** The prompt
+lists what she can do and stops there. An earlier version rendered a bulleted "cannot" section
+and a real conversation caught the model reading it back verbatim — "做不到的有：看摄像头、读硬件
+状态、替你操作电脑……" — which is not how anyone describes themselves, and which primes those
+exact tokens (camera, music, alarms) for improvising. A later version dropped the denials but
+declared the list "complete", and she started closing answers with "就这些". Both are gone.
+`CANNOT_DO` is still in the file as data, deliberately unrendered, and a test fails if any of it
+reaches the prompt.
+
+Fabrication is prevented by the honesty rule in the persona, not by a completeness claim — and
+that is checked by behaviour, not by assertion. Five questions written to invite a fabricated
+"已经为您做好了" (search the web, read my screen, rename a file, set an alarm, read my expression)
+were each refused plainly, naming only the relevant limit.
 
 Two declarations are checked against the code rather than trusted: `conversation.test.cjs`
 requires the `tools` capability to be declared exactly when `main.js` sends `tools` in the

@@ -220,28 +220,36 @@ function open(name, extra) {
   check(real.PERSONA.length < 900,
     'persona 保持精简（' + real.PERSONA.length + ' < 900 字符；完整性格留给 v1.0）');
 
-  /* Capability facts live in capabilities.js, NOT in the persona (ADR-009, revised twice).
+  /* Capability facts live in capabilities.js, NOT in the persona (ADR-009, revised).
    *
-   * The original assertions looked for literal denial strings inside the persona — fossils
-   * that pinned wording, in the file the persona is edited in, so a tone edit silently
-   * deleted a guarantee. The second version rendered the denials as a bulleted "cannot"
-   * list, and a real conversation showed the model reading the list back to the user
-   * ("做不到的有：看摄像头、读硬件状态、替你操作电脑……") — an assistant reciting an
-   * inventory of its own limitations, and the negative tokens primed for improvising.
+   * Two earlier shapes were tried and both were caught in real conversations. First the
+   * assertions looked for literal denial strings inside the persona — fossils that pinned
+   * wording, in the file the persona is edited in, so a tone edit silently deleted a
+   * guarantee. Then the prompt rendered the denials as a bulleted "cannot" list, and she read
+   * it back to the user ("做不到的有：看摄像头、读硬件状态、替你操作电脑……"). Then the list
+   * claimed to be complete, and she closed with "就这些".
    *
-   * So the prompt states only what she CAN do, and says that is the whole of it; everything
-   * else follows by subtraction. These assertions hold that shape in place:
+   * So: a short positive list, and nothing about what is missing. These assertions hold that
+   * shape in place:
    *   1. every declared capability reached the prompt (guards the renderer),
-   *   2. the prompt claims to be exhaustive (otherwise subtraction is unsound),
-   *   3. no denial is rendered as a list entry (the preference above, as a regression guard),
+   *   2. the block stays short, so an inventory cannot creep back in,
+   *   3. no denial is rendered (that preference, as a regression guard),
    *   4. the persona states the manner rules and carries no capability facts,
-   *   5. declarations that can be checked against the code still match the code. */
+   *   5. declarations that can be checked against the code still match the code.
+   *
+   * Fabrication itself is not something an assertion can establish — it is checked by
+   * behaviour probes through the real assembly path. */
   const caps = require('../capabilities.js');
   check(/# 你能做什么/.test(sys), 'system prompt 含能力段（由 capabilities.js 渲染）');
   for (const entry of caps.CAN_DO) {
     check(sys.includes(entry.text), '能力段包含声明「' + entry.id + '」');
   }
-  check(/全部能力/.test(sys), '能力段声明这是全部能力（其余由减法推出）');
+  check(caps.capabilitySection().length < 200,
+    '能力段保持精简（' + caps.capabilitySection().length + ' < 200 字符）');
+  /* Scope this to the capability block, not the whole prompt: the persona quotes "就这些" in
+   * order to forbid it, which the first version of this assertion tripped over. */
+  check(!/全部能力|除以上之外|就这些/.test(caps.capabilitySection()),
+    '能力段不声明"这是全部"（否则她会用「就这些」收尾）');
   check(/如实说做不到/.test(sys), '要求如实说明做不到，而非编造完成');
 
   /* Not rendering the denials is a requirement, not an accident. */

@@ -359,11 +359,24 @@ straight back at the user:
 An assistant reciting an inventory of its own limitations is wrong twice over: it is not how
 anyone describes themselves, and naming the absences primes those exact tokens (camera, music,
 alarms), making her more likely to talk about — or improvise around — the very things she must
-not promise. So the prompt now states **only** what she can do and says that this is the whole
-of it; everything else follows by subtraction. `CANNOT_DO` is kept in `capabilities.js` as data
-that is deliberately **not** rendered, for three reasons: the test that forbids a denial list in
-the prompt uses it as its fixture, the cross-checks name it, and whoever adds a capability
-should see what was already considered.
+not promise. So the prompt renders **only** what she can do. `CANNOT_DO` is kept in
+`capabilities.js` as data that is deliberately **not** rendered, for three reasons: the test
+that forbids a denial list in the prompt uses it as its fixture, the cross-checks name it, and
+whoever adds a capability should see what was already considered.
+
+*Revision 3 — completeness is not claimed either.* Revision 2 still declared that the list was
+the whole of it, so the absences could be derived by subtraction. Asked what she could do, she
+answered "我能陪主人文字对话，也知道当前的日期和时间。就这些。" Removing the claim helped but
+did not settle it — "就这些" still appeared in one run out of three, so it is also the model's
+own habit of closing a short enumeration. The block is now a heading and two bullets, and the
+persona carries a manner rule against announcing completeness in any wording (naming specific
+phrases only produced a synonym: "就这样"). Six consecutive runs after the change ended
+cleanly.
+
+That completeness was not load-bearing for honesty is the useful finding here: the guarantee
+rests on the honesty rule, not on the prompt telling her its list is exhaustive. Five questions
+written to invite a fabricated "已经为您做好了" — search the web, read my screen, rename a file,
+set an alarm, read my expression — were each refused plainly with the completeness claim absent.
 
 The persona carries the manner rules, because they are about tone: state only what you can do
 and stop; when a request hits a limit, name that one thing and offer what you can do instead.
