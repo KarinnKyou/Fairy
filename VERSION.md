@@ -1,11 +1,48 @@
 # HDD — version record
 
-> **The tree is ahead of the last release.** `0.0.1` (below) records the demo that was
-> built and attached to the `v0.01` release, not the current working tree. Since then the
-> app gained a persistent SQLite store, main-process-owned turns with history restore, a
-> deliberately minimal persona, and one-line replies (newlines folded to spaces). Those
-> are unreleased and untagged; the next version section is written when they are packaged
-> and verified.
+## 0.1.0 (release name: HDD-0.1.0)
+
+Phase 1: the conversation became real. `0.0.1` showed the look; this build remembers what
+was said, and the state lives in a database instead of nowhere.
+
+### What is new
+
+- **Conversations persist.** The main process owns them in SQLite
+  (`app/data/hdd.db` in development, `%APPDATA%\hdd\data\hdd.db` when packaged) and the
+  window redraws the transcript on launch, so quitting no longer loses the conversation.
+- **Context is assembled per turn** from the store: system prompt → profile → the most
+  recent 32 messages. The renderer no longer builds any prompt.
+- **The profile accumulates**: turns spoken, first meeting, last seen. Injected from the
+  second turn onward.
+- **Fixed: the current question was never sent.** The message the user had just typed was
+  captured before it was appended and then dropped, so replies answered the *previous*
+  question. The last message sent is now always the user's, and a test asserts it.
+- **Replies are one terminal line.** Newlines collapse to a single space; a model writing
+  `\n\n` used to produce a blank line in the transcript.
+- **Persona cut back on purpose** (~500 characters): identity, capability boundary, speech
+  rules. The full character is deferred to v1.0 (ADR-008) — writing it now would mean
+  describing abilities the build does not have.
+- **Schema migrations** with a loud refusal to open a newer database, an FTS5 full-text
+  index with CJK unigram tokenisation (no UI yet — that is Phase 2), and stable sortable
+  IDs.
+- **Developer tooling**: `npm run dev` / `dev:fresh` keep test chatter out of the real
+  store, and `npm run inspect` prints the transcript and, per reply, how many messages
+  went to the model and how long the system prompt was.
+
+### Known limitations
+
+- Windows x64 only, one portable exe, always full-screen, `Esc` to quit.
+- **The published exe contains no font** and therefore renders in the system sans-serif.
+  The font is the developer's own licensed file (ADR-011); a released artifact must not
+  redistribute it, so a public build cannot carry it. A local `npm run dist` still embeds
+  it. This is a deliberate visual regression against the 0.0.1 demo, which did embed it.
+- No cancel button: a reply in progress cannot be interrupted.
+- One implicit conversation — no topics, no switching (Phase 2).
+- The packaged data-directory branch (`app.getPath('userData')`) is verified by running a
+  built exe, not by the automated tests, which run outside Electron.
+
+The interface invariants listed under 0.0.1 (font-weight override, fade mask on `#out`,
+unconditional `pinBottom()`) still hold and are still asserted by the tests.
 
 ## 0.0.1 (release name: HDD-0.01)
 

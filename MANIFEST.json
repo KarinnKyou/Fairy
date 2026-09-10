@@ -7,8 +7,8 @@
       "file": "assets/bake.cjs",
       "kind": "authored",
       "origin": null,
-      "bytes": 27364,
-      "sha256": "aaf946bc7220cd846804102c7a9f4e28e37b987803b3759a99331cd6bb3fa918"
+      "bytes": 27369,
+      "sha256": "a4afb8e3de27cebcf52fc4dc167df5a5d5a06bf0799ffbc6c841b4fe08445ffc"
     },
     {
       "file": "assets/source/esm/constants.js",
@@ -140,22 +140,22 @@
       "file": "package.json",
       "kind": "authored",
       "origin": null,
-      "bytes": 660,
-      "sha256": "e5360538ace5549ebd85c50d546f5c7eb86f511450db01047391e9830b307f66"
+      "bytes": 662,
+      "sha256": "777a8276cde9e6d24b57a28bda9b678b45a4f989b03053e2910c6b50ade6e8a0"
     },
     {
       "file": "README.md",
       "kind": "authored",
       "origin": null,
-      "bytes": 23594,
-      "sha256": "525b8d95dc13f60a829cf4d59e499736a48dd6b197fd60fe1dc628354caea5b3"
+      "bytes": 24808,
+      "sha256": "47077a59e8f4f75ef627256d3d3539f7ad392f5358a98a16147cf06fcc5c94d8"
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
-      "kind": "verbatim-copy",
-      "origin": "Fairy-DSH-main/THIRD_PARTY_NOTICES.md",
-      "bytes": 2140,
-      "sha256": "a8289a3642cfe65d919e4177308c52440fa6f5cc10ae5e44f647499564369d78"
+      "kind": "authored",
+      "origin": null,
+      "bytes": 3214,
+      "sha256": "57e6539fdd2d66064b42c2c23fb616e35216b8f8ffab0f1c62c4d3e1a4341b36"
     }
   ]
 }

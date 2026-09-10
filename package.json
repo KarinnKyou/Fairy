@@ -13,6 +13,6 @@
     "test": "npm run assets:bake && npm run app:test"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   }
 }

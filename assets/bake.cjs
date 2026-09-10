@@ -235,7 +235,7 @@ let themeCSS = '';
     ['README.md', 'authored', null],
     ['LICENSE', 'verbatim-copy', 'Fairy-DSH-main/LICENSE'],
     ['NOTICE', 'verbatim-copy', 'Fairy-DSH-main/NOTICE'],
-    ['THIRD_PARTY_NOTICES.md', 'verbatim-copy', 'Fairy-DSH-main/THIRD_PARTY_NOTICES.md'],
+    ['THIRD_PARTY_NOTICES.md', 'authored', null],   /* rewritten for HDD's own dependencies */
     ['assets/source/mascot-geometry.js', 'verbatim-copy', ORIGIN_BASE + '/mascot-geometry.js'],
     ['assets/source/mascot-eye-svg.js', 'verbatim-copy', ORIGIN_BASE + '/mascot-eye-svg.js'],
     ['assets/source/mascot-effects-svg.js', 'verbatim-copy', ORIGIN_BASE + '/mascot-effects-svg.js'],

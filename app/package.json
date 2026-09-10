@@ -18,9 +18,9 @@
     "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"
   },
   "devDependencies": {
-    "electron": "latest",
-    "electron-builder": "latest",
-    "jsdom": "^30.0.1"
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "30.0.1"
   },
   "build": {
     "appId": "com.hdd.app",

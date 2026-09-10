@@ -137,10 +137,14 @@ Persistent state lives in `app/data/` (gitignored): `hdd.db`, plus exports.
 - The portable exe unpacks itself into `%TEMP%` on every launch, so state written next to
   the running app would be destroyed. This is the same constraint that already stops a
   portable exe from reading a `config.json` placed beside it (see README 3.1).
-- **Consequence for packaged builds:** `app/data/` inside the asar is read-only. The
-  packaged app must resolve its data directory to a writable per-user location
-  (`app.getPath('userData')`) instead. Decide and implement this before shipping a build
-  that persists anything.
+- **Consequence for packaged builds (implemented):** `app/data/` inside the asar is
+  read-only, so a packaged app resolves its data directory to a writable per-user location
+  instead: `getDataDir()` returns `app.getPath('userData')/data` when
+  `app.isPackaged`, and the directory is created on first open. Precedence is
+  explicit `dir` argument → `HDD_DATA_DIR` → `userData` (packaged) → `app/data`
+  (development). The packaged branch is not covered by the automated tests, which run
+  outside Electron; it is verified by running a built exe once and confirming
+  `%APPDATA%\hdd\data\hdd.db` appears.
 
 **Alternatives rejected**
 
@@ -382,6 +386,12 @@ it may not redistribute, and a distributed build must not contain the developer'
 
 - **Fonts are not committed.** `.gitignore` excludes `app/fonts/*.ttf|otf|woff|woff2`;
   `prep.cjs` registers whatever is present and the UI falls back to a system font otherwise.
+- **Published builds do not embed the font either.** Not committing a font is not enough:
+  `www/**/*` goes into the asar, so anything in `app/fonts/` was being redistributed inside
+  every exe. `release.ps1` sets `HDD_NO_FONTS=1` for the build; `prep.cjs` then skips font
+  registration entirely, leaving no `@font-face` and no font bytes, and the artifact check
+  fails if any font file is found in the asar. A local `npm run dist` still embeds it, which
+  is what the developer wants on their own machine.
 - **`app/config.json` is never committed** (it holds the API key).
 - **Published builds are built with the placeholder key** from `config.example.json`.
   `release.ps1` performs this swap, restores the real config in a `finally` block, and
@@ -407,7 +417,6 @@ Recorded so they are not silently forgotten. None of these should be built early
 | Multi-conversation UI | Phase 2 ships topics | Single entry point is adequate before that |
 | Retrieval-based memory (vs recent-N + summary) | Memory volume makes summaries inadequate | Recent-N plus a profile covers Phase 1–3 |
 | Automated behaviour judging | After the manual evaluation set exists | Needs the corpus first (ADR-010) |
-| Packaging a writable data directory | Before shipping any build that persists | Portable builds unpack to `%TEMP%` (ADR-003) |
 | The full character (humour, vanity, teasing, style examples) | v1.0, once the capabilities it describes exist | A persona written now would claim abilities the build lacks (ADR-008, ADR-009) |
 
 ---

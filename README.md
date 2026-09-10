@@ -36,7 +36,7 @@ page itself is fully local (CSP blocks network access).
 | Item | Requirement |
 | --- | --- |
 | OS | Windows x64 (the release artifact is a portable exe) |
-| Node.js | ≥ 20 (only needed to develop/package; the built exe does not need Node) |
+| Node.js | ≥ 22.5, and **24.x recommended** — `store.js` uses the built-in `node:sqlite`, which needs 22.5+ and is gated behind `--experimental-sqlite` on some 22.x builds. Developed and tested on v24.20.0. Only needed to develop/package; the built exe bundles its own runtime |
 | Network | `https://api.deepseek.com` must be reachable at runtime (main process only) |
 | Font | **You must supply your own** (see 3.0): drop a `.ttf/.otf/.woff/.woff2` into `app/fonts/` and `prep` registers it automatically |
 
@@ -138,7 +138,7 @@ reply, **how many messages went to the model and how long the system prompt was*
 
 ```
 [15:58:02] user      你好
-[15:58:02] assistant 主人，你好。  [context: 9 msg, system 2912 ch]
+[15:58:02] assistant 主人，你好。  [context: 9 msg, system 812 ch]
 ```
 
 That `context:` figure is the important one. A reply that ignores the question is almost
@@ -158,13 +158,15 @@ npm run dist           # -> app/dist/HDD-<version>.exe, ready to run
 
 ### 3.3.1 `release.ps1` — the full release ritual
 
-Run from the project root. It bumps the version, builds with a **placeholder** key,
-verifies the packaged exe really contains no real key, restores your config, commits,
-pushes and (if the `gh` CLI is installed) publishes the GitHub release.
+Run from the project root. It bumps the version, builds with a **placeholder** key and
+**without your font**, verifies the packaged exe really contains no real key and can
+actually start, restores your config, commits, pushes and (if the `gh` CLI is installed)
+publishes the GitHub release.
 
 ```powershell
 .\release.ps1 -Version 0.1.0              # pre-release, tag v0.1
 .\release.ps1 -Version 0.1.0 -DryRun      # show the plan, change nothing
+.\release.ps1 -Version 0.1.0 -VerifyOnly  # re-run only the artifact checks
 .\release.ps1 -Version 1.0.0 -Final       # final release (not pre-release)
 .\release.ps1 -Version 0.2.0 -NoPush      # build + commit only
 ```
@@ -174,12 +176,23 @@ pushes and (if the `gh` CLI is installed) publishes the GitHub release.
 | `-Version` | Three-part semantic version, e.g. `0.1.0` (required). Tag defaults to `v0.1` |
 | `-Tag` | Override the release tag |
 | `-Notes` | Release notes file (default `RELEASE_NOTES.md`) |
+| `-GenerateNotes` | Let GitHub generate the notes from commits (`-NotesPrefix` sets the title) |
+| `-AllowEmptyNotes` | Publish even though no notes exist |
 | `-Final` | Publish as a normal release instead of a pre-release |
 | `-SkipTests` | Skip the regression tests before building |
 | `-NoPush` | Commit locally but do not push or publish |
 | `-DryRun` | Validate and print the plan without changing anything |
+| `-VerifyOnly` | Run only the artifact checks against the build already in `app/dist`, then stop |
 
 Your real API key is restored in a `finally` block, so it survives even a failed build.
+
+**What the artifact checks cover** (`Assert-PackagedContents`): no real key in the exe; the
+fade mask, `pinBottom()` and the font-weight override are present in the packaged page;
+**every module the app `require`s is inside the asar**; and **no font files are embedded**.
+The last two exist because both failed in practice — `build.files` was not updated when
+`main.js` gained `conversation.js`/`personality.js` (the exe died on startup), and the font
+in `app/fonts/` was being embedded in every build. `-VerifyOnly` is how those checks are
+tested: point it at a deliberately broken build and confirm it exits non-zero.
 
 ### 3.4 Tests and asset rebuild (from the project root)
 
