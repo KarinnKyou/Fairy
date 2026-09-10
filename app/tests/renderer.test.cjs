@@ -165,9 +165,13 @@ async function emit(type, text) {
   console.log('PASS reasoning → 思考态');
 
   // --- content -> comforting state, one character at a time ---
-  const expectFull = '我是 Fairy，不是 DeepSeek。 有什么可以帮你？';
+  // chunk2 deliberately contains a blank line: the model emits "\n\n" for paragraph
+  // breaks, and with `white-space: pre-wrap` that would render as an empty line. It also
+  // ends with a space, to catch a per-delta trim() that would glue the next chunk onto it.
+  const expectFull = '我是 Fairy，不是 DeepSeek。 有什么可以帮你？好了';
   const chunk1 = '我是 Fairy😊，不是 DeepSeek。';
-  const chunk2 = ' 有什么可以帮你？🎉';
+  const chunk2 = '\n\n有什么可以帮你？🎉';
+  const chunk3 = '好了';
   await emit('content', chunk1);
   await waitFor(() => mascot.getAttribute('data-state') === 'comforting', 1500, '安慰态');
   await sleep(90); // ~20ms per char: only a short prefix should be out by now
@@ -177,8 +181,9 @@ async function emit(type, text) {
   if (partial.length >= expectFull.length) throw new Error('打字机一次性输出过多（不是逐字）: ' + JSON.stringify(partial));
   console.log('PASS 安慰态 + 逐字打字中（当前前缀=' + JSON.stringify(partial) + '）');
 
-  // --- finish: full text, emoji stripped, back to idle ---
+  // --- finish: full text, emoji stripped, newlines flattened, back to idle ---
   await emit('content', chunk2);
+  await emit('content', chunk3);
   await emit('done');
   await waitFor(() => !input.disabled && mascot.getAttribute('data-state') === null, 6000, '回常态');
   await waitFor(() => {
@@ -187,7 +192,13 @@ async function emit(type, text) {
   }, 6000, '整句打完');
   const finalText = [...out.querySelectorAll('.line.assistant')].map((n) => n.textContent).join('');
   if (/[😊🎉]/.test(finalText)) throw new Error('Emoji 未被清除: ' + finalText);
-  console.log('PASS done → 常态；逐字完成全文=' + JSON.stringify(finalText) + '（Emoji 清除）');
+  /* No blank lines may reach the screen: the reply is one terminal line. */
+  const live = liveAssistant();
+  if (/\n/.test(live)) throw new Error('回复里仍有换行（会渲染成空行）: ' + JSON.stringify(live));
+  if (!/不是 DeepSeek。 有什么/.test(live)) {
+    throw new Error('换行未折叠为单空格，或词被粘住: ' + JSON.stringify(live));
+  }
+  console.log('PASS done → 常态；逐字完成全文=' + JSON.stringify(live) + '（Emoji 清除 + 换行折叠）');
 
   // --- Font-weight override must exist with !important and high specificity ---
   // assets/css/fairy-hdd-theme.css forces `font-weight: 800 !important` onto every
