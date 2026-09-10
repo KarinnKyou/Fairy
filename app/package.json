@@ -34,6 +34,7 @@
       "main.js",
       "preload.cjs",
       "conversation.js",
+      "capabilities.js",
       "personality.js",
       "store.js",
       "config.json",
