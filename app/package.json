@@ -2,7 +2,7 @@
   "name": "hdd",
   "version": "0.0.1",
   "private": true,
-  "description": "HDD — Fairy 终端桌面应用（Electron，接入 DeepSeek API）",
+  "description": "HDD - Fairy desktop terminal (Electron, DeepSeek API)",
   "main": "main.js",
   "scripts": {
     "prep": "node scripts/prep.cjs",

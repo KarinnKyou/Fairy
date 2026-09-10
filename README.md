@@ -1,247 +1,287 @@
 # HDD
 
-**HDD** 是一个「Fairy」桌面终端：全屏窗口中，居中的 Fairy 吉祥物随对话自动切换状态，
-下方是 CMD 式终端输入输出（无气泡、无提示文案），对话经 **DeepSeek API（`deepseek-v4-flash`，SSE 流式）** 驱动。
-视觉资产提取自 Fairy-DSH-main（`dsh-fairy-visual` 插件），桌面壳为 Electron，纯本地页面（CSP 禁网）。
+**HDD** is a "Fairy" desktop terminal. In a full-screen window, a centred Fairy mascot
+switches state automatically as the conversation progresses, with CMD-style terminal
+input and output below it (no bubbles, no prompt text). Conversations are driven by the
+**DeepSeek API** (`deepseek-v4-flash`, SSE streaming). Visual assets are extracted from
+Fairy-DSH-main (the `dsh-fairy-visual` plugin); the desktop shell is Electron and the
+page itself is fully local (CSP blocks network access).
 
-> 许可：Apache License 2.0，© 2026 Chengzhibense（见 `LICENSE` / `NOTICE` / `THIRD_PARTY_NOTICES.md`）。
-> “Fairy / DeepSeek / 相关游戏及商标”不属于本授权；本工程不含任何官方素材、游戏文本或私有语料。
+> License: Apache License 2.0, © 2026 Chengzhibense (see `LICENSE` / `NOTICE` /
+> `THIRD_PARTY_NOTICES.md`).
+> "Fairy / DeepSeek / related games and trademarks" are not covered by this license;
+> this project contains no official assets, game text or private corpora.
 
 ---
 
-## 1. 功能一览
+## 1. Features
 
-- **全屏桌面终端**（标题 `HDD`），Esc 一键退出
-- Fairy 严格居中，历史文本在升高接近中央时**渐隐消失**，永不遮挡吉祥物
-- Fairy 回复**逐字打字机**输出；状态自动切换：
-  - 空闲 = 常态
-  - 模型推理（`reasoning_content` 流出）= 思考态
-  - 正文回复（`content` 流出）= “说话”= 安慰态
-  - 状态每次切换伴随**随机故障（glitch）视效**
-- **终端式输入输出**：无气泡/无提示文字/无输入占位符；输入行随历史一起从底部向上生长
-- **强制禁 Emoji**：system prompt 禁止 + 显示层 Unicode 清洗双保险
-- **自我认知 = Fairy**：系统设定禁止自称 DeepSeek / OpenAI 等其它模型
-- 字号 / 字重 / 栏宽均为 CSS 变量，可一键微调
+- **Full-screen desktop terminal** (title `HDD`), `Esc` to quit
+- Mascot strictly centred; history text **fades out** as it rises toward the centre and
+  never covers the mascot
+- Replies appear with a **per-character typewriter** effect; state switches automatically:
+  - idle = normal
+  - model reasoning (`reasoning_content` in the stream) = thinking
+  - reply body (`content` in the stream) = "speaking" = comforting
+  - every state change is accompanied by a **random glitch effect**
+- **Terminal-style I/O**: no bubbles, no hint text, no input placeholder; the input row
+  grows upward from the bottom together with history
+- **Emoji are banned**: enforced by the system prompt plus a Unicode scrub in the view layer
+- **Self-identity = Fairy**: the system prompt forbids claiming to be DeepSeek / OpenAI
+  or any other model
+- Font size, weight and column width are CSS variables, all easy to tune
 
-## 2. 环境要求
+## 2. Requirements
 
-| 项 | 要求 |
+| Item | Requirement |
 | --- | --- |
-| OS | Windows x64（打包产物为 portable exe） |
-| Node.js | ≥ 20（仅开发/打包需要；成品 exe 不依赖 Node） |
-| 网络 | 运行期需可访问 `https://api.deepseek.com`（仅主进程发起） |
-| 字体 | **需自备**（见 3.0）：把 `.ttf/.otf/.woff/.woff2` 放进 `app/fonts/` 即可，`prep` 会自动注册 |
+| OS | Windows x64 (the release artifact is a portable exe) |
+| Node.js | ≥ 20 (only needed to develop/package; the built exe does not need Node) |
+| Network | `https://api.deepseek.com` must be reachable at runtime (main process only) |
+| Font | **You must supply your own** (see 3.0): drop a `.ttf/.otf/.woff/.woff2` into `app/fonts/` and `prep` registers it automatically |
 
-## 3. 快速开始
+## 3. Getting started
 
-### 3.0 放字体（可选，但强烈建议）
+### 3.0 Provide a font (optional, but strongly recommended)
 
-本仓库**不包含字体文件**（授权原因）。请自备中文字体，把文件放进 `app/fonts/`
-目录，构建时 `scripts/prep.cjs` 会自动读取其族名与字重并生成 `@font-face`，
-**无需修改任何配置**。
+This repository **does not include any font files** (licensing). Supply your own CJK
+font by placing it in `app/fonts/`; during the build `scripts/prep.cjs` reads its family
+name and weight and generates the `@font-face` rule. **No configuration is needed.**
 
-- 不放字体也能运行，界面会回退到系统字体（`Microsoft YaHei` / `Segoe UI`），
-  只是失去原本的视觉效果；
-- 若字体**只有单一字重**（如本工程原用的重黑体），请保持 `--fairy-weight: 400`
-  与其一致；设成字体没有的字重会触发浏览器的「合成加粗」，中文会发糊。
+- The app runs without a font, falling back to the system sans-serif
+  (`Microsoft YaHei` / `Segoe UI`), but loses the intended look.
+- If your font has a **single weight** (as the heavy CJK face originally used here does),
+  keep `--fairy-weight: 400` consistent with it. Setting a weight the font does not have
+  triggers the browser's synthetic bold, which blurs CJK text.
 
-### 3.1 配置 API Key（必做）
+### 3.1 Configure the API key (required)
 
-应用读取 `app/config.json`，环境变量可覆盖：
+The app reads `app/config.json`; environment variables take precedence:
 
 ```jsonc
-// app/config.json（模板见 app/config.example.json）
+// app/config.json (template: app/config.example.json)
 {
-  "apiKey": "sk-…你的 DeepSeek API Key…",
+  "apiKey": "sk-...your DeepSeek API key...",
   "model": "deepseek-v4-flash",
   "baseUrl": "https://api.deepseek.com"
 }
 ```
 
-- `app/config.json` 已被 `.gitignore` 排除，请勿提交；
-- 也可用环境变量 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 覆盖（**环境变量优先于 config.json**）。
-- **源码运行与打包运行读的是同一份 `config.json`，但打包时是它的快照**：
-  用真实 Key 打包出来的 exe 是**私人版**，内含 Key，**不要外发**；
-  要发布 demo，请先把 `app/config.json` 换成占位值再打包。
-- **portable exe 不会读取 exe 旁边的 `config.json`**：portable 每次把自己解包到
-  `%TEMP%` 运行，代码读的是解包目录里的那份。因此给已打包的 exe 配 Key 要用
-  环境变量（`setx DEEPSEEK_API_KEY "sk-…"` 后重启进程），或重新打包。
+- `app/config.json` is excluded by `.gitignore` — never commit it.
+- `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` override it (**environment variables win over
+  `config.json`**).
+- **Running from source and running a packaged build read the same `config.json`, but the
+  packaged build embeds a snapshot of it.** An exe built with your real key is a
+  **private build** containing that key — **do not distribute it**. To publish a demo,
+  replace `app/config.json` with a placeholder value before packaging.
+- **A portable exe does not read a `config.json` next to the exe.** It unpacks itself
+  into `%TEMP%` on every launch and the code reads the copy inside that unpacked
+  directory. To give an already-built exe a key, use the environment variable
+  (`setx DEEPSEEK_API_KEY "sk-..."`, then restart the process) or rebuild.
 
-### 3.2 开发运行
-
-```sh
-cd app
-npm install            # 首次（下载 Electron ~120MB）
-npm start              # = prep（生成 www/）后启动开发窗口
-```
-
-### 3.3 打包成品（portable 单 exe）
+### 3.2 Running in development
 
 ```sh
 cd app
-npm run dist           # 产出 app/dist/HDD-0.01.exe，双击即用
+npm install            # first time only (downloads Electron, ~120MB)
+npm start              # runs prep (generates www/) then opens the dev window
 ```
 
-### 3.4 一键测试与资产重建（项目根目录）
+### 3.3 Building the release (single portable exe)
 
 ```sh
-npm run assets:bake    # 重新烘焙视觉资产并刷新 assets/MANIFEST.json
-npm run app:test       # prep 后跑渲染层回归测试（jsdom）
+cd app
+npm run dist           # -> app/dist/HDD-0.01.exe, ready to run
+```
+
+### 3.4 Tests and asset rebuild (from the project root)
+
+```sh
+npm run assets:bake    # re-bake visual assets and refresh assets/MANIFEST.json
+npm run app:test       # prep, then run the renderer regression tests (jsdom)
 npm test               # = assets:bake + app:test
-npm run app:dist       # 同 3.3
+npm run app:dist       # same as 3.3
 ```
 
-## 4. 使用说明
+## 4. Usage
 
-1. 双击 `HDD-0.01.exe` → 全屏窗口：中央 Fairy，底部空白输入行（块状光标）
-2. 输入文字按 **Enter** 发送（如 `你是谁`）；Fairy 先进入思考态（伴随故障闪烁），
-   再以安慰态逐字打出回复，完成后回到常态
-3. **Esc** 退出程序；点击任意文本区可让输入行重新获得焦点
-4. 故障/闪烁仅为视觉表现，不影响对话
+1. Double-click `HDD-0.01.exe` → full-screen window: Fairy in the centre, a blank input
+   row at the bottom (block cursor).
+2. Type text and press **Enter** to send. Fairy enters the thinking state (with a glitch
+   flicker), then types the reply out character by character in the comforting state and
+   returns to normal when finished.
+3. Press **Esc** to quit. Clicking anywhere in the text area refocuses the input row.
+4. The glitch/flicker is purely visual and does not affect the conversation.
 
-## 5. 项目结构
+## 5. Project structure
 
 ```
 HDD/
-├── README.md                  ← 本文档
-├── package.json               ← 根聚合脚本（assets:bake / app:test / …）
+├── README.md                  ← this document
+├── package.json               ← root aggregate scripts (assets:bake / app:test / ...)
 ├── LICENSE / NOTICE / THIRD_PARTY_NOTICES.md
-├── MANIFEST.json              ← 资产清单：来源映射 + SHA-256（assets/bake.cjs 生成）
-├── assets/                    ★ 可复用视觉资产层（与 App 解耦）
-│   ├── bake.cjs               ← 资产烘焙器（SVG 落地 / CSS 抽取 / 配色 token / 清单）
-│   ├── source/                ← 资产源模块（逐字复制自 Fairy-DSH-main，勿手改）
-│   │   ├── mascot-geometry.js      眼睛几何参数
-│   │   ├── mascot-eye-svg.js       主视觉 SVG（渐变/干扰滤镜/glitch 切片/眼睑 clip）
-│   │   ├── mascot-effects-svg.js   光环 Halo + 睫毛脉冲 Pulse
-│   │   ├── mascot-style.js         吉祥物动画/状态 CSS
+├── MANIFEST.json              ← asset manifest: origin mapping + SHA-256
+├── VERSION.md                 ← version record and invariants
+├── assets/                    ★ reusable visual asset layer (decoupled from the app)
+│   ├── bake.cjs               ← asset baker (SVG output / CSS extraction / tokens / manifest)
+│   ├── source/                ← asset source modules (verbatim copies, do not edit)
+│   │   ├── mascot-geometry.js      eye geometry parameters
+│   │   ├── mascot-eye-svg.js       main SVG (gradients / interference filter / glitch slices)
+│   │   ├── mascot-effects-svg.js   halo + lash pulse
+│   │   ├── mascot-style.js         mascot animation/state CSS
 │   │   └── esm/{constants.js, style.js, package.json}
-│   │                              HDD 主题 CSS 注入源（149 KB）
-│   ├── svg/                   ← 烘焙产物：fairy-eye(±thinking/comforting)/halo/pulse
-│   ├── css/                   ← 抽取产物：fairy-mascot.css / fairy-hdd-theme.css
-│   ├── tokens/                ← 配色/变量/字体统计（fairy-palette.json）
-│   └── preview.html           ← 资产画廊（双击可在浏览器查看素材与色板）
-└── app/                       ★ Electron 应用（消费 assets/ 生成 www/ 后打包）
-    ├── package.json           ← 应用包：prep / icon / start / dist 脚本 + builder 配置
-    ├── main.js                ← 主进程：全屏窗口、Esc 退出、DeepSeek SSE 代理（IPC）
-    ├── preload.cjs            ← 安全桥：getConfig / ask / onStream（contextBridge）
-    ├── config.json            ← 私密配置（Key/模型；gitignore）
-    ├── config.example.json    ← 配置模板
-    ├── fonts/                 ← 界面字体（**需自备**，本仓库不含；见 3.0）
-    ├── build-res/             ← 应用图标（scripts/icon.cjs 生成 icon.png）
+│   │                               source for the injected theme CSS
+│   ├── svg/                   ← baked output: fairy-eye (±thinking/comforting)/halo/pulse
+│   ├── css/                   ← extracted output: fairy-mascot.css / fairy-hdd-theme.css
+│   ├── tokens/                ← palette / variables / font stats (fairy-palette.json)
+│   └── preview.html           ← asset gallery (open in a browser to inspect assets and palette)
+└── app/                       ★ Electron application (consumes assets/ to build www/)
+    ├── package.json           ← app package: prep / icon / start / dist scripts + builder config
+    ├── main.js                ← main process: full-screen window, Esc, DeepSeek SSE proxy (IPC)
+    ├── preload.cjs            ← secure bridge: getConfig / ask / onStream (contextBridge)
+    ├── config.json            ← private config (key/model; gitignored)
+    ├── config.example.json    ← config template
+    ├── fonts/                 ← UI font (**supply your own**; not in this repo — see 3.0)
+    ├── build-res/             ← app icon (icon.png generated by scripts/icon.cjs)
     ├── scripts/
-    │   ├── prep.cjs           ← 组装 www/：注入 SVG + 复制 css/svg + 注册字体
-    │   └── icon.cjs           ← 程序化生成 Fairy 眼图标（纯 Node 无依赖）
-    ├── tests/renderer.test.cjs← jsdom 渲染层回归测试
-    ├── src/live.template.html ← 界面模板（@@FAIRY_*@@ 由 prep 注入）
-    ├── www/                   ← prep 生成（gitignore）
-    └── dist/                  ← 打包产物：HDD-0.01.exe（gitignore）
+    │   ├── prep.cjs           ← assembles www/: injects SVG, copies css/svg, registers fonts
+    │   ├── icon.cjs           ← generates the eye icon procedurally (pure Node, no deps)
+    │   ├── fade-rect-plan.cjs ← converts the elliptical mask into rectangular breakpoints
+    │   └── build-mask-probe.cjs ← writes www/mask-probe.html, a mask comparison page
+    ├── tests/renderer.test.cjs  ← jsdom renderer regression tests
+    ├── tests/scroll-pin.test.cjs← auto-scroll regression tests
+    ├── src/live.template.html ← page template (@@FAIRY_*@@ placeholders injected by prep)
+    ├── www/                   ← generated by prep (gitignored)
+    └── dist/                  ← release artifact: HDD-0.01.exe (gitignored)
 ```
 
-### 分层设计（可扩展性）
+### Layered design (extensibility)
 
-| 层 | 职责 | 如何扩展 |
+| Layer | Responsibility | How to extend |
 | --- | --- | --- |
-| `assets/` | 视觉资产的“单一事实来源”：源模块 + 生成产物 + 清单 | 新增/修改资产 → 运行 `assets/bake.cjs` 重烘焙；加字体文件到 `app/fonts/` 即自动注册 |
-| `app/` | 桌面应用：窗口/安全 IPC/页面/样式/打包 | 改页面模板 `app/src/live.template.html` 或主进程 `app/main.js`；跑 `prep` 后 `dist` |
-| 渲染层 | 纯本地、无 Node、无外联（CSP `connect-src 'none'`） | API Key 只在主进程；渲染层仅通过 preload 桥收发消息 |
+| `assets/` | Single source of truth for visual assets: source modules + generated output + manifest | Add/modify assets → re-bake with `assets/bake.cjs`; dropping a font into `app/fonts/` registers it automatically |
+| `app/` | Desktop app: window / secure IPC / page / styles / packaging | Edit `app/src/live.template.html` or `app/main.js`, then run `prep` and `dist` |
+| Renderer | Pure local page, no Node, no network (CSP `connect-src 'none'`) | The API key stays in the main process; the renderer only talks through the preload bridge |
 
-## 6. 技术要点
+## 6. Technical notes
 
-- **安全边界**：渲染进程 `sandbox + contextIsolation`，页面 CSP 禁网；模型请求只在主进程发起
-- **流式状态机**：SSE 中 `delta.reasoning_content` → 思考态；`delta.content` → 说话（安慰态）
-- **打字机**：内容逐字入队输出（队列过长自动提速），`done` 等待打完再收尾
-- **禁 Emoji**：系统提示词 + 渲染层按 `Extended_Pictographic` 等范围二次清洗
-- **字体**：需自备，放入 `app/fonts/`（原工程用的是内部族名为 `inpin hongmengti` 的重黑体）。微调见下节
-- **居中与渐隐**：吉祥物固定 50%/50% + `translate(-50%,-50%)`，文本层 z=5、吉祥物 z=20，
-  输出容器带中央径向 mask
+- **Security boundary**: renderer runs with `sandbox + contextIsolation` and a
+  network-blocking CSP; model requests are only made from the main process.
+- **Streaming state machine**: `delta.reasoning_content` → thinking;
+  `delta.content` → speaking (comforting).
+- **Typewriter**: content is queued and emitted one character at a time (the queue speeds
+  up when it grows); `done` waits for the queue to drain before finishing the turn.
+- **No emoji**: system prompt plus a second scrub in the renderer over
+  `Extended_Pictographic` and related ranges.
+- **Font**: supply your own in `app/fonts/`. Tuning is in section 7.
+- **Centring and fade**: the mascot is fixed at 50%/50% with `translate(-50%,-50%)`;
+  the text layer is `z-index: 5` and the mascot `z-index: 20`. The output container
+  carries a centred radial mask, and it must live on `#out`
 
-## 7. 常用微调（都在 `app/src/live.template.html` 顶部 CSS）
+## 7. Tuning (all in the CSS at the top of `app/src/live.template.html`)
 
-| 想要的效果 | 改哪里 |
+| Desired effect | What to change |
 | --- | --- |
-| 字号（28–32） | `body { --fairy-size: 30px; }` |
-| 字重/粗细 | `--fairy-weight: 400`（**须与字体实际字重一致**，见 7.1；本字体仅 400 一个字重） |
-| 栏宽 | `.line, #inputline { max-width: min(1500px, calc(100vw - 120px)); }` |
-| 状态切换故障时长 | JS 中 `glitchFx(180 + Math.random() * 240)` |
+| Font size (28–32) | `body { --fairy-size: 30px; }` |
+| Font weight | `--fairy-weight: 400` (**must match the font's actual weight**, see 7.1) |
+| Column width | `.line, #inputline { max-width: min(1500px, calc(100vw - 120px)); }` |
+| State-change glitch duration | `glitchFx(180 + Math.random() * 240)` in the JS |
 
-> **关于文字描边**：曾试过两套方案，**均已移除**，现在 `.line` 与 `#term-input` 都是
-> `text-shadow: none`，没有任何描边。
+> **About text stroke**: two approaches were tried and **both were removed**. `.line` and
+> `#term-input` are now `text-shadow: none` — there is no stroke.
 >
-> - `-webkit-text-stroke` 是**居中描边**（轮廓内外各占一半），会啃掉字形；
-> - 想只往外扩（真外描边），Chromium 的 `paint-order: stroke fill` **只对 SVG 文本生效**，
->   对 HTML 文本无效，只能用「8 向 `text-shadow` 偏移垫层」模拟。
+> - `-webkit-text-stroke` is a **centred** stroke (half inside, half outside the glyph)
+>   and eats into the letterforms.
+> - A true outer stroke is not available for HTML text: Chromium's
+>   `paint-order: stroke fill` **only applies to SVG text**. It can only be approximated
+>   with eight offset `text-shadow` layers.
 >
-> 移除的原因：本字体字面率高达 **88.2%**（雅黑 50.6%），笔画已达 **0.192 em**
-> （Black/Heavy 级别），字内空白本就极窄；任何额外描边都是在往外加墨、进一步压窄
-> 字怀，对可读性只有坏处。曾实测 8 向垫层的字面覆盖率增量：`0.5px → +15%`、
-> `0.7px → +21%`、`1.0px → +30%`。**如需恢复，重新实现时请一并恢复对应测试断言。**
+> Both were removed because this font is extremely dense — 88.2% ink coverage
+> (Microsoft YaHei: 50.6%) with stems of 0.192 em (Black/Heavy territory) — so its
+> counters are already very narrow. Any extra stroke adds ink outward and squeezes the
+> counters further, which can only hurt legibility. Measured ink growth from the
+> eight-layer approach was `0.5px → +15%`, `0.7px → +21%`, `1.0px → +30%`.
+> **If you reintroduce a stroke, restore the matching test assertions too.**
 
-### 7.1 字重必须压过主题 CSS（重要，勿删）
+### 7.1 The font-weight override (important, do not delete)
 
-`assets/css/fairy-hdd-theme.css`（从 Fairy-DSH 提取的资产）里有一条**全局规则**：
+`assets/css/fairy-hdd-theme.css` (an asset extracted from Fairy-DSH) contains a
+**global rule**:
 
 ```css
 html[data-dsh-fairy-visual] body,
 html[data-dsh-fairy-visual] body :where(*) { font-weight: 800 !important }
 ```
 
-它会命中终端里的**每一个元素**。而印品鸿蒙体**只有 400 一个字重**
-（`usWeightClass=400`、无 `fvar` 可变轴），被强行设成 800 后 Chromium 只能走
-**合成加粗（faux bold）**——把字形横向涂抹撑粗，中文本就笔画密集，细节因此**糊成一团**。
+It matches **every element** in the terminal. The bundled font has a single weight
+(400, `usWeightClass=400`, no `fvar` axis), so forcing 800 leaves Chromium with
+**synthetic bold (faux bold)** — it smears the glyphs sideways to fake weight, and since
+CJK is already stroke-dense the details **blur into a mush**.
 
-更隐蔽的是：`body` 上写的 `font-weight: var(--fairy-weight, 400)` 特异性只有 `(0,0,1)`，
-**斗不过**上面那种写法，且 `--fairy-weight` 当时并未定义（`var()` 的 fallback 只在
-变量「未定义」时生效，变量为空值时整条声明会被丢弃）——所以字重**一直实际是 800**。
+More subtly: the `font-weight: var(--fairy-weight, 400)` on `body` has a specificity of
+only `(0,0,1)` and **loses** to that rule. `--fairy-weight` was also never defined
+(`var()` falls back only when the variable is *undefined*; if it is defined but empty the
+whole declaration is dropped) — so the weight was **in fact always 800**.
 
-因此 `app/src/live.template.html` 中保留了这段覆盖，**不要删除**：
+For that reason `app/src/live.template.html` keeps this override. **Do not remove it:**
 
 ```css
 #hdd-root[data-dsh-fairy-visual] body #out,
 #hdd-root[data-dsh-fairy-visual] body #out *,
-/* … #log / #inputline / #term-input 同列 … */
+/* ... #log / #inputline / #term-input are listed alongside ... */
 { font-weight: 400 !important }
 ```
 
-要点：
+Key points:
 
-- 靠 `<html id="hdd-root">` 把特异性抬到 `(1,1,n)` 级，稳定压过主题的 `(0,1,1)`；
-- 必须覆盖 `#out` 的**全部后代**（主题的 `:where(*)` 就是命中每个元素）；
-- 值用**字面量 400**，不要写成 `var(...)`：值含 `var()` 时部分 CSS 解析器
-  （如 jsdom/cssstyle）会丢掉 `!important`，使这条覆盖静默失效；
-- 文字颜色偏亮、字体又偏重，一旦字重被劫持为 800，观感会同时「变粗 + 变糊」，
-  这两件事此前一直被误判为「字体设计问题」。
+- The `#hdd-root` id on `<html>` lifts specificity to the `(1,1,n)` level so it reliably
+  beats the theme's `(0,1,1)`.
+- It must cover **every descendant** of `#out`, because the theme's `:where(*)` matches
+  each element.
+- Use a **literal** `400`, never `var(...)`: when a value contains `var()` some CSS
+  parsers (jsdom/cssstyle) drop the `!important`, silently disabling the override.
+- The text is bright and the font is heavy, so a hijacked weight of 800 reads as both
+  "bolder" and "blurrier" at once — which was long misdiagnosed as a font design problem.
 
-> 注：**jsdom 的 CSS 层叠按文档顺序决胜、忽略特异性**（实测：高特异性规则放在前面会输），
-> 因此这条覆盖的**运行时效果无法用 jsdom 回归测试验证**，测试里只做存在性断言。
-> 若日后更换主题 CSS，请在真实浏览器中重新核对字重。
-> - 它不提升对比度（正文本就是亮色），价值在于文字滚过中央光晕/网格时轮廓更实。
+> Note: **jsdom resolves the CSS cascade by document order and ignores specificity**
+> (verified: a higher-specificity rule placed earlier loses), so the **runtime effect of
+> this override cannot be verified by the jsdom regression tests**; they only assert that
+> the rule exists and is shaped correctly. If the theme CSS is ever replaced, re-check the
+> weight in a real browser.
 
-## 8. 测试
+## 8. Tests
 
 ```sh
-# 渲染层回归（jsdom；覆盖：发送、思考/安慰状态、打字机、Emoji 清洗、布局断言、字重覆盖）
+# Renderer regression (jsdom; covers sending, thinking/comforting states, typewriter,
+# emoji scrubbing, layout assertions, and the font-weight override)
 npm run app:test
 ```
 
-测试不触网、不启动 Electron；`app/tests/renderer.test.cjs` 通过注入假 `fairyApp`
-驱动完整「发送 → 推理 → 正文 → done」流程。布局断言的期望值是**当前**的遮罩写法
-（`#out` 上的中央径向 `radial-gradient(ellipse 78vmin 58vmin at 50% 46% …)`），
-改遮罩时需同步更新断言。
+The tests never touch the network and never start Electron. `app/tests/renderer.test.cjs`
+injects a fake `fairyApp` and drives the full "send → reasoning → content → done" flow.
+The layout assertions expect the **current** mask (a centred radial
+`radial-gradient(ellipse 78vmin 58vmin at 50% 46% ...)` on `#out`); update them together
+with the mask.
 
-## 9. 常见问题
+`app/tests/scroll-pin.test.cjs` drives 12 turns and asserts the newest reply always stays
+visible above the input row, with no accumulating drift.
 
-- **双击 exe 被 SmartScreen 拦截**：本地未签名程序，选「更多信息 → 仍要运行」。
-- **回复报错/无输出**：先确认网络可达 `api.deepseek.com`、`config.json` 的 Key 有效；
-  也可 `npm start` 看控制台。错误会以 `! …` 行打印在终端里。
-- **界面字体未变化**：确认 `app/fonts/` 内 ttf 存在，重新 `npm run prep` 后 `dist`。
-- **改 Key/模型**：编辑 `app/config.json`（或设环境变量）后重启；重新打包需再执行 `npm run dist`。
-- **想换吉祥物/加字重**：见第 5 节分层设计说明。
+## 9. Troubleshooting
 
-## 10. 来源与致谢
+- **SmartScreen blocks the exe**: it is unsigned; choose "More info → Run anyway".
+- **Errors or no output**: check that `api.deepseek.com` is reachable and that the key in
+  `config.json` is valid. `npm start` shows the console; errors are printed as `! ...` lines.
+- **The UI font did not change**: make sure a font file exists in `app/fonts/`, then re-run
+  `npm run prep` and `dist`.
+- **Changing key/model**: edit `app/config.json` (or set the environment variables) and
+  restart; re-run `npm run dist` to repackage.
+- **Replacing the mascot or adding weights**: see the layered design in section 5.
 
-- 视觉资产源自 **Fairy-DSH-main**（`dsh-fairy-visual`，Apache-2.0，© 2026 Chengzhibense）；
-  原插件面向 DeepSeek Harness Web 客户端，本工程只提取视觉与工程实践，不包含其运行时。
-- DeepSeek API 为本应用提供对话推理；`Fairy`、`HDD/Hollow Deep Drive` 等名称仅供本项目内的
-  角色扮演用途，不暗示与相关方有任何官方关联。
+## 10. Credits
 
-_最后更新：结构重组为 HDD 后的根 README。_
+- Visual assets originate from **Fairy-DSH-main** (`dsh-fairy-visual`, Apache-2.0,
+  © 2026 Chengzhibense). The original plugin targets the DeepSeek Harness web client;
+  this project only reuses its visuals and engineering practices, not its runtime.
+- The DeepSeek API provides conversational inference. The names `Fairy` and
+  `HDD / Hollow Deep Drive` are used for role-play within this project only and imply no
+  official affiliation with any related party.

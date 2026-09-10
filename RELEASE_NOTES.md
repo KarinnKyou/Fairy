@@ -1,64 +1,70 @@
-# HDD v0.0.1 (demo)
+# HDD v0.01 (demo)
 
-Fairy 主题的桌面终端:全屏窗口,中央吉祥物随对话自动切换状态,下方是 CMD 式终端
-输入输出。对话由 **DeepSeek API**(SSE 流式)驱动。
+A Fairy-themed desktop terminal: a full-screen window with a centred mascot that changes
+state as the conversation progresses, and CMD-style terminal input/output below it.
+Conversations are driven by the **DeepSeek API** (SSE streaming).
 
-这是**第一个公开 demo**,用于展示外观与交互形态,功能尚不完整。
+This is the **first public demo**, showing the look and interaction. It is not feature
+complete.
 
 ---
 
-## 快速开始(用现成的 exe)
+## Quick start (using the prebuilt exe)
 
-下载本页附件 **`HDD-0.01.exe`**(96.6 MB,portable 单文件,免安装,Windows x64)。
+Download the attachment **`HDD-0.01.exe`** (96.6 MB, single portable file, no install,
+Windows x64).
 
-> ⚠️ **这个 exe 里没有 API Key。** 必须按下面第 2 步自己配置,否则启动后无法对话。
+> **This exe contains no API key.** You must configure one as described in step 2, or the
+> app cannot hold a conversation.
 
-### 1. 运行
+### 1. Run it
 
-双击 `HDD-0.01.exe`。首次运行可能被 SmartScreen 拦截(本地未签名程序),
-选「更多信息 → 仍要运行」。
+Double-click `HDD-0.01.exe`. SmartScreen may block it on first launch (unsigned local
+build) — choose "More info → Run anyway".
 
-- **Esc** 退出
-- 在底部输入行输入文字,按 **Enter** 发送
+- **Esc** quits
+- Type in the input row at the bottom and press **Enter** to send
 
-### 2. 配置 API Key(必做)
+### 2. Configure your API key (required)
 
-portable exe **不会**读取 exe 旁边的 `config.json`(它每次把自己解包到 `%TEMP%`
-运行)。所以请用环境变量:
+A portable exe does **not** read a `config.json` sitting next to it (it unpacks itself
+into `%TEMP%` on every launch). Use an environment variable instead:
 
 ```powershell
-setx DEEPSEEK_API_KEY "sk-你的DeepSeek API Key"
+setx DEEPSEEK_API_KEY "sk-your-deepseek-api-key"
 ```
 
-执行后**重新打开**程序(已开着的窗口读不到新变量)。想换模型可另设:
+Then **restart the app** — already-running processes do not see the new variable. To use
+a different model:
 
 ```powershell
 setx DEEPSEEK_MODEL "deepseek-v4-flash"
 ```
 
-API Key 在 https://platform.deepseek.com 申请。
+Get an API key at https://platform.deepseek.com.
 
-### 3. 字体(可选,但强烈建议)
+### 3. Font (optional, but strongly recommended)
 
-**本仓库不包含字体文件**(授权原因)。不提供字体也能运行,界面会回退到系统字体
-`Microsoft YaHei`,只是失去原本的视觉效果。
+**This repository contains no font files** (licensing). Without one the app still runs and
+falls back to the system font `Microsoft YaHei`, losing the intended look.
 
-想还原原貌:自行获取中文字体,放进 `app/fonts/` 后重新构建即可,
-`scripts/prep.cjs` 会自动读取字体族名与字重,**无需改任何配置**。
+To restore the original appearance, obtain a CJK font of your own, place it in
+`app/fonts/` and rebuild; `scripts/prep.cjs` reads its family name and weight
+automatically with **no configuration changes needed**.
 
 ---
 
-## 从源码运行
+## Running from source
 
 ```sh
 git clone https://github.com/KarinnKyou/Fairy.git
 cd Fairy/app
 npm install
-copy config.example.json config.json   # 填入你的 apiKey
+copy config.example.json config.json   # fill in your apiKey
 npm start
 ```
 
-打包成 exe:
+To package:
 
 ```sh
 npm run dist     # -> app/dist/
@@ -66,23 +72,29 @@ npm run dist     # -> app/dist/
 
 ---
 
-## 当前状态与已知限制
+## Current status and known limitations
 
-- **仅 Windows x64**,portable 单文件
-- 对话历史最多保留最近 30 条;上下文不跨会话保存
-- 界面为全屏,无窗口模式;Esc 退出
-- 无流式取消按钮(等待回复期间不能中断)
-- 粗体/其他字重的字体未支持:请确保字体的字重与 `--fairy-weight` 一致,
-  否则浏览器会「合成加粗」,中文会发糊
+- **Windows x64 only**, single portable file
+- Conversation history keeps the most recent 30 messages; context is not persisted
+  between sessions
+- The window is always full-screen; there is no windowed mode. Esc quits
+- No cancel button for streaming (a reply in progress cannot be interrupted)
+- Only one font weight is supported: make sure the font's weight matches
+  `--fairy-weight`, otherwise the browser synthesizes a bold and CJK text blurs
 
-## 后续计划
+## Roadmap
 
-`v0.1` → `v0.2` → … → `v1.0` 逐步迭代。当前为形态验证版。
+`v0.1` → `v0.2` → ... → `v1.0`, iterating gradually. The current build is a
+form-verification demo.
 
-## 许可与声明
+## License and notices
 
-- Apache License 2.0,© 2026 Chengzhibense(见 `LICENSE` / `NOTICE` / `THIRD_PARTY_NOTICES.md`)
-- 视觉资产提取自 **Fairy-DSH-main**(`dsh-fairy-visual` 插件),只提取视觉与工程实践,不含其运行时
-- **本仓库不含任何字体文件、官方素材、游戏文本或私有语料**
-- 「Fairy」「DeepSeek」等名称仅供本项目内的角色扮演用途,不暗示与相关方有任何官方关联
-- 本 demo 的 exe **不含任何 API Key**,请自行配置;请勿将他人 Key 打包分发
+- Apache License 2.0, © 2026 Chengzhibense (see `LICENSE` / `NOTICE` /
+  `THIRD_PARTY_NOTICES.md`)
+- Visual assets originate from **Fairy-DSH-main** (the `dsh-fairy-visual` plugin); this
+  project reuses only its visuals and engineering practices, not its runtime
+- **This repository contains no font files, official assets, game text or private corpora**
+- The names "Fairy" and "DeepSeek" are used for role-play within this project only and
+  imply no official affiliation with any related party
+- This demo exe **contains no API key**; supply your own. Never package someone else's key
+  into a build you distribute

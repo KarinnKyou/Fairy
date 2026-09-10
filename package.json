@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "commonjs",
-  "description": "HDD — Fairy 桌面终端（视觉资产 + Electron 应用 + 构建脚本）的根工程",
+  "description": "HDD - Fairy desktop terminal (visual assets + Electron app + build scripts)",
   "scripts": {
     "assets:bake": "node assets/bake.cjs",
     "app:prep": "node app/scripts/prep.cjs",

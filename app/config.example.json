@@ -1,5 +1,5 @@
 {
-  "apiKey": "sk-在此填入你的 DeepSeek API Key",
+  "apiKey": "sk-REPLACE_WITH_YOUR_DEEPSEEK_API_KEY",
   "model": "deepseek-v4-flash",
   "baseUrl": "https://api.deepseek.com"
 }
