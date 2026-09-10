@@ -60,7 +60,8 @@ function open(name, extra) {
   check(turn && typeof turn.turnId === 'string', '不可用时仍能开始回合（turnId 已生成）');
   check(c.recentHistory().length === 0, '不可用时历史为空数组');
   check(c.identity() === null, '不可用时身份为 null');
-  check(c.messagesFor(turn).length === 3, '不可用时仍能组装消息（system + 示例对）：' + c.messagesFor(turn).length);
+  check(c.messagesFor(turn).length === 1,
+    '不可用时仍能组装消息（只有 system，无历史可带）：' + c.messagesFor(turn).length);
   c.recordAssistantDelta(turn, '我在');
   c.finishTurn(turn, '我在');
   c.recordError(turn, '写入失败');
@@ -80,12 +81,16 @@ function open(name, extra) {
   check(msgs[0].role === 'system', '首条是 system');
   check(/Fairy/.test(msgs[0].content), 'system 含性格设定');
   check(/# 当前时间/.test(msgs[0].content), 'system 含当前时间');
-  check(!/# 主人画像/.test(msgs[0].content), '第一轮还没有画像可注入（轮数为 0）');
-  check(msgs[1].role === 'user' && msgs[2].role === 'assistant', '历史短时注入示例对');
-  check(msgs[msgs.length - 1].role === 'system' || msgs.length === 3,
-    '历史为空时消息结构 = system + 示例对（共 ' + msgs.length + ' 条）');
-  check(!msgs.some((m) => m.content === '你是谁'),
-    '用户消息未被重复注入（它不在 historyBefore 里）');
+  check(!/# 主人画像/.test(msgs[0].content), '第一轮还没有画像可注入（从未完成过回合）');
+
+  /* Examples must NOT be injected as message pairs: the model would treat a sample answer
+   * as something it actually said (this caused real off-topic replies). Only the system
+   * prompt and the real history may be present — nothing else. */
+  check(msgs.length === 1, '只有 system（本轮历史为空），没有伪造的对话轮次（共 ' + msgs.length + ' 条）');
+  check(!msgs.some((m) => m.role !== 'system' && /今天天气|凌晨两点十七分/.test(m.content)),
+    '示例文本未出现在任何非 system 消息里');
+  check(/# 语气样例/.test(msgs[0].content), '历史短时在 system 内注入语气样例');
+  check(/从未真实发生过/.test(msgs[0].content), '样例被明确标注为虚构、非对话内容');
 
   c.recordAssistantDelta(turn, '我是');
   const midId = turn.assistantMessageId;
@@ -124,9 +129,9 @@ function open(name, extra) {
   }
   const t = c.beginTurn('最后一问');
   const msgs = c.messagesFor(t);
-  check(msgs.length > 3, '历史较长时仍组装了上下文（共 ' + msgs.length + ' 条）');
-  check(!(msgs[1].role === 'user' && /今天天气|现在几点/.test(msgs[1].content)),
-    '历史超过阈值后不再注入示例对');
+  check(msgs.length > 2, '历史较长时仍组装了上下文（共 ' + msgs.length + ' 条）');
+  check(!/# 语气样例/.test(msgs[0].content),
+    '历史超过阈值后不再注入语气样例（省 token）');
   check(msgs.some((m) => m.content === '回答6'), '最近的历史被带上（回答6）');
   check(c.identity().turns === 6, '六轮已计数：' + c.identity().turns);
   c.close();

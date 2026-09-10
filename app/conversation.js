@@ -50,8 +50,33 @@ function buildSystemPrompt(persona, identity, now) {
   return String(persona) + profileLine(identity) + '\n\n# 当前时间\n' + nowLine(now);
 }
 
-/* Assemble the API message list: system, then (only while history is short) one example
- * pair, then the stored history. */
+/*
+ * Examples are a VOICE REFERENCE, not history.
+ *
+ * The first version injected them as real user/assistant message pairs. That was a design
+ * error: from the model's point of view those pairs ARE its own past turns, so it treated
+ * a sample answer as something it had actually said. One sample answer mentions
+ * "凌晨两点十七分", and the model later "corrected itself" for a sentence it had never
+ * said — while ignoring the question it had been asked.
+ *
+ * They now live inside the system prompt, clearly labelled as samples that did not happen.
+ * Cost is the same (the tokens go out either way) and the model can no longer mistake them
+ * for conversation.
+ */
+function styleReferenceSection(examples, pickExample) {
+  if (!examples || !examples.length) return '';
+  const ex = pickExample ? pickExample(examples) : examples[0];
+  if (!ex || ex.length !== 2) return '';
+  return '\n\n# 语气样例（仅示范风格，不属于对话内容）\n' +
+    '下面是虚构的语气参考，**从未真实发生过**。绝不要把它们当成自己说过的话，' +
+    '也不要引用、更正或延续其中的内容。\n' +
+    '【主人】' + ex[0] + '\n' +
+    '【你】' + ex[1] + '\n' +
+    '（样例结束。请只根据真实对话内容回答主人的当前问题。）';
+}
+
+/* Assemble the API message list: one system prompt, then the stored history.
+ * Nothing else is inserted — see styleReferenceSection for why. */
 function buildMessages(options) {
   const persona = options.persona;
   const examples = options.examples || [];
@@ -59,16 +84,12 @@ function buildMessages(options) {
   const identity = options.identity;
   const now = options.now;
 
-  const messages = [{ role: 'system', content: buildSystemPrompt(persona, identity, now) }];
-
-  if (history.length <= EXAMPLE_HISTORY_LIMIT && examples.length) {
-    const ex = options.pickExample ? options.pickExample(examples) : examples[0];
-    if (ex && ex.length === 2) {
-      messages.push({ role: 'user', content: ex[0] });
-      messages.push({ role: 'assistant', content: ex[1] });
-    }
+  let system = buildSystemPrompt(persona, identity, now);
+  if (history.length <= EXAMPLE_HISTORY_LIMIT) {
+    system += styleReferenceSection(examples, options.pickExample);
   }
 
+  const messages = [{ role: 'system', content: system }];
   for (const m of history) {
     /* Only roles the chat API accepts; 'error' rows exist for the transcript but are not
      * part of the model's context. */
