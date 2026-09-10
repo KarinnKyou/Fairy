@@ -79,7 +79,7 @@ npm start              # = prep（生成 www/）后启动开发窗口
 
 ```sh
 cd app
-npm run dist           # 产出 app/dist/HDD-1.0.0.exe，双击即用
+npm run dist           # 产出 app/dist/HDD-0.01.exe，双击即用
 ```
 
 ### 3.4 一键测试与资产重建（项目根目录）
@@ -93,7 +93,7 @@ npm run app:dist       # 同 3.3
 
 ## 4. 使用说明
 
-1. 双击 `HDD-1.0.0.exe` → 全屏窗口：中央 Fairy，底部空白输入行（块状光标）
+1. 双击 `HDD-0.01.exe` → 全屏窗口：中央 Fairy，底部空白输入行（块状光标）
 2. 输入文字按 **Enter** 发送（如 `你是谁`）；Fairy 先进入思考态（伴随故障闪烁），
    再以安慰态逐字打出回复，完成后回到常态
 3. **Esc** 退出程序；点击任意文本区可让输入行重新获得焦点
@@ -134,7 +134,7 @@ HDD/
     ├── tests/renderer.test.cjs← jsdom 渲染层回归测试
     ├── src/live.template.html ← 界面模板（@@FAIRY_*@@ 由 prep 注入）
     ├── www/                   ← prep 生成（gitignore）
-    └── dist/                  ← 打包产物：HDD-1.0.0.exe（gitignore）
+    └── dist/                  ← 打包产物：HDD-0.01.exe（gitignore）
 ```
 
 ### 分层设计（可扩展性）

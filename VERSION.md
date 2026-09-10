@@ -1,6 +1,6 @@
 # HDD — version record
 
-## demo-1.0.0 (current)
+## 0.0.1 (release name: HDD-0.01)
 
 Frozen build. Everything below is verified on this exact tree.
 
@@ -45,7 +45,7 @@ npm run test:ui     # or: node tests/renderer.test.cjs && node tests/scroll-pin.
 
 ```sh
 cd app
-npm run dist        # -> app/dist/HDD-1.0.0.exe  (portable, x64)
+npm run dist        # -> app/dist/HDD-0.01.exe  (portable, x64)
 ```
 
 Note: `npmRebuild` is set to `false` in `app/package.json`. The project has no native

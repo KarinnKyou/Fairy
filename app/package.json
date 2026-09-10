@@ -1,6 +1,6 @@
 {
   "name": "hdd",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "HDD — Fairy 终端桌面应用（Electron，接入 DeepSeek API）",
   "main": "main.js",
@@ -42,7 +42,7 @@
       ]
     },
     "portable": {
-      "artifactName": "HDD-${version}.${ext}"
+      "artifactName": "HDD-0.01.${ext}"
     },
     "compression": "normal"
   }

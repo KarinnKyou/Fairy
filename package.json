@@ -1,6 +1,6 @@
 {
   "name": "hdd",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "commonjs",
   "description": "HDD — Fairy 桌面终端（视觉资产 + Electron 应用 + 构建脚本）的根工程",
