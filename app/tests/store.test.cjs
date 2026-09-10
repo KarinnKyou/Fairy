@@ -184,6 +184,47 @@ function fresh(name) {
   store.close(s);
 }
 
+/* ---------------------------------------------------------------- 10. data dir resolution
+ * The dev workflow relies on being able to redirect the store away from app/data, and on
+ * resetDataDir refusing to delete unless explicitly forced. */
+{
+  const before = process.env.HDD_DATA_DIR;
+  try {
+    delete process.env.HDD_DATA_DIR;
+    const dflt = store.getDataDir();
+    check(dflt.endsWith(path.join('app', 'data')), '默认数据目录是 app/data：' + dflt);
+
+    process.env.HDD_DATA_DIR = path.join(scratch, 'redirected');
+    check(store.getDataDir() === path.join(scratch, 'redirected'),
+      'HDD_DATA_DIR 覆盖默认目录');
+
+    check(store.getDataDir({ dir: 'X:/explicit' }) === 'X:/explicit',
+      '显式 dir 参数优先级最高');
+  } finally {
+    if (before === undefined) delete process.env.HDD_DATA_DIR;
+    else process.env.HDD_DATA_DIR = before;
+  }
+
+  /* resetDataDir must be safe: a stray call without force must not delete anything. */
+  const dir = path.join(scratch, 'reset');
+  fs.mkdirSync(dir, { recursive: true });
+  const s = store.open({ dir });
+  store.appendMessage(s.db, { role: 'user', content: '不要删我' });
+  store.close(s);
+
+  check(fs.existsSync(path.join(dir, 'hdd.db')), 'reset 前数据库存在');
+
+  let refused = null;
+  try { store.resetDataDir(dir, {}); } catch (e) { refused = e.message; }
+  check(refused !== null && /force/.test(refused), '不带 force 时拒绝删除：' + (refused || '未抛错'));
+  check(fs.existsSync(path.join(dir, 'hdd.db')), '被拒绝后数据库仍然存在（数据未丢失）');
+
+  const n = store.resetDataDir(dir, { force: true });
+  check(n >= 1, '带 force 时删除了 ' + n + ' 个文件');
+  check(!fs.existsSync(path.join(dir, 'hdd.db')), '重置后数据库已删除');
+  check(fs.existsSync(dir), '只删文件，不删目录本身（目录可能被共用）');
+}
+
 /* ---------------------------------------------------------------- cleanup */
 fs.rmSync(scratch, { recursive: true, force: true });
 check(!fs.existsSync(scratch), '临时目录已清理');

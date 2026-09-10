@@ -11,6 +11,8 @@
     "test:conversation": "node tests/conversation.test.cjs",
     "test:ui": "node scripts/prep.cjs && node tests/renderer.test.cjs && node tests/scroll-pin.test.cjs",
     "start": "npm run prep && electron .",
+    "dev": "node scripts/dev.cjs",
+    "dev:fresh": "node scripts/dev.cjs --fresh",
     "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"
   },
   "devDependencies": {

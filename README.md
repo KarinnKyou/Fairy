@@ -87,6 +87,41 @@ npm install            # first time only (downloads Electron, ~120MB)
 npm start              # runs prep (generates www/) then opens the dev window
 ```
 
+#### Where conversations are stored
+
+Conversations, the profile and future memories live in a SQLite database that the main
+process owns. Its location depends on how the app is started:
+
+| How | Data directory |
+| --- | --- |
+| `npm start` | `app/data/hdd.db` (gitignored, easy to inspect) |
+| Packaged exe | `%APPDATA%\HDD\data\hdd.db` (the asar is read-only, and a portable build re-unpacks into `%TEMP%`) |
+| `HDD_DATA_DIR` set | whatever that variable points at |
+
+#### Test without polluting your real history
+
+While developing you open the app constantly and ask the same questions repeatedly. Those
+throwaway conversations would otherwise pile up in the real store and make the profile
+facts ("first time we met", "turn N") meaningless. So use the scratch launcher:
+
+```sh
+npm run dev          # test chats go to a temp directory, kept between runs
+npm run dev:fresh    # wipe that scratch store first (clean-slate testing)
+npm run dev -- --dir D:\scratch    # or point it somewhere specific
+```
+
+`npm run dev` never touches `app/data`. Use `npm start` when you want to talk to her for
+real.
+
+To clear the real store deliberately:
+
+```sh
+node -e "console.log(require('./store.js').resetDataDir('data',{force:true})+' files removed')"
+```
+
+`resetDataDir` refuses to delete anything without `{force:true}`, so a stray call cannot
+cost you a conversation.
+
 ### 3.3 Building the release (single portable exe)
 
 ```sh

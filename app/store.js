@@ -147,21 +147,42 @@ const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
 /*
  * Resolve the data directory.
  *
- * Development (not packaged): <project>/app/data — repo-local and gitignored, so it is
- * easy to inspect with any SQLite tool while working on the app.
- * Packaged: Electron's userData directory, because the app itself lives inside a
- * read-only asar and a portable build re-unpacks into %TEMP% on every launch.
+ * Order of precedence:
+ *   1. HDD_DATA_DIR — explicit override. Used by scripts/dev.cjs so test conversations go
+ *      to a scratch directory instead of the real one.
+ *   2. Electron's userData directory, when packaged: the app itself lives inside a
+ *      read-only asar and a portable build re-unpacks into %TEMP% on every launch.
+ *   3. <project>/app/data — development, repo-local and gitignored, easy to inspect.
  */
 function getDataDir(options) {
   const opts = options || {};
   if (opts.dir) return opts.dir;
-  /* `app.isPackaged` is only present when running under Electron; absent under plain
-   * Node, which is how the tests exercise this module. */
+  if (process.env.HDD_DATA_DIR) return process.env.HDD_DATA_DIR;
+
   const electronApp = opts.electronApp || tryRequireElectronApp();
   if (electronApp && electronApp.isPackaged) {
     return path.join(electronApp.getPath('userData'), 'data');
   }
   return path.join(__dirname, 'data');
+}
+
+/* Delete the store and its WAL sidecars. Used by the dev scratch workflow.
+ *
+ * Refuses to touch a directory unless the caller confirms it is scratch space: losing a
+ * real conversation should never be one stray argument away. */
+function resetDataDir(dir, options) {
+  const opts = options || {};
+  if (!opts.force) {
+    throw new Error('resetDataDir refuses to delete without { force: true }');
+  }
+  if (!dir) throw new Error('resetDataDir needs a directory');
+  const files = [];
+  for (const name of ['hdd.db', 'hdd.db-wal', 'hdd.db-shm']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) files.push(p);
+  }
+  for (const p of files) fs.rmSync(p, { force: true });
+  return files.length;
 }
 
 function tryRequireElectronApp() {
@@ -376,6 +397,7 @@ module.exports = {
   open,
   close,
   getDataDir,
+  resetDataDir,
   newId,
   nowMs,
   applyMigrations,
