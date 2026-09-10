@@ -445,7 +445,7 @@ Step "4. Commit"
 
 git -C $root add -A | Out-Null
 $staged = git -C $root diff --cached --name-only
-if (-not $staged) { Warn "nothing to commit (version already $Version?)" }
+if (-not $staged) { Warn "nothing to commit (version already $($Version)?)" }
 else {
     git -C $root commit -q -m "Release $Tag ($Version)"
     Ok "committed: Release $Tag ($Version)"
