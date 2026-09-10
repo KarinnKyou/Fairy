@@ -13,6 +13,7 @@ app/config.json
 # Conversation data and user profile (local state, never commit)
 app/data/
 app/.tmp-store-test/
+app/.tmp-conv-test/
 
 # Fonts are not redistributed here: supply your own .ttf/.otf in app/fonts/.
 # prep.cjs registers whatever it finds automatically; without it the UI falls
