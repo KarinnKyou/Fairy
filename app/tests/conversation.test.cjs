@@ -431,7 +431,8 @@ function stubConfirmer(newOn, options) {
     if (opts.throwOn && input.text.includes(opts.throwOn)) throw new Error('classifier unreachable');
     if (opts.nullOn && input.text.includes(opts.nullOn)) return null;
     const isNew = newOn.some((s) => input.text.includes(s));
-    return { isNew, title: isNew ? (opts.title || '由确认器命名的话题') : '' };
+    /* A real answer carries a name either way: for the new topic, or for the current one. */
+    return { isNew, title: isNew ? (opts.title || '由确认器命名的话题') : (opts.keptTitle || '') };
   };
   confirm.calls = calls;
   return confirm;
@@ -621,6 +622,63 @@ function stubConfirmer(newOn, options) {
   c.finishTurn(t3, '主人，是按字。');
   check(c.activeTopic().title === '我自己起的名字', '锁定后不会被后续消息改写：' + c.activeTopic().title);
   c.close();
+}
+
+/* ---------------------------------------------------------------- 11b. naming on a "same" answer
+ * The confirmation request happens anyway, so the model can name a topic it decided NOT to
+ * split. Without this a session that opens with a greeting ends up titled after whatever
+ * sentence happened to follow it — observed in a real run as a topic called
+ * 「我在做 HDD 这个终端项目，数据库用的是内置的…」 while every other topic in the same store
+ * carried a noun phrase. */
+{
+  let clock = 1_700_000_000_000;
+  const confirmer = stubConfirmer([], { keptTitle: '终端项目' });
+  const c = open('kept-naming', { now: () => clock, confirmBoundary: confirmer });
+
+  const t1 = await c.beginTurn('你好');
+  c.finishTurn(t1, '主人好。');
+  check(c.activeTopic().title === '你好', '招呼先给话题一个暂定名：' + c.activeTopic().title);
+  check(c.activeTopic().titleLocked === false, '这个暂定名还没定稿');
+
+  clock += 60000;
+  const t2 = await c.beginTurn('我在做 HDD 这个终端项目，数据库用的是内置的 node:sqlite');
+  check(confirmer.calls.length === 1, '这条零重叠，问了一次：' + confirmer.calls.length);
+  check(t2.topicId === t1.topicId, '模型答"没换"，所以留在原话题');
+  check(t2.topicConfirmed === false, '记录为"问过、答没换"：' + t2.topicConfirmed);
+  const named = c.activeTopic();
+  check(named.title === '终端项目', '用模型给的名字，而不是截断的原句：' + named.title);
+  check(named.titleLocked === true, '名字定稿');
+  check(!/数据库用的是内置/.test(named.title), '不再是那句被截断的用户消息');
+  c.close();
+
+  /* No name from the model falls back to the message that arrived, exactly as before. */
+  const fallback = open('kept-naming-fallback', {
+    now: () => clock,
+    confirmBoundary: stubConfirmer([], {}),
+  });
+  const f1 = await fallback.beginTurn('在吗');
+  fallback.finishTurn(f1, '在的，主人。');
+  clock += 60000;
+  await fallback.beginTurn('我在做 HDD 这个终端项目，数据库用的是内置的 node:sqlite');
+  check(fallback.activeTopic().titleLocked === true && /终端项目/.test(fallback.activeTopic().title),
+    '模型没给名字时退回截断原句并定稿：' + fallback.activeTopic().title);
+  fallback.close();
+
+  /* And nothing unusable from the model may reach the topic list. */
+  for (const junk of ['   ', '未命名话题', '…']) {
+    const bad = open('kept-naming-junk-' + junk.length + junk.charCodeAt(0), {
+      now: () => clock,
+      confirmBoundary: stubConfirmer([], { keptTitle: junk }),
+    });
+    const b1 = await bad.beginTurn('你好');
+    bad.finishTurn(b1, '主人好。');
+    clock += 60000;
+    await bad.beginTurn('我在做 HDD 这个终端项目，数据库用的是内置的 node:sqlite');
+    const title = bad.activeTopic().title;
+    check(title !== '未命名话题' && title !== '…' && /终端项目/.test(title),
+      '模型给出不可用的名字（' + JSON.stringify(junk) + '）时改用截断原句：' + title);
+    bad.close();
+  }
 }
 
 /* ---------------------------------------------------------------- 12. the evaluation set

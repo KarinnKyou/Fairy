@@ -210,6 +210,20 @@ function openConversation(options) {
     return store.searchMessages(s.db, query, o.limit, o.topicId ? { topicId: o.topicId } : {});
   }
 
+  /*
+   * A name from the confirmer, or null when it gave nothing usable. It is sanitised through the
+   * same rules as a derived title, so a wrapped quotation mark or a runaway sentence cannot
+   * reach the topic list, and it must carry at least one content term: a name made only of
+   * punctuation ("…") is not a name. The placeholder is rejected rather than accepted — a topic
+   * called 「未命名话题」 is worse than one named after the message that opened it.
+   */
+  function modelTitle(raw) {
+    if (raw == null) return null;
+    const clean = topics.titleFromText(raw);
+    if (!clean || clean === topics.FALLBACK_TITLE) return null;
+    return topics.contentTerms(clean).length ? clean : null;
+  }
+
   /* Whether a message carries enough content to name a subject. Used both when a topic is
    * created and when a provisional title is replaced, so the two rules cannot drift: a message
    * that could not have named the topic in the first place must not rename it later either.
@@ -278,9 +292,15 @@ function openConversation(options) {
         return { topic: created, reason: proposal.reason, confirmed: true };
       }
       /* Not confirmed, or nothing could confirm it: stay, and name the topic if it is still
-       * provisional and this message is substantial enough to name it. */
-      if (!current.titleLocked && couldNameTopic(text)) {
-        store.retitleTopic(s.db, current.id, topics.titleFromText(text));
+       * provisional — by the model when it answered, otherwise after the message that arrived.
+       * No separate "substantial enough" test is needed here: a message only reaches this line
+       * by having proposed, which already requires MIN_PROPOSAL_TERMS content terms.
+       *
+       * Naming on a "same" answer is what stops a session that opens with a greeting from
+       * being titled after the truncated sentence that followed it: the confirmation request
+       * happens anyway, so the name costs nothing extra. */
+      if (!current.titleLocked) {
+        store.retitleTopic(s.db, current.id, (verdict && verdict.title) || topics.titleFromText(text));
       }
       return {
         topic: store.getTopic(s.db, current.id) || current,
@@ -318,7 +338,7 @@ function openConversation(options) {
       if (!verdict || typeof verdict.isNew !== 'boolean') return null;
       return {
         isNew: verdict.isNew,
-        title: verdict.title == null ? null : String(verdict.title).trim().slice(0, topics.TITLE_MAX_CHARS),
+        title: modelTitle(verdict.title),
       };
     } catch (err) {
       /* Recorded, not swallowed silently: an unreachable classifier looks exactly like a
