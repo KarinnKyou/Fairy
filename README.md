@@ -258,10 +258,15 @@ and rename them:
 A message starting with `/` is a command for the app and is never sent to the model.
 
 **How a topic boundary is decided.** A cheap local rule in `app/topics.js` does the watching: a
-message carrying at least 5 content terms (CJK bigrams, or whole Latin words) that shares less
-than 15% of them with the current subject's recent messages — or much less, if hours have passed
-— is *proposed*. Only then is the model asked one small question: same subject, or a new one? It
+message carrying at least 3 content terms (CJK bigrams, or whole Latin words) is *proposed* unless
+it shares at least two of them with the current subject's recent messages **and** the required
+share of its own. Only then is the model asked one small question: same subject, or a new one? It
 answers `{"same": …, "title": …}`, and a new topic takes that name.
+
+The "two terms" part is not arbitrary. A real conversation showed 「附近有什么好吃的？」 being
+kept in a film topic because its only link was 「有什」 — a bigram spanning 有|什么 that matched the
+greeting's 「有什么事？」. One coincidence out of six terms cleared the threshold, and a change of
+subject went unasked. ADR-012 revision 2 records the measurement.
 
 Two properties of this are worth knowing, because they are deliberate:
 

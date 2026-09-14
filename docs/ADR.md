@@ -695,6 +695,51 @@ verdicts against the recorded ones.
 - *Asking the confirmer on every turn*: doubles the request count to catch a boundary the local
   rule would have proposed anyway.
 
+**Revision 2 — one shared term is a coincidence, not a shared subject.**
+
+The second real conversation ran with the confirmer live, and it produced two results that point
+in opposite directions. It is kept as `docs/eval/topics-2026-09-14-run2.json`.
+
+**The confirmer works.** The topic came out of that run named 「电影推荐」 — a noun phrase, from
+the model, which means the request was made, answered, parsed and used. Revision 1's central
+mechanism is no longer a hypothesis.
+
+**The proposer was wrong twice, and the model was never asked either time.**
+
+| turn | terms | shared with the topic | coverage | revision 1 said | actually |
+| --- | --- | --- | --- | --- | --- |
+| 附近有什么好吃的？ | 6 | **1** — 「有什」 | 0.167 | continue | new subject |
+| 上学好烦啊 | 4 | 0 | 0.000 | *below the floor* | new subject |
+
+The first is the more interesting failure. Its entire lexical link to the topic was 「有什」, a
+bigram spanning 有|什么, matched against the greeting's 「有什么事？」. Two characters that mean
+nothing together produced a coverage of 0.167, which cleared the 0.15 bar and suppressed the
+question. The second is simpler: four content terms fell below a floor of five, so a short,
+unambiguous change of subject was never considered.
+
+So the local rule gained the two conditions it was missing:
+
+- **`MIN_SHARED_TERMS` = 2.** A message can only be treated as plainly on-topic when it shares at
+  least two content terms *and* the required share of its own. One shared term is a coincidence —
+  and for short messages, which have few terms to divide by, a single coincidence is 17%.
+- **`MIN_PROPOSAL_TERMS` lowered 5 → 3.** Interjections and greetings still sit below it; a short
+  real sentence no longer does.
+
+**What this costs, measured.** Across the two transcripts, 8 of the 12 decisive turns now propose,
+against 6 before. The "cheap path" — messages that pass without a question — is narrower than
+revision 1 hoped: it now covers only messages that genuinely share vocabulary with the subject.
+That is the correct side to err on given what a silent miss does, but it does mean a small extra
+request, and its latency, on most turns where the subject drifts. `PROPOSE_COVERAGE` and
+`MIN_SHARED_TERMS` are the two levers, and both are named here so that raising them later is a
+decision with a record rather than a quiet edit.
+
+**The pattern worth noticing.** Two thresholds have now been corrected, and both times the
+reasoning behind the previous value had felt conclusive. Revision 0 was fitted to invented
+replies that echoed; revision 1's floor was chosen from a table of exchanges that contained no
+short real sentence. Neither error was findable by thinking harder about the same material — both
+took a real conversation. That is the argument for the corpus being the thing that gets grown, not
+the reasoning.
+
 ---
 
 ## Deferred decisions (with revisit triggers)

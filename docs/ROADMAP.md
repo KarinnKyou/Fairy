@@ -170,22 +170,22 @@ Not blockers, but they should not be forgotten.
    `conversation.test.cjs` §12 — adding the next case is appending a turn and a judgement. What
    it does **not** cover is reply quality, and it is one conversation: it is a start, not a
    corpus.
-8. **The confirmer's own quality is unmeasured, and untested against the live API.** Everything
-   around it is asserted offline (proposals, layout, per-turn history, every failure path), but
-   whether the model's `same`/`new` verdict is any good can only be judged by running the real
-   conversation again and comparing its answers with the recorded ones. The request itself has
-   never been sent: this environment has no network, so `main.js`'s `confirmBoundary` is written
-   defensively (JSON extracted from surrounding prose, 8-second timeout, every failure → stay)
-   but has not met the API. **It needs one live run before it can be called working.**
-9. **A boundary now costs a request, and the reply waits for it.** One extra small call on every
-   proposed turn — turns whose message shares no vocabulary with the current subject, which was
-   5 of 8 turns in the transcribed conversation — plus its latency before the first token
-   arrives. This withdraws revision 0's "no extra request", and it is the standing price of
-   ADR-012 revision 1. The lever if it proves annoying is `PROPOSE_COVERAGE`: raising it asks
-   less often and misses more.
-10. **The local constants are still guesses**, now tuned for recall rather than precision:
-   `MIN_PROPOSAL_TERMS` 5, `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. The
-   transcripts in `docs/eval` are the only data behind them, and there is exactly one.
+8. **The confirmer works, and has now run once.** Verified in production: a real conversation
+   produced a topic named 「电影推荐」 — a noun phrase from the model, which could only appear if
+   the request was made, answered, parsed and used. What remains unmeasured is the *quality* of
+   its verdicts: the same run never asked it about the two turns that should have been asked
+   (ADR-012 revision 2), so it has been observed succeeding once, not being judged. Comparing its
+   answers against the recorded judgements in `docs/eval` means running more real conversations.
+9. **A boundary costs a request, and the reply waits for it.** One extra small call on every
+   proposed turn, plus its latency before the first token. Measured across both transcripts, that
+   is most turns where the subject drifts — 8 of 12 decisive turns after revision 2, against 6
+   before it. This withdraws revision 0's "no extra request" and it is the standing price of
+   ADR-012 revision 1. The levers if it proves annoying are `PROPOSE_COVERAGE` and
+   `MIN_SHARED_TERMS`: both raise the bar for asking, and both make silent misses more likely.
+10. **The local constants are still guesses**, now twice corrected by real transcripts rather than
+    by reasoning, and tuned for recall: `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
+    `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. Two transcripts in
+    `docs/eval` are the whole of the evidence behind them.
 11. **v0.2 is not released.** The code is in the tree and the gate is green, but no artifact has
    been built, nothing is committed, and nothing is pushed. `release.ps1` needs the sandbox
    escalation for `electron-builder` and for `git push`/`gh`, and pushing is a decision for the

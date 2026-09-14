@@ -58,7 +58,9 @@ turn t5: topic continue (not proposed) -> 0001789374412300-0000-1a2b3c4d
 ```
 
 - `not proposed` — the message shared enough vocabulary with the current subject; nothing was
-  asked, nothing was spent.
+  asked, nothing was spent. **This is not automatically correct**: the second real run kept
+  「附近有什么好吃的？」 in a film topic this way, because one meaningless two-character match
+  cleared the bar. If a subject change is not being caught, this is the line to look at.
 - `confirmed: new topic` — the model agreed a subject changed, and this message opened it.
 - `confirmed: kept` — the local rule proposed and the model said it was still the same subject.
   This is the case the earlier local-only rule got wrong.
