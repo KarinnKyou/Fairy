@@ -23,6 +23,29 @@ npm start                 # prep, then open the window; data goes to app/data/hd
 
 Use this when you want a conversation you intend to keep. `Esc` quits.
 
+### 1.1 Commands you type to her (Phase 2)
+
+A message starting with `/` is a command for the app, handled in the renderer, and never sent
+to the model. Anything else is a message for her.
+
+| Command | What it does |
+| --- | --- |
+| `/help` | The list of commands |
+| `/topics` | Every topic, newest activity first, with its message count; `*` marks the current one |
+| `/switch <序号\|id>` | Switch to that topic and repaint the transcript from it. The number is the one `/topics` printed |
+| `/new [标题]` | Start a new topic and switch to it. Without a title, it takes the name from the next message |
+| `/rename <标题>` | Rename the current topic (`/topic` is an alias) |
+| `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
+
+Two things worth knowing, because they are deliberate rather than missing:
+
+- **There is no escape for a literal leading `/`.** A message that starts with `/` is a command;
+  an unknown one is reported as unknown rather than passed to her, because silently treating a
+  typo as chat makes it look like she ignored an instruction.
+- **Switching changes what she is reminded of.** The history sent to the model is the current
+  topic's history (ADR-012), so switching is not just a display change. `/topics` is also how you
+  find out that an automatic boundary happened where you did not expect one.
+
 ## 2. Talk to her without polluting the real history
 
 You will open the app constantly and ask the same things. Those throwaway turns would pile
@@ -75,18 +98,34 @@ cd D:\Coding\HDD\app
 npm run inspect                      # the real store (app/data)
 npm run inspect:dev                  # the scratch store used by npm run dev
 npm run inspect:dev -- --prompt      # also print the full system prompt
+npm run inspect:dev -- --topic 2     # only one topic's messages (the number /topics prints)
 ```
 
-It prints the transcript, the profile facts (first seen, turns, last seen) and, per reply,
-how many messages went to the model and how long the system prompt was:
+It prints the topics, the profile facts (first seen, turns, last seen) and, per reply, how many
+messages went to the model and how long the system prompt was. The `#N` on each line is the
+topic, numbered as in the topic list above it:
 
 ```
-[15:58:02] user      你好
-[15:58:02] assistant 主人，你好。  [context: 9 msg, system 812 ch]
+topics          : 2
+
+--- topics (newest activity first) ---
+  1. 科幻电影   [1 msg, last 2026/9/14 16:13:20]   <- current
+       id: 0001789...-0000-0d356de4
+  2. 终端项目   [2 msg, last 2026/9/14 16:12:11]
+
+--- transcript (oldest first) ---
+[16:12:11] #2 user      我在做 HDD 这个终端项目
+[16:12:11] #2 assistant 主人，我记住了。  [context: 1 msg, system 550 ch]
+[16:13:20] #1 user      推荐几部科幻电影
 ```
 
-That `context:` figure separates "no history was sent" from "history was sent". The app
-also logs the same numbers to the console on every turn.
+Two figures answer two different questions. `context:` separates "no history was sent" from
+"history was sent", and `#N` answers *which subject it came from* — a topic boundary in the
+wrong place looks fine on the transcript and wrong in the prompt. The app also logs the context
+numbers to the console on every turn.
+
+`--prompt` describes the topic that is in progress, because that is what the next turn would
+actually assemble; printing the global window there would describe a prompt that never goes out.
 
 ## 5. Resetting data
 
@@ -148,3 +187,7 @@ pointed at a deliberately broken build and shown to fail — do that if you chan
 | `conversation.test.cjs` fails about a capability (`工具调用`, `联网`, …) | the declaration in `app/capabilities.js` and the code disagree. The test says which: declare the capability there, or restore the code |
 | `conversation.test.cjs` fails with `prompt 未罗列做不到的项` | something started rendering the absences as a list again. Don't — sharpen the positive statement or the manner rules in the persona instead (ADR-009) |
 | She claims to have done something she cannot | check the capability block actually reaches the prompt: `npm run inspect:dev -- --prompt` |
+| She seems to have forgotten what you were discussing | `/topics` — an automatic boundary probably landed mid-subject. `npm run inspect:dev` shows which topic each message went to; `/switch` puts you back, `/new` states the intent for next time |
+| A topic split in the middle of one subject | expected when the subject is continued in entirely different words: detection is lexical (ADR-012). `/switch`, then `/rename` if the title is misleading |
+| A short new request landed in the previous topic | also expected, and the deliberate side of the same trade-off: a message under 8 content terms is never enough evidence to declare a new subject. Use `/new` |
+| `/switch 3` says there is no such topic | the numbers come from `/topics` and change as topics are used; an id prefix works too |

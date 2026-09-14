@@ -14,7 +14,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Released | 2026-09-10 |
 | Artifact | `HDD-0.1.0.exe` (95.5 MB, portable, Windows x64) |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.1 |
-| Phase in progress | **Phase 2 — topics** (not started) |
+| Phase in progress | **Phase 2 — topics**, implemented in the working tree, **not yet released** |
 | Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.01` (the "demo"), is kept as history: it showed the look, but
@@ -32,7 +32,7 @@ Delivered, each verified against the code rather than the docs:
 | Item | Evidence |
 | --- | --- |
 | SQLite store via the built-in `node:sqlite` (ADR-002) | `app/store.js`; schema and FTS5 tests pass |
-| Schema migrations, loud refusal to open a newer database (ADR-004) | fresh DB reaches v2; `db=999` is refused |
+| Schema migrations, loud refusal to open a newer database (ADR-004) | a fresh DB reaches the current schema version (v3 since Phase 2; it was v2 when Phase 1 shipped); `db=999` is refused |
 | Stable, sortable, UTC IDs (ADR-005) | same-millisecond ordering is deterministic; zero-padding holds across digit boundaries |
 | Main process owns turns; renderer only draws (ADR-001) | the renderer no longer assembles a prompt; a test asserts it |
 | Per-turn prompt assembly from the store (ADR-008) | system → capabilities → profile → last 30 messages |
@@ -65,25 +65,63 @@ a version is now a supported path.
 
 ---
 
+## Phase 2 — topics (in the tree, not yet released)
+
+**Goal:** the conversation stops being one undifferentiated transcript. Subjects are
+recognised as they happen, they can be switched between and searched, and switching changes
+what she is reminded of.
+
+Every item below was verified against the code, the same way Phase 1's were. The decisions
+behind them are ADR-012 (with the schema shape from ADR-006).
+
+| Item | Evidence |
+| --- | --- |
+| `topics` table, nullable `messages.topic_id`, index — migration **3**, additive | `store.test.cjs` §11; a fresh database reports schema v3 |
+| The v0.1 store upgrades without a rewrite | `store.test.cjs` §12 builds a **v2** database from the shipped migration SQL, and asserts one topic is created, titled from the earliest user message, with every old row in it and no `topic_id` left NULL |
+| The backfill is idempotent | reopening that upgraded store still reports exactly one topic |
+| Boundaries decided locally — no extra request, no model call | `app/topics.js`; `decideBoundary` returns `first`/`idle`/`shift`/`continue` |
+| CJK bigrams for the similarity signal, not the FTS single characters | `contentTerms`; the index keeps single characters for a different reason (ADR-002) |
+| Constants measured against labelled exchanges, not guessed | `conversation.test.cjs` §9 — 8 continuations, 5 changes of subject, the idle band, truncation |
+| Topics select context; the profile stays global | §10: a new topic's `historyBefore` does not contain the previous topic's messages |
+| Switching changes what is drawn *and* what is sent | §10 covers the transcript; `renderer.test.cjs` asserts the switch replaces the transcript instead of appending |
+| Titles derived, truncated at 24 characters, renamable | §9; `/rename` in `renderer.test.cjs` |
+| Manual override (`/new`, `/switch`) | §10 asserts a manually created empty topic is never abandoned by the detector |
+| Search UI over FTS5, cross-topic with the topic title on each hit | `/search` in `renderer.test.cjs`; `store.test.cjs` §11 scopes it to one topic |
+| The command surface adds **no** CSS and no new `.line` class | `renderer.test.cjs` compares the `.line.*` classes before and after the command tests |
+| The preload ↔ main channel contract cannot drift silently | `renderer.test.cjs` cross-checks every channel `preload.cjs` uses against `main.js`, and every `api.*` the page calls against the preload surface — shown to fail by renaming a channel. Without it, the fake API used by those tests would hide a typo until a command silently did nothing in a real window |
+| The invariants that must not regress | mask, `pinBottom()` and the font-weight override are the same assertions as before, unchanged |
+
+What Phase 2 deliberately did **not** do: semantic search. ADR-007 keeps Phase 2 on FTS5 and
+leaves embeddings to Phase 5, so "semantic search" stays an open item by decision rather than
+by omission.
+
+Two defects were found while building it, both before any release, both recorded in ADR-012: an
+explicitly created empty topic was immediately abandoned by the detector (so `/new` could never
+work with a long message), and the boundary decision and the message timestamps read the clock
+separately (which made the idle rule silently never fire under an injected clock).
+
+---
+
 ## The remaining phases
 
 Each row lists what the ADRs already commit to. Nothing here is scheduled by date; the
 order is the plan.
 
-| Phase | Version | Scope (per ADR) | New tables (ADR-004) |
-| --- | --- | --- | --- |
-| 2 | v0.2 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
-| 3 | v0.3 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
-| 4 | v0.4 | Context assembly and projects; topics linked to projects | `projects`, context tables |
-| 5 | v0.5 | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
-| 6 | v0.6 | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
-| 7 | v0.7 | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
-| 8 | v0.8 | Multi-step execution; agent runs linked to turns | `agent_runs` |
-| 9 | v0.9 | Schedules and scheduled tasks, weekly reports, export / merge / re-import | `schedules` |
-| — | v1.0 | **The full character returns**: cold humour, vanity, teasing, style examples. Deliberately withheld until the capabilities it describes exist (ADR-008). Also the point where the deferred decisions should be settled |
+| Phase | Version | Status | Scope (per ADR) | New tables (ADR-004) |
+| --- | --- | --- | --- | --- |
+| 2 | v0.2 | **in tree, unreleased** | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
+| 3 | v0.3 | not started | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
+| 4 | v0.4 | not started | Context assembly and projects; topics linked to projects | `projects`, context tables |
+| 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
+| 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
+| 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
+| 8 | v0.8 | not started | Multi-step execution; agent runs linked to turns | `agent_runs` |
+| 9 | v0.9 | not started | Schedules and scheduled tasks, weekly reports, export / merge / re-import | `schedules` |
+| — | v1.0 | not started | **The full character returns**: cold humour, vanity, teasing, style examples. Deliberately withheld until the capabilities it describes exist (ADR-008). Also the point where the deferred decisions should be settled | |
 
-Older phases stay open for revision: Phase 2's topic model will be built on real
-conversations, so expect the shape of it to change once there are some.
+Older phases stay open for revision: Phase 2's topic model was built before there were real
+conversations to build it on, so expect the shape of it to change now that there are some. The
+constants in `app/topics.js` are the part most likely to move — see the debts below.
 
 ---
 
@@ -119,6 +157,26 @@ Not blockers, but they should not be forgotten.
 6. **Nothing evaluates reply *quality*.** ADR-010 defers this to a corpus built from real
    Phase 2 conversations. Until then, "the reply was bad" is diagnosed with
    `npm run inspect`, not measured.
+7. **Phase 2's boundaries were tuned on constructed exchanges, not real ones.** ADR-010 wanted
+   the evaluation set to *start being collected* here, and it exists — `conversation.test.cjs`
+   §9 holds 8 continuations, 5 changes of subject and the idle band — but every case was written
+   to represent a shape of conversation, not copied from one. The constants in `app/topics.js`
+   (`MIN_TERMS_TO_JUDGE` 8, `SHIFT_COVERAGE` 0.05, `IDLE_COVERAGE` 0.2, `IDLE_GAP_MS` 6 h) are
+   the first things to re-measure once real transcripts exist: they were tuned to remove every
+   observed *false split*, which is the expensive mistake (she loses the subject), at the known
+   cost of merging short genuinely-new subjects into the current topic.
+8. **Topic detection cannot see paraphrase, and that is structural.** A subject continued in
+   entirely different words scores near-zero lexical overlap and reads as a change of subject.
+   `/new` and `/switch` are the escape hatch, and embeddings are the real fix — the same Phase 5
+   decision ADR-007 defers. Revisit the two together.
+9. **v0.2 is not released.** The code is in the tree and the gate is green, but no artifact has
+   been built, nothing is committed, and nothing is pushed. `release.ps1` needs the sandbox
+   escalation for `electron-builder` and for `git push`/`gh`, and pushing is a decision for the
+   owner of the repository rather than a step to take automatically.
+10. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
+    the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
+    they are verified by running them once. `--topic` was checked against a two-topic scratch
+    store, including that `--prompt` then describes only the topic in progress.
 
 ---
 
@@ -127,6 +185,7 @@ Not blockers, but they should not be forgotten.
 ```powershell
 cd D:\Coding\HDD
 npm test                                   # the gate: bake + all four suites
+npm run app:start                          # in the running app: /topics, /search, /help
 .\release.ps1 -Version 0.2.0 -DryRun       # what the next release would do
 ```
 

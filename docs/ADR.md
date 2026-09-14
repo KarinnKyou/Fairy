@@ -226,13 +226,19 @@ Adding a `NOT NULL` topic reference later would require backfilling every existi
 **Decision**
 
 v0.1 stores a single implicit conversation. The `messages` table ships **without** a topic
-column, and migration 2 (Phase 2) adds `topic_id` as **nullable**, then backfills.
+column, and the Phase 2 migration adds `topic_id` as **nullable**, then backfills.
 
 **Consequences**
 
 - Phase 2 is an additive migration, not a rewrite.
 - Do not scatter assumptions of "one conversation" through the code; keep conversation
   selection behind a single accessor so a topic parameter can be threaded through later.
+
+**Implemented in Phase 2 as migration 3** (`topics` + nullable `messages.topic_id` + index), with
+`backfillTopics()` turning what was the single implicit conversation into exactly one topic. The
+policy that fills the column afterwards — when a boundary occurs, what a topic does to the
+prompt, and how it is driven — is ADR-012. The accessor this ADR asked for is
+`store.recentMessages(db, limit, { topicId })` plus `conversation.listHistory({ topicId })`.
 
 **Alternatives rejected**
 
@@ -462,6 +468,128 @@ it may not redistribute, and a distributed build must not contain the developer'
 
 ---
 
+## ADR-012 — Topics: a local boundary decision, scoped context, derived titles
+
+**Status:** Accepted
+
+**Context**
+
+Phase 2 needs topic detection, creation and switching (ROADMAP), and ADR-006 already committed
+to the schema shape: a `topics` table, `messages.topic_id` added **nullable**, then backfilled.
+Four questions were left open, and each of them could have gone at least two ways:
+
+1. **Where does a boundary come from?** The model could be asked "is this a new subject, and
+   what would you call it" — accurate and expensive — or the app could decide locally from
+   signals it already stores.
+2. **What does a topic do to the prompt?** It can be a label over a global history, or it can
+   select the history.
+3. **Where do titles come from?** Generating one costs a request; deriving one is free and
+   deterministic.
+4. **How is it driven?** The terminal has one input line and no chrome.
+
+ADR-010 says the hard Phase 2 problem is behavioural and needs an evaluation set; ADR-007 defers
+semantics to Phase 5, so "semantic search" is explicitly out of scope here.
+
+**Decision**
+
+**1. The boundary is decided locally, in `app/topics.js`, with no extra request.** Two signals,
+both already in the store, and a message must be *substantial* before either is trusted:
+
+- **substance** — at least `MIN_TERMS_TO_JUDGE` (8) distinct content terms, where a term is a CJK
+  bigram or a whole Latin word with common function words removed. Below that the message stays
+  where it is, whatever it says.
+- **coverage** — the share of the message's content terms that already appear in the current
+  topic's last `RECENT_WINDOW_MESSAGES` (8) messages. Below `SHIFT_COVERAGE` (0.05) the subject
+  has clearly changed; after `IDLE_GAP_MS` (6 h) of silence the same test is applied with a lower
+  bar, `IDLE_COVERAGE` (0.2), which is what a "new sitting" adds.
+
+`decideBoundary` returns `first | idle | shift | continue`, and the reason is kept on the turn.
+It is how a wrong boundary is diagnosed, and it is what the evaluation cases assert.
+
+CJK bigrams, not the single characters the FTS index uses: 的 / 我 / 不 appear in unrelated
+sentences, so single characters report continuity between subjects that share nothing.
+
+**2. Topics select context.** The message being answered is filed into its topic, and the history
+sent to the model is that topic's history. The profile (first meeting, turns) stays global —
+those are facts about the relationship, not about a subject. Switching topics therefore changes
+what she is reminded of, which is the only thing that makes switching mean anything.
+
+**3. Titles are derived from the message that opened the topic** (`titleFromText`, truncated at
+`TITLE_MAX_CHARS` = 24 with an ellipsis, `未命名话题` when there is nothing to derive from), and
+renamable with `/rename`. A generated title would cost a request and buy wording, and the title
+is a label in a list, not part of the persona.
+
+**4. The detector is overridable, and that is a requirement rather than a courtesy.** Lexical
+overlap cannot see a subject continued in entirely different words; the measurement below says
+so. `/new` and `/switch` are the escape hatch, which is why an explicitly created empty topic is
+never abandoned by the detector.
+
+**5. Migration 3 is additive and the backfill is one topic.** `topics` is created,
+`messages.topic_id` is added nullable with an index, and `backfillTopics()` puts every
+pre-existing message into a single topic titled from the earliest user message. Re-segmenting
+that history with the detector was rejected: it would guess at boundaries nobody recorded, and it
+would make the upgrade unreproducible — your topic layout would depend on *when* you upgraded.
+
+**6. It is driven by slash commands on the existing input line** (`/topics`, `/switch`, `/new`,
+`/rename`, `/search`, `/help`). They print through the same `.line` elements as everything else,
+so no CSS, mask, weight or scroll behaviour changes. A topic list panel is a separate visual
+design and stayed deferred.
+
+**Consequences**
+
+- **The constants were measured, not guessed, and they are still provisional.** They were fixed
+  against labelled exchanges, and the first guess was wrong in a way worth recording: at
+  `MIN_TERMS_TO_JUDGE = 3` and `SHIFT_COVERAGE = 0.12`, three of four connected short exchanges
+  in a row were split into separate topics. The two mistakes are not equally bad — a **false
+  split** hands the next turn a prompt missing the subject it belongs to, so she appears to have
+  forgotten the conversation (exactly the failure `COMMANDS.md` §8 tells you to debug with
+  `inspect`), while a **missed split** only groups a few unrelated messages together, which
+  search survives. So the constants bias toward continuing: every observed false split sat at 7
+  terms or fewer and the shortest genuine change of subject worth catching carries 8.
+- **The price is explicit**: a short request that really does start a new subject ("推荐几部电影",
+  5–6 terms) is merged into the current topic. `/new` states the intent instead. This is the
+  first thing the evaluation set should revisit.
+- Titles and boundaries are reproducible offline, so the whole policy is covered by plain Node
+  tests; the seed cases live in `tests/conversation.test.cjs` §9.
+- `inspect.cjs` prints the topic of every message and scopes `--prompt` to the topic in progress,
+  because a boundary in the wrong place is invisible on screen and obvious in the prompt.
+- **The IPC surface grew by five channels, so it is now cross-checked statically**: every channel
+  `preload.cjs` uses must be registered in `main.js`, and every `api.*` the page calls must be
+  exposed by the preload. The renderer tests replace the real bridge with a fake, so without that
+  check a typo in a channel name would have shown up only as a command that does nothing in a
+  real window. The check was verified by breaking it.
+- Capability facts are untouched: topics are not a capability and the persona does not mention
+  them (ADR-009).
+
+**Two defects the implementation produced, both caught before release**
+
+1. **An explicitly created empty topic was immediately abandoned.** The detector judged the first
+   message of a fresh topic against *no* subject at all, scored it as completely off-topic, and
+   created a second topic beside the empty one — so `/new` followed by anything substantial could
+   never work. Fixed by treating "the current topic has no messages yet" as a continuation: an
+   empty topic is waiting for its first message, whoever created it.
+2. **Detection and message timestamps read the clock separately.** The topic decision used the
+   conversation's clock while `appendMessage` stamped rows with the wall clock, so in a test with
+   an injected clock the idle gap computed as *negative* and the idle rule silently never fired.
+   The turn now takes one reading and uses it for both, which is also correct in production: two
+   readings can land either side of the threshold.
+
+**Alternatives rejected**
+
+- *Ask the model whether the subject changed*: better boundaries and better titles, but a request
+  per turn, unusable offline, and it would make ADR-010's tuning loop depend on API credits. The
+  signals it would use are already stored locally.
+- *Semantic similarity for the boundary*: needs embeddings, which is ADR-007's Phase 5 decision.
+  Revisit together with it — this is the obvious upgrade path for the paraphrase failure.
+- *Split one topic per message, or per day*: meaningless as subjects and destroys search.
+- *Re-segment existing history at upgrade* (see decision 5).
+- *A topic list panel or sidebar*: a visual change to a verified fullscreen layout, for a feature
+  that six commands already cover. Deferred, not rejected (see the deferred table).
+- *`topic_id NOT NULL` with a default row*: rejected already in ADR-006, and it would put a fake
+  topic in every store that never used topics.
+
+---
+
 ## Deferred decisions (with revisit triggers)
 
 Recorded so they are not silently forgotten. None of these should be built early.
@@ -470,7 +598,7 @@ Recorded so they are not silently forgotten. None of these should be built early
 | --- | --- | --- |
 | Vector store and embedding model | Phase 5 starts | Unknown volume, model and query shape (ADR-007) |
 | Tool-calling architecture and permission model | Phase 6 starts | Needs a real capability inventory first |
-| Multi-conversation UI | Phase 2 ships topics | Single entry point is adequate before that |
+| Multi-conversation UI | Not scheduled. Phase 2 shipped topics with a command surface (ADR-012) and the panel is still deferred | Six commands already switch topics; a panel is a visual design for a verified fullscreen layout |
 | Retrieval-based memory (vs recent-N + summary) | Memory volume makes summaries inadequate | Recent-N plus a profile covers Phase 1–3 |
 | Automated behaviour judging | After the manual evaluation set exists | Needs the corpus first (ADR-010) |
 | The full character (humour, vanity, teasing, style examples) | v1.0, once the capabilities it describes exist | A persona written now would claim abilities the build lacks (ADR-008, ADR-009) |
@@ -493,3 +621,5 @@ Short list, to be checked before any structural change:
    synthetic-bold blur described in README 7.1.
 7. The fade mask stays on `#out`, never on `#log`.
 8. Published artifacts never contain a real API key or a redistributed font.
+9. Topic membership and the active topic are decided in the main process; the renderer may only
+   ask for a topic, switch to one, or name one (ADR-012).

@@ -33,6 +33,11 @@ page itself is fully local (CSP blocks network access).
 - **Emoji are banned**: enforced by the system prompt plus a Unicode scrub in the view layer
 - **Self-identity = Fairy**: the system prompt forbids claiming to be DeepSeek / OpenAI
   or any other model
+- **Topics**: the conversation is split into subjects as it happens, entirely on your machine —
+  no extra request to the model. Switching topics changes what she is reminded of, not just
+  what is on screen. `/topics`, `/switch`, `/new`, `/rename`, `/search`, `/help`
+- **Full-text search** over everything ever said, Chinese included (`/search`), with the topic
+  each hit came from
 - Font size, weight and column width are CSS variables, all easy to tune
 
 ## 2. Requirements
@@ -232,6 +237,40 @@ npm run app:dist       # same as 3.3
    returns to normal when finished.
 3. Press **Esc** to quit. Clicking anywhere in the text area refocuses the input row.
 4. The glitch/flicker is purely visual and does not affect the conversation.
+5. Type `/help` for the topic and search commands (below).
+
+## 4.0 Topics and search
+
+The conversation is split into **topics** — subjects — as it happens, and you can see, switch
+and rename them:
+
+| Command | What it does |
+| --- | --- |
+| `/topics` | Every topic, newest activity first, with message counts; `*` marks the current one |
+| `/switch <序号\|id>` | Switch to a topic and repaint the transcript from it |
+| `/new [标题]` | Start a new topic (and switch to it) |
+| `/rename <标题>` | Rename the current topic |
+| `/search <关键词>` | Full-text search across every topic, showing where each hit came from |
+| `/help` | The list |
+
+A message starting with `/` is a command for the app and is never sent to the model.
+
+**Topics are decided locally.** No extra request is made, so a boundary costs nothing and works
+offline. The rule is in `app/topics.js`: a message must carry at least 8 content terms (CJK
+bigrams, or whole Latin words) before it can be evidence of a change, and then it must share
+almost no vocabulary with the current topic's recent messages — or only a little, if hours have
+passed since the last one. All of it is computed from what is already in the database, on your
+machine; see ADR-012 for why each number is what it is.
+
+**Switching changes what she is reminded of, not just what is drawn.** The history sent to the
+model is the current topic's history; the profile (first meeting, number of turns) stays global,
+because that is about the relationship rather than a subject.
+
+**What it cannot do, deliberately.** Detection is lexical, so a subject continued in entirely
+different words reads as a new subject, and a short new request ("推荐几部电影") is not enough
+evidence to start one. Both are the trade-off chosen to avoid the expensive mistake — splitting
+a subject that was still going, which makes her look like she forgot. `/new` and `/switch` are
+the escape hatches. Embeddings would fix it properly; that is Phase 5 (ADR-007).
 
 ## 4.1 Fairy's personality
 
@@ -248,7 +287,7 @@ and `prep.cjs` is not involved. The assembled prompt is:
 
 ```
 PERSONA
-  + capabilities.capabilitySection()      ← what she can do; the prompt says that is all
+  + capabilities.capabilitySection()      ← what she can do; nothing about what is missing
   + "\n\n# 主人画像（核心记忆）\n" + ...    ← only once a turn has completed
   + "\n\n# 当前时间\n" + <local date and time>
 ```
@@ -343,11 +382,12 @@ HDD/
 └── app/                       ★ Electron application (consumes assets/ to build www/)
     ├── package.json           ← app package: prep / icon / start / dist scripts + builder config
     ├── main.js                ← main process: full-screen window, Esc, DeepSeek SSE proxy (IPC)
-    ├── preload.cjs            ← secure bridge: getConfig / ask / onStream (contextBridge)
+    ├── preload.cjs            ← secure bridge: getConfig / ask / onStream / topics (contextBridge)
     ├── config.json            ← private config (key/model; gitignored)
     ├── config.example.json    ← config template
     ├── personality.js         ← Fairy's persona: identity, honesty rule, speech rules
     ├── capabilities.js        ← what the app can/cannot do, as data (facts, not persona)
+    ├── topics.js              ← when the subject changes, and what a topic is called (pure policy)
     ├── store.js               ← persistent state (SQLite via node:sqlite; main process only)
     ├── conversation.js        ← owns turns and assembles the prompt per turn
     ├── data/                  ← created at runtime: hdd.db (gitignored)
@@ -357,10 +397,10 @@ HDD/
     │   ├── prep.cjs           ← assembles www/: injects SVG, copies css/svg, registers fonts
     │   ├── icon.cjs           ← generates the eye icon procedurally (pure Node, no deps)
     │   ├── dev.cjs            ← launches with an isolated data dir (--fresh to wipe it)
-    │   └── inspect.cjs        ← prints schema version, turn count and recent messages
-    ├── tests/store.test.cjs        ← data layer: schema, migrations, ID order, CJK search
-    ├── tests/conversation.test.cjs ← prompt assembly, persona scope, turn bookkeeping
-    ├── tests/renderer.test.cjs     ← jsdom renderer regression tests
+    │   └── inspect.cjs        ← prints topics, schema version, turns and recent messages
+    ├── tests/store.test.cjs        ← data layer: schema, migrations, ID order, CJK search, topics
+    ├── tests/conversation.test.cjs ← prompt assembly, persona scope, turn bookkeeping, boundaries
+    ├── tests/renderer.test.cjs     ← jsdom renderer regression tests (incl. slash commands)
     ├── tests/scroll-pin.test.cjs   ← auto-scroll regression tests
     ├── src/live.template.html ← page template (@@FAIRY_*@@ placeholders injected by prep)
     ├── www/                   ← generated by prep (gitignored)
@@ -475,7 +515,7 @@ Key points:
 
 ```sh
 # Renderer regression (jsdom; covers sending, thinking/comforting states, typewriter,
-# emoji scrubbing + newline flattening, layout assertions, and the font-weight override)
+# emoji scrubbing + newline flattening, slash commands, layout assertions, font-weight override)
 npm run app:test
 
 # Everything, including the asset bake step
@@ -483,8 +523,9 @@ npm test
 ```
 
 `app:test` runs four suites in order: `store.test.cjs` (schema, migrations, ID ordering,
-CJK full-text search), `conversation.test.cjs` (prompt assembly, persona scope, turn
-bookkeeping), then a `prep` rebuild, `renderer.test.cjs`, and `scroll-pin.test.cjs`.
+CJK full-text search, topics and the v0.1 → v0.2 upgrade), `conversation.test.cjs` (prompt
+assembly, persona scope, turn bookkeeping, topic boundaries and topic-scoped context), then a
+`prep` rebuild, `renderer.test.cjs`, and `scroll-pin.test.cjs`.
 
 The tests never touch the network and never start Electron. `app/tests/renderer.test.cjs`
 injects a fake `fairyApp` and drives the full "send → reasoning → content → done" flow.
