@@ -83,12 +83,55 @@ ipcMain.handle('fairy:config', () => ({
   baseUrl: config.baseUrl,
 }));
 
-/* The renderer asks for the transcript on startup so it can repaint after a restart.
- * Returns [] when the store is unavailable, so the renderer needs no special case. */
+/* The renderer asks for the transcript on startup so it can repaint after a restart, and
+ * again after a topic switch. One topic at a time: `topicId` defaults to the topic that was
+ * in progress (ADR-001, ADR-012). Returns [] when the store is unavailable, so the renderer
+ * needs no special case. */
 ipcMain.handle('fairy:history', (_event, payload) => {
   if (!conv) return [];
-  const limit = payload && payload.limit;
-  return conv.recentHistory(limit == null ? 60 : limit);
+  const p = payload || {};
+  return conv.listHistory({
+    topicId: p.topicId || null,
+    limit: p.limit == null ? 60 : p.limit,
+  });
+});
+
+/* The topic list plus which one is active. Every mutation below returns this same shape, so
+ * the renderer never has to guess what changed or issue a second round trip to find out. */
+function topicState() {
+  const current = conv ? conv.activeTopic() : null;
+  return {
+    currentId: current ? current.id : null,
+    currentTitle: current ? current.title : null,
+    topics: conv ? conv.listTopics() : [],
+  };
+}
+
+ipcMain.handle('fairy:topics', () => topicState());
+
+ipcMain.handle('fairy:topic-new', (_event, payload) => {
+  if (conv) conv.newTopic(payload && payload.title);
+  return topicState();
+});
+
+ipcMain.handle('fairy:topic-switch', (_event, payload) => {
+  const id = payload && payload.id;
+  if (conv && id) conv.switchTopic(id);
+  return topicState();
+});
+
+ipcMain.handle('fairy:topic-rename', (_event, payload) => {
+  const p = payload || {};
+  if (conv && (p.id || conv.activeTopic())) conv.renameTopic(p.id, p.title);
+  return topicState();
+});
+
+/* Full-text search across every topic by default (ADR-002: this is FTS5, not the semantic
+ * retrieval that ADR-007 defers to Phase 5). */
+ipcMain.handle('fairy:search', (_event, payload) => {
+  if (!conv) return [];
+  const p = payload || {};
+  return conv.search(p.query, { limit: p.limit, topicId: p.topicId });
 });
 
 /* IPC: streaming chat. The payload is one user message, not a whole history: the main

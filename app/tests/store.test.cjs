@@ -2,12 +2,17 @@
 /*
  * store.test.cjs — data layer regression tests (plain Node, no Electron).
  *
+ * Covers ids and ordering, migrations and the downgrade guard, the CJK full-text index,
+ * topics and their backfill (migration 3), and data-directory resolution.
+ *
  * Everything runs against a scratch directory that is deleted afterwards, so the tests
  * never touch real data. Run: node tests/store.test.cjs
  */
+
 const fs = require('fs');
 const path = require('path');
 const store = require('../store.js');
+const topics = require('../topics.js');
 
 let failed = 0;
 function check(cond, msg) {
@@ -223,6 +228,120 @@ function fresh(name) {
   check(n >= 1, '带 force 时删除了 ' + n + ' 个文件');
   check(!fs.existsSync(path.join(dir, 'hdd.db')), '重置后数据库已删除');
   check(fs.existsSync(dir), '只删文件，不删目录本身（目录可能被共用）');
+}
+
+/* ---------------------------------------------------------------- 11. topics
+ * Migration 3 (ADR-006, ADR-012): the table, the nullable column, and the topic-scoped
+ * queries that switching depends on. */
+{
+  const { dir, s } = fresh('topics');
+
+  const tables = s.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+  check(tables.includes('topics'), '迁移 3 建立了 topics 表');
+  const cols = s.db.prepare('PRAGMA table_info(messages)').all().map((r) => r.name);
+  check(cols.includes('topic_id'), 'messages 增加了 topic_id 列');
+
+  const a = store.createTopic(s.db, { title: '终端项目' });
+  check(/^\d{16}-\d{4}-[0-9a-f]{8}$/.test(a.id), '话题 id 与消息用同一种稳定 id：' + a.id);
+  const b = store.createTopic(s.db, { title: '   ' });
+  check(b.title === topics.FALLBACK_TITLE, '空标题回退为「' + topics.FALLBACK_TITLE + '」而不是空串');
+
+  store.appendMessage(s.db, { role: 'user', content: '终端项目的第一句', topicId: a.id });
+  store.appendMessage(s.db, { role: 'assistant', content: '终端项目的回答', topicId: a.id });
+  store.appendMessage(s.db, { role: 'user', content: '电影话题的第一句', topicId: b.id });
+
+  check(store.countMessages(s.db) === 3, '不传 topicId 时仍是全局计数');
+  check(store.countMessages(s.db, { topicId: a.id }) === 2, '按话题计数只数该话题：' +
+    store.countMessages(s.db, { topicId: a.id }));
+
+  const scoped = store.recentMessages(s.db, 10, { topicId: a.id });
+  check(scoped.length === 2, 'recentMessages 按话题过滤条数：' + scoped.length);
+  check(scoped.every((m) => m.topicId === a.id), '返回的每条都属于该话题');
+  check(!scoped.some((m) => /电影话题/.test(m.content)), '作用域内看不到别的话题的消息');
+  check(store.recentMessages(s.db, 10).length === 3, '不传 topicId 时 recentMessages 仍是全覆盖');
+
+  const listed = store.listMessages(s.db, { topicId: b.id });
+  check(listed.length === 1 && listed[0].content === '电影话题的第一句',
+    'listMessages 支持 topicId 过滤（ADR-001 里的 { topicId, limit } 形态）');
+
+  check(store.lastMessageAt(s.db, b.id) > 0, 'lastMessageAt 报告该话题最新消息时间');
+  check(store.lastMessageAt(s.db, 'no-such-topic') === 0, '空话题的 lastMessageAt 为 0（而不是 null）');
+
+  /* Search must be narrowable too: the same word in two topics is the case that proves it. */
+  store.appendMessage(s.db, { role: 'user', content: '搜索这个词的项目', topicId: a.id });
+  store.appendMessage(s.db, { role: 'user', content: '搜索这个词的电影', topicId: b.id });
+  check(store.searchMessages(s.db, '搜索这个词').length === 2, '搜索默认跨全部话题');
+  const onlyA = store.searchMessages(s.db, '搜索这个词', 20, { topicId: a.id });
+  check(onlyA.length === 1 && onlyA[0].topicId === a.id, '搜索可按话题收窄：' + onlyA.length);
+  check(onlyA[0].topicTitle === '终端项目', '搜索结果带回话题标题：' + onlyA[0].topicTitle);
+
+  /* Ordering: the topic most recently written to comes first, not the newest id. */
+  const list = store.listTopics(s.db);
+  check(list.length === 2, '列出两个话题');
+  check(list[0].id === b.id, '最近有消息的话题排在最前（按 updated_at）');
+  check(list.find((t) => t.id === a.id).messageCount === 3,
+    '话题带消息计数：' + list.find((t) => t.id === a.id).messageCount);
+
+  check(store.renameTopic(s.db, a.id, '  改过的名字  ').title === '改过的名字', '改名会去掉首尾空白');
+  check(store.renameTopic(s.db, a.id, '   ') === null, '拒绝把标题改成空（否则列表里认不出来）');
+  check(store.renameTopic(s.db, 'no-such-topic', 'x') === null, '改不存在的话题返回 null 而不是抛错');
+  check(store.getTopic(s.db, a.id).title === '改过的名字', '改名已落盘');
+
+  check(store.setCurrentTopic(s.db, a.id).id === a.id, '可以设置当前话题');
+  check(store.getCurrentTopic(s.db).id === a.id, '当前话题已持久化');
+  check(store.setCurrentTopic(s.db, 'no-such-topic') === null, '不能把不存在的话题设为当前');
+
+  /* Moving a message between topics, used to repair a store by hand. */
+  const moved = store.listMessages(s.db, { topicId: b.id, limit: 1 })[0];
+  check(store.setMessageTopic(s.db, moved.id, a.id).topic_id === a.id, '可以把消息移到别的话题');
+  check(store.countMessages(s.db, { topicId: b.id }) === 1, '移动后原话题少了一条');
+  check(store.setMessageTopic(s.db, moved.id, 'no-such-topic') === null, '移到不存在的话题返回 null');
+
+  store.close(s);
+
+  /* The active topic is what a restart resumes, so it has to survive one. */
+  const s2 = store.open({ dir });
+  check(store.getCurrentTopic(s2.db).id === a.id, '当前话题跨重启保留');
+  store.close(s2);
+}
+
+/* ---------------------------------------------------------------- 12. v0.1 upgrade
+ * The promise ADR-006 made: adding topic_id later is an additive migration plus a backfill,
+ * not a rewrite. The v2 database here is built from the SHIPPED migration SQL rather than
+ * from a copy of it, so this test also fails if a shipped migration is ever edited. */
+{
+  const dir = path.join(scratch, 'upgrade');
+  fs.mkdirSync(dir, { recursive: true });
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(dir, 'hdd.db'));
+  db.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
+  db.exec('INSERT INTO schema_version (version) VALUES (0)');
+  db.exec(store.MIGRATIONS[0][1]);   /* migration 1: messages + FTS + meta */
+  db.exec(store.MIGRATIONS[1][1]);   /* migration 2: context_messages + prompt_chars */
+  db.exec('UPDATE schema_version SET version = 2');
+  const ins = db.prepare('INSERT INTO messages (id, role, content, created_at) VALUES (?,?,?,?)');
+  ins.run('m1', 'user', 'v0.1 里说的第一句话', 1000);
+  ins.run('m2', 'assistant', 'v0.1 里的回答', 1001);
+  ins.run('m3', 'user', 'v0.1 里说的第二句话', 1002);
+  db.close();
+
+  const s = store.open({ dir });
+  check(s.schemaVersion === store.SCHEMA_VERSION, 'v2 的库升级到 v' + store.SCHEMA_VERSION);
+
+  const list = store.listTopics(s.db);
+  check(list.length === 1, 'v0.1 的单条隐含会话回填成恰好一个话题：' + list.length);
+  check(list[0].title === 'v0.1 里说的第一句话', '话题标题取自最早的用户消息：' + list[0].title);
+  check(store.countMessages(s.db, { topicId: list[0].id }) === 3, '旧消息全部归入该话题');
+  check(store.listMessages(s.db).every((m) => m.topicId === list[0].id),
+    '升级后没有消息遗留 topic_id 为 NULL');
+  check(store.getCurrentTopic(s.db).id === list[0].id, '回填出的话题成为当前话题');
+  store.close(s);
+
+  /* Idempotent: opening again must not re-segment or duplicate. */
+  const s2 = store.open({ dir });
+  check(store.countTopics(s2.db) === 1, '再次打开不会重复回填（幂等）');
+  check(store.countMessages(s2.db) === 3, '重开后消息条数不变');
+  store.close(s2);
 }
 
 /* ---------------------------------------------------------------- cleanup */

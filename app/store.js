@@ -14,7 +14,10 @@
  *   ADR-004  schema changes are append-only entries in MIGRATIONS, applied in a
  *            transaction. Never edit a shipped migration.
  *   ADR-005  ids are stable and time-sortable; timestamps are UTC epoch milliseconds.
- *   ADR-006  v0.1 has no topics table; migration 2 adds topic_id as nullable.
+ *   ADR-006  v0.1 shipped no topics table; migration 3 adds `topics` and a nullable
+ *            `messages.topic_id`, then backfills what was the single implicit conversation.
+ *   ADR-012  how a topic boundary is decided, and why titles are derived rather than
+ *            generated.
  *
  * This module deliberately knows nothing about IPC or the LLM. It reads and writes rows.
  */
@@ -23,6 +26,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
+/* Only for titleFromText during the backfill: naming a topic is policy, and policy lives in
+ * one place. Nothing else here depends on it. */
+const topics = require('./topics.js');
 
 /* ------------------------------------------------------------------ ids and time */
 
@@ -60,6 +66,10 @@ function newId(now) {
 
 function nowMs() {
   return Date.now();
+}
+
+function clamp(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n));
 }
 
 /* ------------------------------------------------------------------ tokenizing */
@@ -103,8 +113,7 @@ function toMatchQuery(query) {
 
 /*
  * Append-only. Each entry is [version, sql]. To change the schema, add a new entry;
- * never modify or reorder existing ones. Migration 2 is sketched in the comment so the
- * shape of Phase 2 is visible here rather than discovered later.
+ * never modify or reorder existing ones.
  */
 const MIGRATIONS = [
   [
@@ -146,6 +155,26 @@ const MIGRATIONS = [
     -- "\u6ca1\u5e26\u5386\u53f2" and "\u5386\u53f2\u5f88\u957f" look identical on screen but differ here.
     ALTER TABLE messages ADD COLUMN context_messages INTEGER;
     ALTER TABLE messages ADD COLUMN prompt_chars INTEGER;
+    `,
+  ],
+  [
+    3,
+    `
+    -- Topics (Phase 2, ADR-012). updated_at is what orders the topic list: the subject you
+    -- were last talking about is the one you want at the top, not the one created last.
+    CREATE TABLE topics (
+      id          TEXT PRIMARY KEY,
+      title       TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_topics_updated ON topics(updated_at, id);
+
+    -- Added nullable, as ADR-006 required, so this stays an additive migration: existing
+    -- rows get NULL and backfillTopics() then assigns them. A NOT NULL column could not
+    -- have been added without rewriting every row inside the migration itself.
+    ALTER TABLE messages ADD COLUMN topic_id TEXT;
+    CREATE INDEX idx_messages_topic ON messages(topic_id, created_at, id);
     `,
   ],
 ];
@@ -251,6 +280,9 @@ function open(options) {
     db.exec('PRAGMA foreign_keys = ON');
     db.exec('PRAGMA synchronous = NORMAL');
     const version = applyMigrations(db);
+    /* Separate from the migrations on purpose: this needs an application-generated id and
+     * the title policy, neither of which belongs in a SQL migration (ADR-005, ADR-012). */
+    backfillTopics(db);
     return { db, file, dir, schemaVersion: version };
   } catch (err) {
     /* Close before propagating: an open handle keeps the -wal/-shm files alive and the
@@ -295,11 +327,132 @@ function bumpTurns(db, delta) {
   return n;
 }
 
+/* ------------------------------------------------------------------ topics */
+
+/* The topic the app is currently writing into, remembered across restarts. Stored in meta
+ * rather than in a table so a restart resumes where the conversation left off without any
+ * extra row lifecycle. */
+const META_CURRENT_TOPIC = 'current_topic';
+
+function createTopic(db, topic) {
+  const opts = topic || {};
+  const createdAt = opts.createdAt == null ? nowMs() : opts.createdAt;
+  const updatedAt = opts.updatedAt == null ? createdAt : opts.updatedAt;
+  const id = opts.id || newId(createdAt);
+  const raw = String(opts.title == null ? '' : opts.title).trim();
+  const title = raw || topics.FALLBACK_TITLE;
+  db.prepare('INSERT INTO topics (id, title, created_at, updated_at) VALUES (?,?,?,?)')
+    .run(id, title, createdAt, updatedAt);
+  return { id, title, createdAt, updatedAt };
+}
+
+function getTopic(db, id) {
+  if (!id) return null;
+  const row = db.prepare('SELECT * FROM topics WHERE id = ?').get(id);
+  return row ? toTopic(row) : null;
+}
+
+/* Newest activity first: this is the order the topic list is read in, and the order the
+ * /switch index refers to. Ties break on id so the order is stable. */
+function listTopics(db, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
+  const offset = Math.max(0, opts.offset == null ? 0 : Number(opts.offset));
+  const rows = db.prepare(
+    `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.topic_id = t.id) AS message_count
+       FROM topics t ORDER BY t.updated_at DESC, t.id DESC LIMIT ? OFFSET ?`
+  ).all(limit, offset);
+  return rows.map((r) => Object.assign(toTopic(r), { messageCount: Number(r.message_count) }));
+}
+
+/* Renaming refuses an empty title instead of writing one: a topic with no name cannot be
+ * recognised in the list, and '' is what an accidental empty argument looks like. */
+function renameTopic(db, id, title) {
+  const clean = String(title == null ? '' : title).trim();
+  if (!clean) return null;
+  const res = db.prepare('UPDATE topics SET title = ?, updated_at = ? WHERE id = ?')
+    .run(clean, nowMs(), id);
+  if (!res.changes) return null;
+  return getTopic(db, id);
+}
+
+/* Called when a message lands in the topic, so the list order follows the conversation. */
+function touchTopic(db, id, at) {
+  if (!id) return;
+  db.prepare('UPDATE topics SET updated_at = ? WHERE id = ?').run(at == null ? nowMs() : at, id);
+}
+
+function countTopics(db) {
+  return db.prepare('SELECT COUNT(*) AS n FROM topics').get().n;
+}
+
+function getCurrentTopic(db) {
+  const id = metaGet(db, META_CURRENT_TOPIC);
+  const topic = getTopic(db, id);
+  if (topic) return topic;
+  /* The remembered topic is gone (or was never set): fall back to the most recent one so a
+   * restart resumes the conversation that was actually in progress. */
+  const newest = listTopics(db, { limit: 1 })[0];
+  if (newest) metaSet(db, META_CURRENT_TOPIC, newest.id);
+  return newest || null;
+}
+
+function setCurrentTopic(db, id) {
+  const topic = getTopic(db, id);
+  if (!topic) return null;
+  metaSet(db, META_CURRENT_TOPIC, topic.id);
+  return topic;
+}
+
+/*
+ * Migration 3 adds topic_id as NULL for everything written before Phase 2. Those rows are
+ * exactly the v0.1 store's single implicit conversation (ADR-006), so they become exactly
+ * one topic rather than being re-segmented by the detector: splitting history would be
+ * guessing at boundaries nobody recorded, and it would make the upgrade unreproducible —
+ * a topic layout that depends on when you upgraded.
+ *
+ * Idempotent: with no NULL rows left it does nothing, so a crash mid-backfill is repaired by
+ * the next open.
+ */
+function backfillTopics(db) {
+  const pending = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE topic_id IS NULL').get().n;
+  if (!pending) return null;
+
+  const first = db.prepare(
+    "SELECT content, created_at FROM messages WHERE topic_id IS NULL AND role = 'user' " +
+    'ORDER BY created_at ASC, id ASC LIMIT 1'
+  ).get();
+  const at = first ? first.created_at : nowMs();
+  db.exec('BEGIN');
+  try {
+    const topic = createTopic(db, {
+      title: topics.titleFromText(first ? first.content : ''),
+      createdAt: at,
+      updatedAt: at,
+    });
+    db.prepare('UPDATE messages SET topic_id = ? WHERE topic_id IS NULL').run(topic.id);
+    /* Only claim it as current if nothing else has: an upgrade must not steal the active
+     * topic from a store that already had one. */
+    if (metaGet(db, META_CURRENT_TOPIC) == null) metaSet(db, META_CURRENT_TOPIC, topic.id);
+    db.exec('COMMIT');
+    return topic;
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    throw new Error('topic backfill failed: ' + err.message);
+  }
+}
+
 /* ------------------------------------------------------------------ messages */
 
 /*
  * Append a message. Returns the stored row.
  * `turnId` groups the user message with the assistant reply it produced.
+ * `topicId` is the subject it belongs to; leaving it out is only correct for a store that
+ * has no topics yet, since the column is nullable by design (ADR-006).
+ *
+ * Appending also bumps the topic's updated_at, because writing a message is the activity the
+ * topic list is ordered by. Doing it here keeps that true for every write path instead of
+ * relying on each caller to remember.
  */
 function appendMessage(db, msg) {
   const createdAt = msg.createdAt == null ? nowMs() : msg.createdAt;
@@ -308,19 +461,22 @@ function appendMessage(db, msg) {
    * the wall clock instead would decouple the two and make the order arbitrary. */
   const id = msg.id || newId(createdAt);
   const content = msg.content == null ? '' : String(msg.content);
+  const topicId = msg.topicId == null ? null : String(msg.topicId);
   db.prepare(
-    'INSERT INTO messages (id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars) ' +
-    'VALUES (?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO messages (id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars, topic_id) ' +
+    'VALUES (?,?,?,?,?,?,?,?,?,?)'
   ).run(id, msg.role, content, msg.reasoning == null ? null : String(msg.reasoning),
         msg.turnId == null ? null : String(msg.turnId), msg.model == null ? null : String(msg.model),
         createdAt,
         msg.contextMessages == null ? null : Number(msg.contextMessages),
-        msg.promptChars == null ? null : Number(msg.promptChars));
+        msg.promptChars == null ? null : Number(msg.promptChars),
+        topicId);
   if (content) {
     db.prepare('INSERT INTO messages_fts (content, tok, message_id) VALUES (?, ?, ?)')
       .run(content, tokenizeForIndex(content), id);
   }
-  return { id, role: msg.role, content, createdAt, turnId: msg.turnId || null };
+  if (topicId) touchTopic(db, topicId, createdAt);
+  return { id, role: msg.role, content, createdAt, turnId: msg.turnId || null, topicId };
 }
 
 /* Update an existing message in place — used when a streamed reply finishes and the
@@ -349,45 +505,97 @@ function updateMessage(db, id, patch) {
 }
 
 /* Chronological window, oldest first — ready to hand to the chat API.
- * `limit` counts messages, not turns. */
-function recentMessages(db, limit) {
+ * `limit` counts messages, not turns.
+ * `options.topicId` scopes the window to one subject, which is what makes switching topics
+ * change what she is reminded of (ADR-012). It is an options object rather than a third
+ * positional argument so the existing two-argument calls keep their meaning. */
+function recentMessages(db, limit, options) {
   const n = Math.max(0, limit == null ? 30 : limit);
+  const topicId = options && options.topicId;
+  const where = topicId ? ' WHERE topic_id = ?' : '';
   const rows = db.prepare(
-    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars ' +
-    'FROM messages ORDER BY created_at DESC, id DESC LIMIT ?'
-  ).all(n);
+    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars, topic_id ' +
+    'FROM messages' + where + ' ORDER BY created_at DESC, id DESC LIMIT ?'
+  ).all(...(topicId ? [String(topicId), n] : [n]));
   return rows.reverse().map(toMessage);
 }
 
 function listMessages(db, options) {
   const opts = options || {};
-  const limit = Math.max(1, Math.min(1000, opts.limit == null ? 100 : opts.limit));
-  const offset = Math.max(0, opts.offset == null ? 0 : opts.offset);
+  const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
+  const offset = Math.max(0, opts.offset == null ? 0 : Number(opts.offset));
+  const topicId = opts.topicId;
+  const where = topicId ? ' WHERE topic_id = ?' : '';
   const rows = db.prepare(
-    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars ' +
-    'FROM messages ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?'
-  ).all(limit, offset);
+    'SELECT id, role, content, reasoning, turn_id, model, created_at, context_messages, prompt_chars, topic_id ' +
+    'FROM messages' + where + ' ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?'
+  ).all(...(topicId ? [String(topicId), limit, offset] : [limit, offset]));
   return rows.map(toMessage);
 }
 
-function countMessages(db) {
-  return db.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
+function countMessages(db, options) {
+  const topicId = options && options.topicId;
+  if (!topicId) return db.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
+  return db.prepare('SELECT COUNT(*) AS n FROM messages WHERE topic_id = ?').get(String(topicId)).n;
 }
 
-/* Full-text search. Available in v0.1 because the index ships with migration 1; the UI
- * for it arrives in Phase 2. Returns [] rather than throwing on an empty/unsearchable
- * query, so callers do not need to special-case it. */
-function searchMessages(db, query, limit) {
+/* When the newest message in a topic was written. 0 when there is none.
+ * The topic detector needs this to tell "a new sentence" from "a new sitting" (ADR-012). */
+function lastMessageAt(db, topicId) {
+  const row = topicId
+    ? db.prepare('SELECT MAX(created_at) AS t FROM messages WHERE topic_id = ?').get(String(topicId))
+    : db.prepare('SELECT MAX(created_at) AS t FROM messages').get();
+  return row && row.t != null ? Number(row.t) : 0;
+}
+
+/* Move a message to another topic. Not used by the conversation flow (a message is written
+ * with its topic already decided) but needed to repair a database by hand, and by the Phase 9
+ * merge/import path. */
+function setMessageTopic(db, messageId, topicId) {
+  const topic = getTopic(db, topicId);
+  if (!topic) return null;
+  const res = db.prepare('UPDATE messages SET topic_id = ? WHERE id = ?').run(topic.id, messageId);
+  if (!res.changes) return null;
+  touchTopic(db, topic.id);
+  return db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId);
+}
+
+/* Full-text search over every topic by default. `options.topicId` narrows it to one, and
+ * `options.withTopic` attaches the topic title so a hit can be shown with where it came from.
+ * Returns [] rather than throwing on an empty/unsearchable query, so callers do not need to
+ * special-case it. Any search feature must go through toMatchQuery (ADR-002). */
+function searchMessages(db, query, limit, options) {
   const match = toMatchQuery(query);
   if (!match) return [];
-  const n = Math.max(1, Math.min(200, limit == null ? 20 : limit));
+  const opts = options || {};
+  const n = clamp(limit == null ? 20 : Number(limit), 1, 200);
+  const topicId = opts.topicId;
+  const where = topicId ? ' AND m.topic_id = ?' : '';
   const rows = db.prepare(
-    `SELECT m.id, m.role, m.content, m.created_at
-       FROM messages_fts f JOIN messages m ON m.id = f.message_id
-      WHERE messages_fts MATCH ?
+    `SELECT m.id, m.role, m.content, m.created_at, m.topic_id, t.title AS topic_title
+       FROM messages_fts f
+       JOIN messages m ON m.id = f.message_id
+       LEFT JOIN topics t ON t.id = m.topic_id
+      WHERE messages_fts MATCH ?` + where + `
       ORDER BY rank LIMIT ?`
-  ).all(match, n);
-  return rows.map((r) => ({ id: r.id, role: r.role, content: r.content, createdAt: r.created_at }));
+  ).all(...(topicId ? [match, String(topicId), n] : [match, n]));
+  return rows.map((r) => ({
+    id: r.id,
+    role: r.role,
+    content: r.content,
+    createdAt: r.created_at,
+    topicId: r.topic_id,
+    topicTitle: r.topic_title,
+  }));
+}
+
+function toTopic(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function toMessage(row) {
@@ -401,6 +609,7 @@ function toMessage(row) {
     createdAt: row.created_at,
     contextMessages: row.context_messages == null ? null : Number(row.context_messages),
     promptChars: row.prompt_chars == null ? null : Number(row.prompt_chars),
+    topicId: row.topic_id == null ? null : row.topic_id,
   };
 }
 
@@ -426,11 +635,23 @@ module.exports = {
   metaSet,
   ensureIdentity,
   bumpTurns,
+  createTopic,
+  getTopic,
+  listTopics,
+  renameTopic,
+  touchTopic,
+  countTopics,
+  getCurrentTopic,
+  setCurrentTopic,
+  backfillTopics,
+  META_CURRENT_TOPIC,
   appendMessage,
   updateMessage,
   recentMessages,
   listMessages,
   countMessages,
+  lastMessageAt,
+  setMessageTopic,
   searchMessages,
   /* exported for tests and for Phase 2 tooling that needs the same tokenization */
   tokenizeForIndex,

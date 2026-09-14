@@ -26,12 +26,60 @@ let historyRows = [
   { id: '2', role: 'assistant', content: '主人，我记得。' },
 ];
 
+/* Topic state the main process would report. Two topics, the second one active. */
+let topicState = {
+  currentId: 'topic-2',
+  currentTitle: '科幻电影',
+  topics: [
+    { id: 'topic-2', title: '科幻电影', messageCount: 4 },
+    { id: 'topic-1', title: '终端项目', messageCount: 6 },
+  ],
+};
+const historyByTopic = {
+  'topic-2': [
+    { id: 'b1', role: 'user', content: '推荐几部科幻电影' },
+    { id: 'b2', role: 'assistant', content: '主人，我推荐这一部。' },
+  ],
+  'topic-1': historyRows,
+};
+const switchCalls = [];
+const newTopicCalls = [];
+const searchCalls = [];
+
 const fakeApi = {
   getConfig: () => Promise.resolve({ configured: true, model: 'deepseek-v4-flash' }),
-  listHistory: () => Promise.resolve(historyRows.slice()),
+  listHistory: (options) => {
+    const o = options || {};
+    if (o.topicId) return Promise.resolve((historyByTopic[o.topicId] || []).slice());
+    return Promise.resolve(historyRows.slice());
+  },
   /* The real contract: one user message, not a whole history. */
   ask: (text, id) => { askCalls.push({ text, id }); lastId = id; },
   onStream: (cb) => { streamCb = cb; return () => { streamCb = null; }; },
+  listTopics: () => Promise.resolve(topicState),
+  newTopic: (title) => {
+    newTopicCalls.push(title);
+    topicState = {
+      currentId: 'topic-3',
+      currentTitle: title || '未命名话题',
+      topics: [{ id: 'topic-3', title: title || '未命名话题', messageCount: 0 }].concat(topicState.topics),
+    };
+    historyByTopic['topic-3'] = [];
+    return Promise.resolve(topicState);
+  },
+  switchTopic: (id) => {
+    switchCalls.push(id);
+    const target = topicState.topics.filter((t) => t.id === id)[0];
+    if (target) topicState = Object.assign({}, topicState, { currentId: id, currentTitle: target.title });
+    return Promise.resolve(topicState);
+  },
+  renameTopic: () => Promise.resolve(topicState),
+  search: (query, options) => {
+    searchCalls.push({ query, options });
+    return Promise.resolve([
+      { id: 'a1', role: 'user', content: '我在做 HDD 这个终端项目', topicId: 'topic-1', topicTitle: '终端项目' },
+    ]);
+  },
 };
 
 const dom = new JSDOM(html, {
@@ -216,6 +264,103 @@ async function emit(type, text) {
       throw new Error('字重覆盖未覆盖 #out 的全部后代（主题的 :where(*) 会命中每个元素）');
     }
     console.log('PASS 字重覆盖规则存在（#hdd-root 高特异性 + !important，覆盖 #out 全体后代）');
+  }
+
+  // --- Slash commands: topics and search, driven from the same input line ---
+  // They must stay local (never reach the model), print with the existing .line classes so no
+  // CSS is involved, and leave the input usable afterwards.
+  {
+    const lines = () => [...out.querySelectorAll('.line')].map((n) => n.textContent);
+    const type = async (text) => {
+      input.value = text;
+      input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await sleep(30);
+    };
+    const askBefore = askCalls.length;
+    const cssBefore = html.match(/\.line\.(\w+)/g) || [];
+
+    await type('/help');
+    await waitFor(() => lines().some((t) => t.includes('/switch')), 1000, '/help 输出');
+    if (askCalls.length !== askBefore) throw new Error('/help 被当成对话发给了模型');
+    if (!lines().some((t) => t === '> /help')) throw new Error('命令没有回显到终端');
+    console.log('PASS /help 在本地处理（未发给模型，且已回显）');
+
+    await type('/topics');
+    await waitFor(() => lines().some((t) => t.includes('科幻电影')), 1000, '/topics 列表');
+    if (!lines().some((t) => t === '当前话题：科幻电影')) throw new Error('未报告当前话题');
+    if (!lines().some((t) => t.indexOf('* 1. 科幻电影') === 0)) throw new Error('当前话题未用 * 标出');
+    if (!lines().some((t) => t.indexOf('  2. 终端项目') === 0)) throw new Error('其余话题未列出');
+    if (!lines().some((t) => t.includes('(6 条)'))) throw new Error('话题未带消息条数');
+    if (askCalls.length !== askBefore) throw new Error('/topics 被当成了对话');
+    console.log('PASS /topics 列出话题、标出当前话题、带条数');
+
+    /* Switching replaces the transcript: that is the visible half of topic-scoped context. */
+    await type('/switch 2');
+    await waitFor(() => switchCalls.length === 1, 1000, 'switchTopic 调用');
+    if (switchCalls[0] !== 'topic-1') throw new Error('按序号切换选错了话题：' + switchCalls[0]);
+    await waitFor(() => lines().some((t) => t.includes('已切到「终端项目」')), 1500, '切换确认');
+    if (lines().some((t) => t.includes('推荐几部科幻电影'))) {
+      throw new Error('切换后没有重绘，旧话题的内容仍留在屏幕上');
+    }
+    if (!lines().some((t) => t === '> 上次说过的话')) throw new Error('切换后未重绘目标话题的记录');
+    if (!lines().some((t) => t === '> /switch 2')) throw new Error('切换后命令回显被重绘清掉了');
+    console.log('PASS /switch 切换并重绘（旧话题内容被替换，而非追加）');
+
+    await type('/search 终端');
+    await waitFor(() => searchCalls.length === 1, 1000, 'search 调用');
+    await waitFor(() => lines().some((t) => t.includes('找到 1 条')), 1000, '搜索结果');
+    if (!lines().some((t) => t.includes('[终端项目]'))) throw new Error('搜索结果未标出所属话题');
+    console.log('PASS /search 搜索结果带话题标题');
+
+    await type('/new 手动话题');
+    await waitFor(() => newTopicCalls.length === 1, 1000, 'newTopic 调用');
+    await waitFor(() => lines().some((t) => t.includes('新话题已开始')), 1500, '新话题提示');
+    if (newTopicCalls[0] !== '手动话题') throw new Error('标题未传给主进程：' + newTopicCalls[0]);
+    console.log('PASS /new 新开话题并清空重绘');
+
+    await type('/nope');
+    await waitFor(() => lines().some((t) => t.includes('没有这个命令')), 1000, '未知命令提示');
+    if (askCalls.length !== askBefore) throw new Error('未知命令被当成对话发给了模型');
+    console.log('PASS 未知命令给出提示（不会悄悄当成聊天内容）');
+
+    /* Commands must release the input: a command is not a turn. */
+    await type('普通的一句话');
+    await waitFor(() => askCalls.some((c) => c.text === '普通的一句话'), 1000, '命令之后仍可发消息');
+    console.log('PASS 命令结束后输入行恢复可用（命令不占用回合状态）');
+
+    /* The whole command surface reuses existing .line classes: no new CSS was introduced. */
+    const cssAfter = html.match(/\.line\.(\w+)/g) || [];
+    if (cssAfter.join(',') !== cssBefore.join(',')) {
+      throw new Error('命令输出引入了新的 .line 样式类：' + cssAfter.join(','));
+    }
+    console.log('PASS 命令输出复用既有 .line 样式（未新增 CSS）');
+  }
+
+  // --- The IPC contract, checked statically ---
+  // The fake API above replaces the real bridge, so nothing else here would notice a channel
+  // name that does not exist on the other side: the symptom in a real window is a command that
+  // silently does nothing. Both directions are checked, because a typo can be on either side.
+  {
+    const preloadSrc = fs.readFileSync(path.join(__dirname, '..', 'preload.cjs'), 'utf8');
+    const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+
+    const channels = [...preloadSrc.matchAll(/ipcRenderer\.(?:invoke|send)\(\s*'([^']+)'/g)].map((m) => m[1]);
+    if (!channels.length) throw new Error('preload 没有暴露任何 IPC 通道');
+    for (const ch of channels) {
+      if (!new RegExp("ipcMain\\.(?:handle|on)\\(\\s*'" + ch + "'").test(mainSrc)) {
+        throw new Error('preload 用到的主进程没有注册的通道: ' + ch);
+      }
+    }
+    console.log('PASS preload 的 ' + channels.length + ' 个通道在主进程都有处理函数');
+
+    /* Every api.* the page calls must be exposed by the preload, or the call is undefined. */
+    const exposed = new Set([...preloadSrc.matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]));
+    const called = new Set([...html.matchAll(/api\.(\w+)\(/g)].map((m) => m[1]));
+    if (!called.size) throw new Error('渲染层没有调用任何 api.*（检查提取逻辑）');
+    for (const fn of called) {
+      if (!exposed.has(fn)) throw new Error('渲染层调用了 preload 未暴露的 api.' + fn + '()');
+    }
+    console.log('PASS 渲染层调用的 api.* 全部由 preload 暴露: ' + [...called].sort().join(', '));
   }
 
   console.log('\n终端界面回归测试全部通过 ✓');

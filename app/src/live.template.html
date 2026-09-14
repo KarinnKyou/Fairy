@@ -292,9 +292,145 @@
     input.focus();
   }
 
+  /* ------------------------------------------------------------------ commands
+     Slash commands are dispatched here rather than in the main process, but they only choose
+     which IPC call to make and how to print the answer: which topic a message belongs to, and
+     what a switch changes, stay authoritative in the main process (ADR-001).
+
+     They print through the same .line elements as everything else, so the terminal keeps one
+     look: no new classes and no CSS, which keeps the verified mask/scroll/weight rules
+     untouched. Commands never change the mascot phase. */
+
+  var HELP = [
+    '可用命令：',
+    '/topics            列出所有话题（* 是当前话题）',
+    '/switch <序号|id>  切到某个话题，并重绘该话题的记录',
+    '/new [标题]        新开一个话题并切过去',
+    '/rename <标题>     给当前话题改名',
+    '/search <关键词>   在所有话题里搜索原文',
+    '/help              显示这份说明',
+  ];
+
+  function sysLine(text) { return lineEl('assistant', text); }
+
+  /* Returns null for ordinary text, which is what goes to the model. */
+  function parseCommand(text) {
+    if (text.charAt(0) !== '/') return null;
+    var body = text.slice(1);
+    var sp = body.search(/\s/);
+    if (sp < 0) return { name: body.toLowerCase(), arg: '' };
+    return { name: body.slice(0, sp).toLowerCase(), arg: body.slice(sp + 1).trim() };
+  }
+
+  /* Accepts the 1-based number /topics prints, or an unambiguous id prefix. */
+  function resolveTopicArg(state, arg) {
+    if (!state || !state.topics) return null;
+    if (/^\d+$/.test(arg)) return state.topics[Number(arg) - 1] || null;
+    var hit = null;
+    for (var i = 0; i < state.topics.length; i++) {
+      if (state.topics[i].id.indexOf(arg) === 0) {
+        if (hit) return null;   /* ambiguous prefix: refuse rather than guess */
+        hit = state.topics[i];
+      }
+    }
+    return hit;
+  }
+
+  function runCommand(cmd, raw) {
+    busy = true;
+    function done() { busy = false; input.focus(); }
+    function fail(e) {
+      lineEl('err', '! ' + ((e && e.message) || e));
+      done();
+    }
+
+    if (cmd.name === 'help') {
+      for (var h = 0; h < HELP.length; h++) sysLine(HELP[h]);
+      return done();
+    }
+
+    if (cmd.name === 'topics') {
+      return api.listTopics().then(function (state) {
+        if (state && state.currentTitle) sysLine('当前话题：' + state.currentTitle);
+        if (!state || !state.topics || !state.topics.length) {
+          sysLine('还没有任何话题。');
+        } else {
+          for (var i = 0; i < state.topics.length; i++) {
+            var t = state.topics[i];
+            sysLine((t.id === state.currentId ? '* ' : '  ') + (i + 1) + '. ' + t.title +
+              '  (' + t.messageCount + ' 条)');
+          }
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'switch') {
+      return api.listTopics().then(function (state) {
+        var target = resolveTopicArg(state, cmd.arg);
+        if (!target) { sysLine('没有这个序号或 id，先看 /topics。'); return done(); }
+        return api.switchTopic(target.id).then(function () {
+          return paintTranscript(target.id);
+        }).then(function () {
+          /* Re-echo after the repaint: switching clears the transcript the command was typed in. */
+          lineEl('in', '> ' + raw);
+          sysLine('已切到「' + target.title + '」。');
+          done();
+        });
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'new') {
+      return api.newTopic(cmd.arg).then(function (state) {
+        return paintTranscript(state && state.currentId);
+      }).then(function () {
+        lineEl('in', '> ' + raw);
+        sysLine('新话题已开始，之后的对话都记在这里。');
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'rename' || cmd.name === 'topic') {
+      if (!cmd.arg) { sysLine('用法：/rename <标题>'); return done(); }
+      return api.renameTopic(null, cmd.arg).then(function (state) {
+        if (!state || !state.currentTitle) { sysLine('还没有话题可以改名。'); return done(); }
+        sysLine('当前话题改名为「' + state.currentTitle + '」。');
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'search') {
+      if (!cmd.arg) { sysLine('用法：/search <关键词>'); return done(); }
+      return api.search(cmd.arg, { limit: 20 }).then(function (hits) {
+        if (!hits || !hits.length) { sysLine('没有找到包含「' + cmd.arg + '」的内容。'); return done(); }
+        sysLine('找到 ' + hits.length + ' 条：');
+        for (var i = 0; i < hits.length; i++) {
+          var m = hits[i];
+          var who = m.role === 'user' ? '主人' : (m.role === 'assistant' ? '我' : m.role);
+          sysLine('  [' + (m.topicTitle || '未命名话题') + '] ' + who + '：' + cleanText(m.content));
+        }
+        done();
+      }).catch(fail);
+    }
+
+    /* An unknown command is reported rather than sent to her: silently treating it as chat
+       would make a typo in a command look like she ignored the instruction. */
+    sysLine('没有这个命令：' + raw + '（试试 /help）');
+    done();
+  }
+
   function send() {
     var text = input.value.trim();
     if (!text || busy || !api) return;
+
+    var cmd = parseCommand(text);
+    if (cmd) {
+      lineEl('in', '> ' + text);
+      input.value = '';
+      runCommand(cmd, text);
+      return;
+    }
+
     lineEl('in', '> ' + text);
     input.value = '';
     busy = true;
@@ -335,23 +471,32 @@
   });
   out.addEventListener('mousedown', function () { input.focus(); });
 
-  /* Repaint the stored transcript so the conversation survives a restart. Errors are
-     shown as they were recorded; system rows are not part of the visible transcript. */
-  function restoreHistory() {
+  /* Repaint the stored transcript so the conversation survives a restart, and so a topic
+     switch shows that topic instead. Errors are shown as they were recorded; system rows are
+     not part of the visible transcript. */
+  function clearTranscript() {
+    var lines = log.querySelectorAll('.line');
+    for (var i = 0; i < lines.length; i++) lines[i].remove();
+  }
+  function paintRows(rows) {
+    for (var i = 0; i < rows.length; i++) {
+      var m = rows[i];
+      if (m.role === 'user') lineEl('in', '> ' + cleanText(m.content));
+      else if (m.role === 'assistant') lineEl('assistant', cleanText(m.content));
+      else if (m.role === 'error') lineEl('err', '! ' + cleanText(m.content));
+    }
+  }
+  /* topicId null means "whatever topic the main process is on", which is what startup wants. */
+  function paintTranscript(topicId) {
     if (!api || !api.listHistory) return Promise.resolve();
-    return api.listHistory(60).then(function (rows) {
-      if (!rows || !rows.length) return;
-      for (var i = 0; i < rows.length; i++) {
-        var m = rows[i];
-        if (m.role === 'user') lineEl('in', '> ' + cleanText(m.content));
-        else if (m.role === 'assistant') lineEl('assistant', cleanText(m.content));
-        else if (m.role === 'error') lineEl('err', '! ' + cleanText(m.content));
-      }
+    return api.listHistory({ topicId: topicId || null, limit: 60 }).then(function (rows) {
+      clearTranscript();
+      paintRows(rows || []);
     }).catch(function () { /* a repaint failure must never block the input */ });
   }
 
   if (api) {
-    restoreHistory().then(function () {
+    paintTranscript(null).then(function () {
       return api.getConfig();
     }).then(function (cfg) {
       if (!cfg || !cfg.configured) {

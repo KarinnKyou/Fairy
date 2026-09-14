@@ -12,6 +12,7 @@
 
 const store = require('./store.js');
 const capabilities = require('./capabilities.js');
+const topics = require('./topics.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -109,15 +110,20 @@ function buildMessages(options) {
 /* ---------------------------------------------------------------- the conversation */
 
 /*
- * openConversation({ dir, persona, examples, model, pickExample })
+ * openConversation({ dir, persona, examples, model, pickExample, now })
  *
  * Returns an object that owns one conversation. When the store cannot be opened (disk
  * full, corrupt file, read-only location) `available` is false and every write becomes a
  * no-op: the app keeps working, it just does not remember. That degradation is required
  * by ADR-003, because a packaged build may land somewhere unwritable.
+ *
+ * `now` is an injectable clock. Topic boundaries depend on how long the conversation has
+ * been idle (ADR-012), and a test that has to wait six hours to exercise that is a test
+ * nobody runs.
  */
 function openConversation(options) {
   const opts = options || {};
+  const now = typeof opts.now === 'function' ? opts.now : () => Date.now();
   let s = null;
   let openError = null;
 
@@ -144,7 +150,102 @@ function openConversation(options) {
 
   function recentHistory(limit) {
     if (!available) return [];
-    return store.recentMessages(s.db, limit == null ? CONTEXT_MESSAGE_LIMIT : limit);
+    const topic = store.getCurrentTopic(s.db);
+    return store.recentMessages(s.db, limit == null ? CONTEXT_MESSAGE_LIMIT : limit,
+      topic ? { topicId: topic.id } : {});
+  }
+
+  /* The transcript to repaint: one topic's messages, oldest first. `topicId` defaults to the
+   * active topic, which is what the renderer wants after a restart. */
+  function listHistory(options) {
+    const o = options || {};
+    if (!available) return [];
+    const topicId = o.topicId || (store.getCurrentTopic(s.db) || {}).id || null;
+    return store.recentMessages(s.db, o.limit == null ? 60 : o.limit,
+      topicId ? { topicId } : {});
+  }
+
+  /* ---------------------------------------------------------------- topics */
+
+  function activeTopic() {
+    if (!available) return null;
+    return store.getCurrentTopic(s.db);
+  }
+
+  function listTopics() {
+    if (!available) return [];
+    return store.listTopics(s.db);
+  }
+
+  function switchTopic(id) {
+    if (!available) return null;
+    return store.setCurrentTopic(s.db, id);
+  }
+
+  /* Open a topic explicitly, whatever the detector would have said. This is the escape hatch
+   * for the one mistake a lexical detector cannot avoid: continuing the same subject in
+   * entirely different words reads as a change of subject (ADR-012). */
+  function newTopic(title) {
+    if (!available) return null;
+    const clean = String(title == null ? '' : title).trim();
+    const created = store.createTopic(s.db, {
+      title: clean || topics.FALLBACK_TITLE,
+      createdAt: now(),
+    });
+    store.setCurrentTopic(s.db, created.id);
+    return created;
+  }
+
+  function renameTopic(id, title) {
+    if (!available) return null;
+    const current = store.getCurrentTopic(s.db);
+    const target = id || (current ? current.id : null);
+    if (!target) return null;
+    return store.renameTopic(s.db, target, title);
+  }
+
+  function search(query, options) {
+    const o = options || {};
+    if (!available) return [];
+    return store.searchMessages(s.db, query, o.limit, o.topicId ? { topicId: o.topicId } : {});
+  }
+
+  /*
+   * Which topic the message being asked right now belongs to.
+   *
+   * Resolved BEFORE the message is stored, and deliberately so: the message has to be written
+   * with its topic, and the history handed to the model has to be the history of that same
+   * topic. Deciding afterwards would assemble the prompt from the previous subject while
+   * filing the answer under the new one.
+   */
+  function resolveTopic(text) {
+    const current = store.getCurrentTopic(s.db);
+    if (!current) {
+      const created = store.createTopic(s.db, { title: topics.titleFromText(text), createdAt: now() });
+      store.setCurrentTopic(s.db, created.id);
+      return { topic: created, reason: 'first' };
+    }
+
+    /* An empty topic is waiting for its first message — whether /new just created it or a
+     * restart restored it. Running the detector against an empty topic would judge the
+     * message against no subject at all, score it as completely off-topic, and open a second
+     * topic beside the empty one, so an explicit /new could never be used with a long message. */
+    const lastAt = store.lastMessageAt(s.db, current.id);
+    if (!lastAt) return { topic: current, reason: 'continue' };
+
+    const decision = topics.decideBoundary({
+      hasTopic: true,
+      lastMessageAt: lastAt,
+      now: now(),
+      text,
+      recentTexts: store.recentMessages(s.db, topics.RECENT_WINDOW_MESSAGES, { topicId: current.id })
+        .map((m) => m.content),
+    });
+    if (!decision.isNew) return { topic: current, reason: decision.reason };
+
+    const created = store.createTopic(s.db, { title: topics.titleFromText(text), createdAt: now() });
+    store.setCurrentTopic(s.db, created.id);
+    return { topic: created, reason: decision.reason };
   }
 
   /* Persist a user message and open a turn. Returns the turn handle used by the stream. */
@@ -158,15 +259,31 @@ function openConversation(options) {
        * model receives a conversation that ends on the assistant's previous reply and
        * simply continues from there, which reads as "answering the previous question". */
       userText: content,
+      topicId: null,
+      /* Why this message stayed in its topic or opened a new one. Not used in the reply path
+       * at all — it is what a wrong boundary is diagnosed with (ADR-010). */
+      topicReason: null,
     };
 
     if (!available) return result;
 
-    /* History as it was *before* this message, so the prompt does not contain the user
-     * turn twice (once from the store, once from the caller). */
-    result.historyBefore = store.recentMessages(s.db, CONTEXT_MESSAGE_LIMIT);
+    const resolved = resolveTopic(content);
+    result.topicId = resolved.topic ? resolved.topic.id : null;
+    result.topicReason = resolved.reason;
 
-    const userRow = store.appendMessage(s.db, { role: 'user', content, turnId });
+    /* History as it was *before* this message, so the prompt does not contain the user
+     * turn twice (once from the store, once from the caller) — and scoped to this message's
+     * topic, so switching topics changes what she is reminded of. */
+    result.historyBefore = result.topicId
+      ? store.recentMessages(s.db, CONTEXT_MESSAGE_LIMIT, { topicId: result.topicId })
+      : [];
+
+    const userRow = store.appendMessage(s.db, {
+      /* The row timestamp comes from the same reading of the clock as the boundary decision
+       * above. Two separate readings could land either side of the idle threshold, and it
+       * keeps the injected clock honest: a turn's timestamps and its topic decision agree. */
+      role: 'user', content, turnId, topicId: result.topicId, createdAt: now(),
+    });
     result.userMessageId = userRow.id;
     return result;
   }
@@ -208,7 +325,9 @@ function openConversation(options) {
         content: content == null ? '' : content,
         reasoning: reasoning == null ? null : reasoning,
         turnId: turn.turnId,
+        topicId: turn.topicId,
         model: opts.model || null,
+        createdAt: now(),
       }, diagnostics));
       turn.assistantMessageId = row.id;
       return row.id;
@@ -238,6 +357,8 @@ function openConversation(options) {
       role: 'error',
       content: String(message == null ? '' : message),
       turnId: turn ? turn.turnId : null,
+      topicId: turn ? turn.topicId : null,
+      createdAt: now(),
     });
   }
 
@@ -253,6 +374,13 @@ function openConversation(options) {
     schemaVersion: available ? s.schemaVersion : null,
     identity,
     recentHistory,
+    listHistory,
+    activeTopic,
+    listTopics,
+    switchTopic,
+    newTopic,
+    renameTopic,
+    search,
     beginTurn,
     messagesFor,
     recordAssistantDelta,
