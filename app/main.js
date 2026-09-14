@@ -24,6 +24,98 @@ function loadConfig() {
 loadConfig();
 
 /*
+ * Ask the model whether the message really opens a new subject (ADR-012, revision 1).
+ *
+ * The local rule in topics.js only proposes; this decides. It exists because the first real
+ * transcript showed that lexical overlap cannot tell a subject continued in different words
+ * from a subject that actually changed — both scored zero — and acting on that guess made her
+ * answer about herself instead of about the project she was asked about.
+ *
+ * Every failure returns null, which the conversation reads as "stay where you are". A
+ * classifier that is unreachable must not be able to invent topic boundaries: silence has to
+ * mean "no", so that a missing key or a dead network degrades to one topic per sitting rather
+ * than to splits nobody asked for.
+ *
+ * The request is small and non-streaming, and it is only made when the local rule proposes a
+ * boundary — typically a message that shares no vocabulary with the current subject.
+ */
+const CONFIRM_TIMEOUT_MS = 8000;
+
+async function confirmBoundary(input) {
+  if (!config.apiKey) return null;
+  const recent = (input.recent || []).slice(-6);
+  const transcript = recent
+    .map((m) => (m.role === 'user' ? '主人：' : '你：') + m.content)
+    .join('\n');
+
+  const system = [
+    '你是话题切分器。判断主人这条新消息是否仍在延续当前话题。',
+    '只输出一个 JSON 对象，不要输出解释、不要加代码块。',
+    '格式：{"same": true|false, "title": "..."}',
+    'same 为 true 表示延续当前话题，此时 title 填空字符串。',
+    'same 为 false 表示换了新话题，此时 title 给出新话题的名字：4 到 12 个字的名词短语，',
+    '概括主题（例如「终端项目的全文搜索」「科幻电影推荐」），不要照抄原句、不要带标点。',
+    '判断标准：即使在讨论同一个项目的不同方面，只要仍在谈同一件事，就算 same。',
+  ].join('\n');
+
+  const user = '当前话题：' + input.topic.title + '\n' +
+    (transcript ? '最近的对话：\n' + transcript + '\n' : '') +
+    '新消息：' + input.text;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIRM_TIMEOUT_MS);
+  try {
+    const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        stream: false,
+        max_tokens: 80,
+        temperature: 0,
+      }),
+      signal: controller.signal,
+    });
+    if (!res || !res.ok) return null;
+    const data = await res.json();
+    const text = (data.choices && data.choices[0] && data.choices[0].message &&
+      data.choices[0].message.content) || '';
+    return parseBoundaryVerdict(text);
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/*
+ * Read the verdict out of whatever came back. Models wrap JSON in prose or code fences, and a
+ * classifier that fails to parse is the same as one that was never asked, so this returns null
+ * rather than guessing a default.
+ */
+function parseBoundaryVerdict(text) {
+  const s = String(text == null ? '' : text);
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(s.slice(start, end + 1));
+  } catch (_) {
+    return null;
+  }
+  if (!parsed || typeof parsed.same !== 'boolean') return null;
+  return {
+    isNew: !parsed.same,
+    title: typeof parsed.title === 'string' ? parsed.title.trim() : '',
+  };
+}
+
+/*
  * The conversation — this process owns the truth (docs/ADR.md ADR-001): it stores the
  * messages, assembles the prompt and persists the reply. The renderer only sends text.
  *
@@ -37,6 +129,12 @@ function openConversation() {
     examples: personality.EXAMPLES,
     model: config.model,
     pickExample: (pool) => pool[Math.floor(Math.random() * pool.length)],
+    /* A boundary is only opened when this agrees. See confirmBoundary above. */
+    confirmBoundary,
+    onConfirmError: (err) => {
+      console.error('topic confirmation failed, staying in the current topic: ' +
+        String((err && err.message) || err));
+    },
   });
   if (conv.available) {
     console.log('store: ' + conv.file + ' (schema v' + conv.schemaVersion + ')');
@@ -159,9 +257,18 @@ ipcMain.on('fairy:ask', async (event, payload) => {
   }
 
   /* The turn id comes from the store so a persisted turn and its stream events share one
-   * identifier; the renderer's own counter is kept only to ignore stale events. */
-  const turn = conv.beginTurn(text);
+   * identifier; the renderer's own counter is kept only to ignore stale events.
+   * beginTurn is async because a topic boundary may need the classifier above. */
+  const turn = await conv.beginTurn(text);
   const messages = conv.messagesFor(turn);
+
+  /* Which topic this went into, and whether a confirmation backed that up. A boundary that
+   * nobody asked for, and one that was asked for and refused, look identical in the
+   * transcript and quite different here. */
+  console.log('turn ' + id + ': topic ' + (turn.topicReason || '?') +
+    (turn.topicConfirmed === null ? ' (not proposed)' :
+      (turn.topicConfirmed ? ' (confirmed: new topic)' : ' (confirmed: kept)')) +
+    ' -> ' + (turn.topicId || 'none'));
 
   /* Logged because a reply that ignores the question is usually a context problem, and the
    * count is the fastest way to tell "no history" apart from "history present". It is also

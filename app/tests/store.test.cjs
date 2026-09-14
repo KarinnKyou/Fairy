@@ -331,6 +331,8 @@ function fresh(name) {
   const list = store.listTopics(s.db);
   check(list.length === 1, 'v0.1 的单条隐含会话回填成恰好一个话题：' + list.length);
   check(list[0].title === 'v0.1 里说的第一句话', '话题标题取自最早的用户消息：' + list[0].title);
+  check(list[0].titleLocked === true,
+    '回填出来的标题是定稿的（不能让后来的一句话给几百条历史改名）');
   check(store.countMessages(s.db, { topicId: list[0].id }) === 3, '旧消息全部归入该话题');
   check(store.listMessages(s.db).every((m) => m.topicId === list[0].id),
     '升级后没有消息遗留 topic_id 为 NULL');
@@ -342,6 +344,57 @@ function fresh(name) {
   check(store.countTopics(s2.db) === 1, '再次打开不会重复回填（幂等）');
   check(store.countMessages(s2.db) === 3, '重开后消息条数不变');
   store.close(s2);
+}
+
+/* ---------------------------------------------------------------- 13. titles and absorption
+ * Migration 4: a title is provisional until something earns the right to name the topic. The
+ * rules exist because a session's first message is usually a greeting, and "你好" must not
+ * become the permanent name of a conversation — nor block that greeting from being absorbed
+ * into the subject that follows it. */
+{
+  const { s } = fresh('titles');
+
+  const cols = s.db.prepare('PRAGMA table_info(topics)').all().map((r) => r.name);
+  check(cols.includes('title_locked'), '迁移 4 给 topics 增加了 title_locked 列');
+
+  const provisional = store.createTopic(s.db, { title: '你好' });
+  check(provisional.titleLocked === false, '默认创建的标题是暂定的');
+  const final = store.createTopic(s.db, { title: '终端项目', titleLocked: true });
+  check(final.titleLocked === true, '可以创建时就定稿');
+
+  check(store.retitleTopic(s.db, provisional.id, 'HDD 终端项目').title === 'HDD 终端项目',
+    '暂定标题可以被替换');
+  check(store.getTopic(s.db, provisional.id).titleLocked === true, '替换之后标题定稿');
+  check(store.retitleTopic(s.db, provisional.id, '又改一次') === null,
+    '定稿之后拒绝再次替换');
+  check(store.getTopic(s.db, provisional.id).title === 'HDD 终端项目', '被拒绝后标题未变');
+
+  /* The no-op case still locks: otherwise every later message would retry the same retitle. */
+  const same = store.createTopic(s.db, { title: '同名' });
+  check(store.retitleTopic(s.db, same.id, '同名') === null, '同名替换返回 null');
+  check(store.getTopic(s.db, same.id).titleLocked === true, '同名替换也会定稿（避免每次重试）');
+
+  check(store.renameTopic(s.db, final.id, '用户起的名字').titleLocked === true,
+    '用户改名会锁定标题');
+  check(store.retitleTopic(s.db, final.id, '不该生效') === null, '用户起的名字不会被改写');
+
+  /* Absorption: the greeting goes with the conversation it opened. */
+  const greeting = store.createTopic(s.db, { title: '在吗' });
+  const subject = store.createTopic(s.db, { title: '项目讨论', titleLocked: true });
+  store.appendMessage(s.db, { role: 'user', content: '在吗', topicId: greeting.id, createdAt: 1000 });
+  store.appendMessage(s.db, { role: 'assistant', content: '在的。', topicId: greeting.id, createdAt: 1001 });
+  store.appendMessage(s.db, { role: 'user', content: '聊聊项目', topicId: subject.id, createdAt: 1002 });
+
+  const absorbed = store.absorbTopic(s.db, greeting.id, subject.id);
+  check(absorbed && absorbed.moved === 2, '暂定话题的 2 条消息被移走：' + (absorbed && absorbed.moved));
+  check(store.getTopic(s.db, greeting.id) === null, '空掉的暂定话题已删除');
+  check(store.countMessages(s.db, { topicId: subject.id }) === 3, '消息全部归入目标话题');
+  check(store.countMessages(s.db) === 3, '总条数不变（只是换了个话题）');
+  check(store.absorbTopic(s.db, subject.id, subject.id) === null, '拒绝把话题并进自己');
+  check(store.absorbTopic(s.db, final.id, subject.id) === null,
+    '拒绝吞并一个已定稿的话题（那是用户看得见的名字）');
+  check(store.getTopic(s.db, final.id) !== null, '被拒绝后原话题仍在');
+  store.close(s);
 }
 
 /* ---------------------------------------------------------------- cleanup */

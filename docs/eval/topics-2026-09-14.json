@@ -1,0 +1,64 @@
+{
+  "name": "topics-2026-09-14",
+  "kind": "topics",
+  "source": "The first real conversation run against Phase 2 (app/tests scratch store), reconstructed verbatim from `npm run inspect:dev`.",
+  "why": "The local lexical rule was tuned on exchanges written by the developer, in which the assistant replies cooperatively echoed the user's vocabulary. Real replies refuse and pivot, which broke the only bridge the rule had. This file is the evidence, and it stays real: every turn below is what was actually said.",
+  "howToRead": "`expect` is a human judgement about the turn, not what the old code did. `same` means the message continues the current subject; `new` means it opens one. `confirmed` records whether a boundary may be opened here at all: it is only ever true when the confirmer says so, so `new` turns are also the turns where a proposal is required.",
+  "turns": [
+    {
+      "user": "你好",
+      "assistant": "你好，主人。有什么需要我做的？",
+      "expect": "new",
+      "note": "Opens the session. Too thin to name a subject, so the title must stay provisional rather than becoming '你好' forever."
+    },
+    {
+      "user": "哈哈哈",
+      "assistant": "笑点是什么，主人？我这边只收到三个哈，没收到上下文。",
+      "expect": "same",
+      "note": "One content term: never worth a request."
+    },
+    {
+      "user": "我在做 HDD 这个终端项目，数据库用的是内置的 node:sqlite",
+      "assistant": "收到。node:sqlite 免编译、免原生依赖，和终端工具挺搭。你想聊哪一块，schema、迁移还是查询封装？",
+      "expect": "new",
+      "note": "The old rule got this one right: a real change of subject away from the greeting. It then absorbed the greeting topic, which should have been one topic in the end."
+    },
+    {
+      "user": "那个终端项目的全文搜索做到哪一步了",
+      "assistant": "我这边没有那个项目的记录，只有你刚才说的「用 node:sqlite」。前面几轮你也没提过全文搜索的进度，所以我答不上来。你告诉我现在的状态，或者把相关代码、schema 贴过来，我接着往下看。",
+      "expect": "same",
+      "note": "Coverage 0.333 — the cheap path, no request needed."
+    },
+    {
+      "user": "中文分词你是怎么处理的，为什么要一个字一个字切开",
+      "assistant": "我不做分词。文字先由 tokenizer 切成 token，模型只看 token，不看\"词\"。中文没有空格，切词边界本身有歧义……",
+      "expect": "same",
+      "note": "FALSE SPLIT under the old rule. Coverage 0.000 — her reply refused and echoed 'node:sqlite' instead of '中文分词', so the vocabulary bridge the rule counted on was never there. The split left history empty, and she answered about her own tokenizer instead of the project's."
+    },
+    {
+      "user": "我想给这个软件再加点本事，让它能记住以前聊过的事情",
+      "assistant": "我没法改自己的代码，记忆范围由运行环境定，改代码这件事得主人那边动手。不过思路可以给……",
+      "expect": "same",
+      "note": "FALSE SPLIT under the old rule, coverage 0.000 at 21 terms. '这个软件' referred to the project; with no history she read it as a request to modify herself."
+    },
+    {
+      "user": "给我推荐几部科幻电影吧，最好是硬科幻那种，别太商业",
+      "assistant": "几部偏硬的：《2001太空漫游》《潜行者》《飞向太空》《普里梅尔》《月球》……",
+      "expect": "new",
+      "note": "A genuine change of subject at coverage 0.000 and 19 terms — interleaved with the 15-term and 21-term false splits above. This is why no term threshold could separate them."
+    },
+    {
+      "user": "附近有什么好吃的",
+      "assistant": "我不知道主人现在在哪，也没有地图和点评数据，查不了\"附近有什么\"。",
+      "expect": "new",
+      "note": "Merged into the film topic under the old rule: six terms, below whatever floor was in force. A genuine new subject that the old rule could not afford to act on — with a confirmer it can now be proposed."
+    }
+  ],
+  "expectedTopics": [
+    { "title": "HDD 终端项目", "turns": [0, 1, 2, 3, 4, 5] },
+    { "title": "科幻电影推荐", "turns": [6] },
+    { "title": "附近美食", "turns": [7] }
+  ],
+  "expectedProposals": [2, 4, 5, 6, 7],
+  "expectedProposalsNote": "Turns where the local rule must propose, so a request is spent. Turn 0 opens the session through the 'first' path, which never asks. Turn 1 ('哈哈哈') has two terms and must not ask. Turn 3 scores 0.333 coverage and must not. Titles in expectedTopics are the confirmer's job, so the test supplies them from the recorded judgement."
+}

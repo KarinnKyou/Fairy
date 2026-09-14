@@ -1,27 +1,35 @@
 'use strict';
 /*
- * topics.js — decide when the conversation has moved to a new subject, and name it.
+ * topics.js — when to *ask* whether the conversation has moved to a new subject.
  *
- * Pure policy: no database, no Electron, no network, no store import. conversation.js
- * supplies the recent text and applies the answer; store.js persists the result. Keeping
- * the decision in its own module is what makes it assertable in plain Node and tunable
- * without touching the data layer — ADR-010 expects exactly this behaviour to be tuned
- * against real conversations.
+ * Pure policy: no database, no Electron, no network, no store import. conversation.js supplies
+ * the recent text and acts on the answer.
  *
- * Deliberately NOT model-assisted. Asking the model "is this a new topic?" would cost a
- * round trip per turn and make the decision impossible to assert offline, while every
- * signal needed here is already in the store. Titles are derived for the same reason.
+ * THIS MODULE NO LONGER DECIDES ANYTHING (ADR-012, revision 1). It proposes; a confirmation
+ * decides. The reason is measured, not theoretical: the first real transcript was replayed
+ * through the previous version, which decided on lexical evidence alone, and it split one
+ * project into three topics. In that transcript a genuine change of subject and a continuation
+ * of the same subject both scored a coverage of 0.000, and their term counts interleaved
+ * (false splits at 15 and 21 terms, real splits at 17 and 19). No threshold separates those
+ * cases, so no amount of tuning could have fixed it.
  *
- * Lexical overlap is measured on CJK bigrams, not on the single characters the FTS index
- * uses (store.tokenizeForIndex). Single characters overlap almost everywhere — 的, 我, 不
- * appear in unrelated sentences — so they would report continuity between topics that have
- * nothing to do with each other. Bigrams are the shortest unit that carries subject
- * meaning in Chinese, which is also why the FTS index cannot use them: they cannot index
- * a two-character query word.
+ * That failure also showed why a false split is not merely untidy bookkeeping. With no history
+ * attached, "中文分词你是怎么处理的" stopped meaning "how does your project handle Chinese
+ * tokenization" and became "how do *you* tokenize" — she answered about herself. The split
+ * changed what the user's sentence meant.
+ *
+ * Consequences for the numbers below: because a proposal is now filtered by something that can
+ * read meaning, this module is tuned for RECALL rather than precision. It proposes readily and
+ * accepts that some proposals are a wasted request; a proposal that is wrong costs one small
+ * call, while a proposal that is missing costs a subject that never gets its own topic.
+ *
+ * Coverage is measured on CJK bigrams, not on the single characters the FTS index uses
+ * (store.tokenizeForIndex). Single characters overlap almost everywhere — 的, 我, 不 appear in
+ * unrelated sentences — so they would report continuity between subjects that share nothing.
  */
 
-/* All of these are guesses that the Phase 2 evaluation set is meant to correct. They are
- * named and exported for that reason, not because they are known to be right. */
+/* All of these are guesses that the evaluation corpus in docs/eval/ is meant to correct. They
+ * are named and exported for that reason, not because they are known to be right. */
 
 /* A gap this long means "a new sitting", not "a new sentence". */
 const IDLE_GAP_MS = 6 * 60 * 60 * 1000;
@@ -30,53 +38,25 @@ const IDLE_GAP_MS = 6 * 60 * 60 * 1000;
 const RECENT_WINDOW_MESSAGES = 8;
 
 /*
- * A message carrying fewer content terms than this is not evidence of anything, and short
- * messages are where lexical matching fails hardest.
- *
- * Measured over labelled exchanges (a connected continuation in one column, a genuine change
- * of subject in the other): every false split sat at 7 terms or fewer, and the shortest
- * genuine change of subject that is still worth catching carries 8. The value below is the
- * top of that gap, which is the side that avoids the expensive mistake — see SHIFT_COVERAGE
- * for why a false split costs more than a missed one.
- *
- * What this deliberately gives up: a short request that really does start a new subject
- * ("推荐几部电影", "附近有什么好吃的", 5–6 terms) is merged into the current topic instead of
- * splitting it. That is a wrong grouping inside one topic, not a lost conversation, and
- * `/new` states the intent explicitly. Whether the gap sits at 8 for real conversations is
- * for the evaluation set to say (ADR-010); the first guess of 3 split three of four
- * connected short exchanges in a row.
+ * A message carrying fewer content terms than this is not worth a request. "嗯", "为什么？" and
+ * "在吗" are follow-ups whatever they are about, and proposing on them would spend a call to
+ * ask a question whose answer is obvious.
  */
-const MIN_TERMS_TO_JUDGE = 8;
+const MIN_PROPOSAL_TERMS = 5;
 
 /*
- * Share of the new message's content terms that must already be on-topic for the message to
- * count as a continuation of the current subject.
- *
- * Set this low on purpose, because the two possible mistakes are not equally bad. Splitting
- * a topic that was still going means the next reply is assembled without the subject it
- * belongs to, so she appears to have forgotten the conversation — the failure COMMANDS.md
- * section 8 tells you to debug with `inspect`. Merging two subjects that briefly share a
- * word only puts a few unrelated messages in one topic, which search still survives.
- *
- * Measured on the probe cases: a subject continued in different words ("那个软件接下来想
- * 加个本事") scores 0.05–0.08 while genuine changes ("给我推荐几部科幻电影吧") score 0. At
- * 0.05 the paraphrase cases continue and the changes still split. A value of 0.12 — the
- * first guess — split both paraphrases.
+ * Share of the message's content terms that must already be on-topic for it to pass without
+ * asking. Measured against the replayed transcript: the two genuine changes of subject scored
+ * 0.000 and the continuing message scored 0.333, so anything above 0.15 keeps the cheap
+ * continue path for messages that plainly belong where they are.
  */
-const SHIFT_COVERAGE = 0.05;
+const PROPOSE_COVERAGE = 0.15;
 
 /*
- * After a long gap, a slightly thinner lexical link is accepted as evidence that the old
- * subject is being picked up again.
- *
- * This band is deliberately narrow (0.05–0.20), so the idle rule rarely changes the answer:
- * a message about a genuinely different subject has no overlap and the shift rule already
- * splits it, while a message that resumes the old subject in its own words shares enough to
- * continue. What it adds is the middle case — hours later, a message with only an incidental
- * word in common. Whether that earns its place is a question for the evaluation set
- * (ADR-010), not for this comment.
+ * After a long gap the same test is applied with a lower bar, because a new sitting is weaker
+ * evidence about the subject than a new sentence in the middle of one.
  */
-const IDLE_COVERAGE = 0.2;
+const IDLE_COVERAGE = 0.35;
 
 const TITLE_MAX_CHARS = 24;
 const FALLBACK_TITLE = '未命名话题';
@@ -155,7 +135,7 @@ function coverage(newTerms, recentTerms) {
 }
 
 /*
- * Decide whether this message opens a new topic.
+ * Should this message be put to the confirmer?
  *
  * input: { hasTopic, lastMessageAt, now, text, recentTexts }
  *   hasTopic      — is there a current topic to continue?
@@ -163,28 +143,28 @@ function coverage(newTerms, recentTerms) {
  *   now           — wall clock, injected so tests do not have to wait six hours
  *   recentTexts   — the current topic's newest messages, oldest first
  *
- * Returns { isNew, reason }, where reason is 'first' | 'idle' | 'shift' | 'continue'.
- * The reason is not decoration: it is what a failing evaluation case is diagnosed with.
+ * Returns { propose, reason }, where reason is 'first' | 'idle' | 'shift' | 'continue'.
+ * `propose` means "ask"; it does not mean "split". A false answer here costs one request, and
+ * `reason` is what that request is explained by when reading a log or a failing case.
  */
-function decideBoundary(input) {
+function proposeBoundary(input) {
   const opts = input || {};
-  if (!opts.hasTopic) return { isNew: true, reason: 'first' };
+  if (!opts.hasTopic) return { propose: false, reason: 'first' };
 
-  const terms = contentTerms(opts.text);
-  const unique = new Set(terms);
-  if (unique.size < MIN_TERMS_TO_JUDGE) return { isNew: false, reason: 'continue' };
+  const terms = new Set(contentTerms(opts.text));
+  if (terms.size < MIN_PROPOSAL_TERMS) return { propose: false, reason: 'continue' };
 
-  const score = coverage(unique, contentTerms((opts.recentTexts || []).join('\n')));
+  const score = coverage(terms, contentTerms((opts.recentTexts || []).join('\n')));
   const idle = Boolean(opts.lastMessageAt) && opts.now - opts.lastMessageAt >= IDLE_GAP_MS;
 
   if (idle) {
     return score < IDLE_COVERAGE
-      ? { isNew: true, reason: 'idle' }
-      : { isNew: false, reason: 'continue' };
+      ? { propose: true, reason: 'idle' }
+      : { propose: false, reason: 'continue' };
   }
-  return score < SHIFT_COVERAGE
-    ? { isNew: true, reason: 'shift' }
-    : { isNew: false, reason: 'continue' };
+  return score < PROPOSE_COVERAGE
+    ? { propose: true, reason: 'shift' }
+    : { propose: false, reason: 'continue' };
 }
 
 /* A title derived from the message that opened the topic. Truncation is by character count,
@@ -200,12 +180,12 @@ function titleFromText(text) {
 module.exports = {
   contentTerms,
   coverage,
-  decideBoundary,
+  proposeBoundary,
   titleFromText,
   IDLE_GAP_MS,
   RECENT_WINDOW_MESSAGES,
-  MIN_TERMS_TO_JUDGE,
-  SHIFT_COVERAGE,
+  MIN_PROPOSAL_TERMS,
+  PROPOSE_COVERAGE,
   IDLE_COVERAGE,
   TITLE_MAX_CHARS,
   FALLBACK_TITLE,

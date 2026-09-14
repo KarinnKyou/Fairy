@@ -210,6 +210,15 @@ function openConversation(options) {
     return store.searchMessages(s.db, query, o.limit, o.topicId ? { topicId: o.topicId } : {});
   }
 
+  /* Whether a message carries enough content to name a subject. Used both when a topic is
+   * created and when a provisional title is replaced, so the two rules cannot drift: a message
+   * that could not have named the topic in the first place must not rename it later either.
+   * Without this a two-term laugh ("哈哈哈") became the permanent name of a topic, and because
+   * naming locks the title it also blocked the greeting from being absorbed afterwards. */
+  function couldNameTopic(text) {
+    return topics.contentTerms(text).length >= topics.MIN_PROPOSAL_TERMS;
+  }
+
   /*
    * Which topic the message being asked right now belongs to.
    *
@@ -217,13 +226,25 @@ function openConversation(options) {
    * with its topic, and the history handed to the model has to be the history of that same
    * topic. Deciding afterwards would assemble the prompt from the previous subject while
    * filing the answer under the new one.
+   *
+   * Async because a boundary can require a request (ADR-012, revision 1). The local rule in
+   * topics.js only proposes; `confirmBoundary` decides, and anything other than an explicit
+   * "yes, new subject" keeps the message where it is. That includes a confirmation that threw,
+   * timed out, or was never configured — so with no model available this degrades to "one topic
+   * per sitting", which is the behaviour that cannot mislead her about what a sentence means.
    */
-  function resolveTopic(text) {
+  async function resolveTopic(text) {
     const current = store.getCurrentTopic(s.db);
     if (!current) {
-      const created = store.createTopic(s.db, { title: topics.titleFromText(text), createdAt: now() });
+      const created = store.createTopic(s.db, {
+        title: topics.titleFromText(text),
+        createdAt: now(),
+        /* A message too thin to name a subject leaves the title open, so the greeting a session
+         * opens with does not become its permanent name. */
+        titleLocked: couldNameTopic(text),
+      });
       store.setCurrentTopic(s.db, created.id);
-      return { topic: created, reason: 'first' };
+      return { topic: created, reason: 'first', confirmed: null };
     }
 
     /* An empty topic is waiting for its first message — whether /new just created it or a
@@ -231,9 +252,9 @@ function openConversation(options) {
      * message against no subject at all, score it as completely off-topic, and open a second
      * topic beside the empty one, so an explicit /new could never be used with a long message. */
     const lastAt = store.lastMessageAt(s.db, current.id);
-    if (!lastAt) return { topic: current, reason: 'continue' };
+    if (!lastAt) return { topic: current, reason: 'continue', confirmed: null };
 
-    const decision = topics.decideBoundary({
+    const proposal = topics.proposeBoundary({
       hasTopic: true,
       lastMessageAt: lastAt,
       now: now(),
@@ -241,15 +262,75 @@ function openConversation(options) {
       recentTexts: store.recentMessages(s.db, topics.RECENT_WINDOW_MESSAGES, { topicId: current.id })
         .map((m) => m.content),
     });
-    if (!decision.isNew) return { topic: current, reason: decision.reason };
 
-    const created = store.createTopic(s.db, { title: topics.titleFromText(text), createdAt: now() });
-    store.setCurrentTopic(s.db, created.id);
-    return { topic: created, reason: decision.reason };
+    if (proposal.propose) {
+      const verdict = await askConfirmation(text, current);
+      if (verdict && verdict.isNew) {
+        const created = store.createTopic(s.db, {
+          title: verdict.title || topics.titleFromText(text),
+          createdAt: now(),
+          titleLocked: true,
+        });
+        /* Carry over a topic that never earned a name (a greeting) instead of leaving a
+         * nameless one behind for every sitting. */
+        if (!current.titleLocked) store.absorbTopic(s.db, current.id, created.id);
+        store.setCurrentTopic(s.db, created.id);
+        return { topic: created, reason: proposal.reason, confirmed: true };
+      }
+      /* Not confirmed, or nothing could confirm it: stay, and name the topic if it is still
+       * provisional and this message is substantial enough to name it. */
+      if (!current.titleLocked && couldNameTopic(text)) {
+        store.retitleTopic(s.db, current.id, topics.titleFromText(text));
+      }
+      return {
+        topic: store.getTopic(s.db, current.id) || current,
+        reason: proposal.reason,
+        confirmed: verdict ? false : null,
+      };
+    }
+
+    if (!current.titleLocked && couldNameTopic(text)) {
+      store.retitleTopic(s.db, current.id, topics.titleFromText(text));
+    }
+    return {
+      topic: store.getTopic(s.db, current.id) || current,
+      reason: proposal.reason,
+      confirmed: null,
+    };
   }
 
-  /* Persist a user message and open a turn. Returns the turn handle used by the stream. */
-  function beginTurn(text) {
+  /* Ask the injected confirmer, and never let it break a turn: a request that fails is the
+   * same as one that was never made, which means "stay in this topic". */
+  async function askConfirmation(text, topic) {
+    const confirm = opts.confirmBoundary;
+    if (typeof confirm !== 'function') return null;
+    try {
+      const verdict = await confirm({
+        text,
+        topic: { id: topic.id, title: topic.title },
+        /* Role-tagged, and only the two roles that carry dialogue: labelling by position would
+         * mislabel the transcript as soon as the window opened with an assistant or error row,
+         * and the classifier is being asked about who said what. */
+        recent: store.recentMessages(s.db, topics.RECENT_WINDOW_MESSAGES, { topicId: topic.id })
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({ role: m.role, content: m.content })),
+      });
+      if (!verdict || typeof verdict.isNew !== 'boolean') return null;
+      return {
+        isNew: verdict.isNew,
+        title: verdict.title == null ? null : String(verdict.title).trim().slice(0, topics.TITLE_MAX_CHARS),
+      };
+    } catch (err) {
+      /* Recorded, not swallowed silently: an unreachable classifier looks exactly like a
+       * conversation that never changes subject. */
+      if (opts.onConfirmError) opts.onConfirmError(err);
+      return null;
+    }
+  }
+
+  /* Persist a user message and open a turn. Returns the turn handle used by the stream.
+   * Async since ADR-012 revision 1, because the topic decision may involve a request. */
+  async function beginTurn(text) {
     const content = String(text == null ? '' : text);
     const turnId = 't' + (++turnSeq) + '-' + store.newId();
     const result = {
@@ -260,16 +341,20 @@ function openConversation(options) {
        * simply continues from there, which reads as "answering the previous question". */
       userText: content,
       topicId: null,
-      /* Why this message stayed in its topic or opened a new one. Not used in the reply path
-       * at all — it is what a wrong boundary is diagnosed with (ADR-010). */
+      /* Why this message stayed in its topic or opened a new one, and whether a confirmation
+       * backed that up: `confirmed` is true (model said new), false (model said no) or null
+       * (nothing was asked). Not used in the reply path at all — it is what a wrong boundary
+       * is diagnosed with (ADR-010). */
       topicReason: null,
+      topicConfirmed: null,
     };
 
     if (!available) return result;
 
-    const resolved = resolveTopic(content);
+    const resolved = await resolveTopic(content);
     result.topicId = resolved.topic ? resolved.topic.id : null;
     result.topicReason = resolved.reason;
+    result.topicConfirmed = resolved.confirmed;
 
     /* History as it was *before* this message, so the prompt does not contain the user
      * turn twice (once from the store, once from the caller) — and scoped to this message's

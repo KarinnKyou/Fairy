@@ -177,6 +177,16 @@ const MIGRATIONS = [
     CREATE INDEX idx_messages_topic ON messages(topic_id, created_at, id);
     `,
   ],
+  [
+    4,
+    `
+    -- Whether a topic's title is final. It is set when the user renames the topic, and when the
+    -- title was derived from a message carrying enough content to name a subject. A topic whose
+    -- title is still open is provisional: it can be renamed by its first substantial message,
+    -- which is what stops a session that opens with "你好" from being called that forever.
+    ALTER TABLE topics ADD COLUMN title_locked INTEGER NOT NULL DEFAULT 0;
+    `,
+  ],
 ];
 
 const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
@@ -341,9 +351,10 @@ function createTopic(db, topic) {
   const id = opts.id || newId(createdAt);
   const raw = String(opts.title == null ? '' : opts.title).trim();
   const title = raw || topics.FALLBACK_TITLE;
-  db.prepare('INSERT INTO topics (id, title, created_at, updated_at) VALUES (?,?,?,?)')
-    .run(id, title, createdAt, updatedAt);
-  return { id, title, createdAt, updatedAt };
+  const titleLocked = opts.titleLocked ? 1 : 0;
+  db.prepare('INSERT INTO topics (id, title, created_at, updated_at, title_locked) VALUES (?,?,?,?,?)')
+    .run(id, title, createdAt, updatedAt, titleLocked);
+  return { id, title, createdAt, updatedAt, titleLocked: Boolean(titleLocked) };
 }
 
 function getTopic(db, id) {
@@ -365,15 +376,70 @@ function listTopics(db, options) {
   return rows.map((r) => Object.assign(toTopic(r), { messageCount: Number(r.message_count) }));
 }
 
-/* Renaming refuses an empty title instead of writing one: a topic with no name cannot be
- * recognised in the list, and '' is what an accidental empty argument looks like. */
+/*
+ * Renaming by the user makes the title final, so nothing else renames it afterwards. Refuses
+ * an empty title instead of writing one: a topic with no name cannot be recognised in the list,
+ * and '' is what an accidental empty argument looks like.
+ */
 function renameTopic(db, id, title) {
   const clean = String(title == null ? '' : title).trim();
   if (!clean) return null;
-  const res = db.prepare('UPDATE topics SET title = ?, updated_at = ? WHERE id = ?')
+  const res = db.prepare('UPDATE topics SET title = ?, updated_at = ?, title_locked = 1 WHERE id = ?')
     .run(clean, nowMs(), id);
   if (!res.changes) return null;
   return getTopic(db, id);
+}
+
+/*
+ * Name a topic that is still provisional — one whose title came from a message too thin to
+ * name a subject (a greeting, usually). The first substantial message in that topic takes over
+ * the naming, and locks it: after that the title is as good as it is going to get without the
+ * user renaming it.
+ *
+ * Refuses when the title is already locked, so a user's own name is never overwritten. Returns
+ * the updated topic, or null when nothing changed.
+ */
+function retitleTopic(db, id, title) {
+  const topic = getTopic(db, id);
+  if (!topic || topic.titleLocked) return null;
+  const clean = String(title == null ? '' : title).trim();
+  if (!clean || clean === topic.title) {
+    /* Nothing to gain, but stop asking: an unchanged name would be retried on every message. */
+    if (clean === topic.title) db.prepare('UPDATE topics SET title_locked = 1 WHERE id = ?').run(id);
+    return null;
+  }
+  db.prepare('UPDATE topics SET title = ?, title_locked = 1 WHERE id = ?').run(clean, id);
+  return getTopic(db, id);
+}
+
+/*
+ * Move every message from one topic into another and delete the emptied one.
+ *
+ * Used when a confirmation opens a new topic and the topic being left behind is still
+ * provisional — typically it holds nothing but a greeting ("你好", "在吗") that was never
+ * enough to name a subject. Absorbing it keeps the greeting with the conversation it opened,
+ * instead of accumulating one nameless topic per sitting.
+ *
+ * Refuses to absorb a locked topic: that is a subject the user has seen named, and silently
+ * merging it would be the kind of data change this project does not do behind anyone's back.
+ */
+function absorbTopic(db, fromId, intoId) {
+  const from = getTopic(db, fromId);
+  const into = getTopic(db, intoId);
+  if (!from || !into || from.id === into.id) return null;
+  if (from.titleLocked) return null;
+
+  db.exec('BEGIN');
+  try {
+    const res = db.prepare('UPDATE messages SET topic_id = ? WHERE topic_id = ?').run(into.id, from.id);
+    db.prepare('DELETE FROM topics WHERE id = ?').run(from.id);
+    touchTopic(db, into.id);
+    db.exec('COMMIT');
+    return { moved: Number(res.changes), into: getTopic(db, into.id) };
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    throw new Error('absorbTopic failed: ' + err.message);
+  }
 }
 
 /* Called when a message lands in the topic, so the list order follows the conversation. */
@@ -429,6 +495,10 @@ function backfillTopics(db) {
       title: topics.titleFromText(first ? first.content : ''),
       createdAt: at,
       updatedAt: at,
+      /* Locked on purpose. The title of a migrated topic comes from the whole of a real
+       * conversation, so re-deriving it from whichever single message happens to arrive next
+       * would mislabel hundreds of messages. `/rename` is the way to change it. */
+      titleLocked: true,
     });
     db.prepare('UPDATE messages SET topic_id = ? WHERE topic_id IS NULL').run(topic.id);
     /* Only claim it as current if nothing else has: an upgrade must not steal the active
@@ -595,6 +665,7 @@ function toTopic(row) {
     title: row.title,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    titleLocked: Boolean(row.title_locked),
   };
 }
 
@@ -639,6 +710,8 @@ module.exports = {
   getTopic,
   listTopics,
   renameTopic,
+  retitleTopic,
+  absorbTopic,
   touchTopic,
   countTopics,
   getCurrentTopic,
