@@ -33,9 +33,11 @@ page itself is fully local (CSP blocks network access).
 - **Emoji are banned**: enforced by the system prompt plus a Unicode scrub in the view layer
 - **Self-identity = Fairy**: the system prompt forbids claiming to be DeepSeek / OpenAI
   or any other model
-- **Topics**: the conversation is split into subjects as it happens, entirely on your machine —
-  no extra request to the model. Switching topics changes what she is reminded of, not just
-  what is on screen. `/topics`, `/switch`, `/new`, `/rename`, `/search`, `/help`
+- **Topics**: the conversation is split into subjects as it happens. A cheap local rule watches
+  for a message that shares no vocabulary with the current subject, and only then is the model
+  asked whether the subject really changed — so boundaries are decisions, not guesses, and a
+  boundary you did not ask for cannot be invented. Switching topics changes what she is reminded
+  of, not just what is on screen. `/topics`, `/switch`, `/new`, `/rename`, `/search`, `/help`
 - **Full-text search** over everything ever said, Chinese included (`/search`), with the topic
   each hit came from
 - Font size, weight and column width are CSS variables, all easy to tune
@@ -255,22 +257,29 @@ and rename them:
 
 A message starting with `/` is a command for the app and is never sent to the model.
 
-**Topics are decided locally.** No extra request is made, so a boundary costs nothing and works
-offline. The rule is in `app/topics.js`: a message must carry at least 8 content terms (CJK
-bigrams, or whole Latin words) before it can be evidence of a change, and then it must share
-almost no vocabulary with the current topic's recent messages — or only a little, if hours have
-passed since the last one. All of it is computed from what is already in the database, on your
-machine; see ADR-012 for why each number is what it is.
+**How a topic boundary is decided.** A cheap local rule in `app/topics.js` does the watching: a
+message carrying at least 5 content terms (CJK bigrams, or whole Latin words) that shares less
+than 15% of them with the current subject's recent messages — or much less, if hours have passed
+— is *proposed*. Only then is the model asked one small question: same subject, or a new one? It
+answers `{"same": …, "title": …}`, and a new topic takes that name.
+
+Two properties of this are worth knowing, because they are deliberate:
+
+- **Only an explicit "yes" opens a topic.** If the request fails, times out, cannot be parsed, or
+  there is no API key, the message stays where it is. A classifier that cannot answer is never
+  allowed to invent a boundary, so with no key this degrades to "one topic per sitting" — which is
+  also what happens on an unreachable network.
+- **It costs one extra request on proposed turns only** — turns that look like a change of
+  subject. Ordinary conversation, with messages that share vocabulary, costs nothing extra.
 
 **Switching changes what she is reminded of, not just what is drawn.** The history sent to the
 model is the current topic's history; the profile (first meeting, number of turns) stays global,
 because that is about the relationship rather than a subject.
 
-**What it cannot do, deliberately.** Detection is lexical, so a subject continued in entirely
-different words reads as a new subject, and a short new request ("推荐几部电影") is not enough
-evidence to start one. Both are the trade-off chosen to avoid the expensive mistake — splitting
-a subject that was still going, which makes her look like she forgot. `/new` and `/switch` are
-the escape hatches. Embeddings would fix it properly; that is Phase 5 (ADR-007).
+**Why it works this way** is worth reading if you plan to change it: `docs/ADR.md` ADR-012
+revision 1 records the first real conversation, in which a purely local rule split one project
+into three topics — and made her answer "how do *you* tokenize" when the question had been about
+the project's tokenizer. Both the failure and the fix are measured there.
 
 ## 4.1 Fairy's personality
 

@@ -76,16 +76,20 @@ behind them are ADR-012 (with the schema shape from ADR-006).
 
 | Item | Evidence |
 | --- | --- |
-| `topics` table, nullable `messages.topic_id`, index — migration **3**, additive | `store.test.cjs` §11; a fresh database reports schema v3 |
-| The v0.1 store upgrades without a rewrite | `store.test.cjs` §12 builds a **v2** database from the shipped migration SQL, and asserts one topic is created, titled from the earliest user message, with every old row in it and no `topic_id` left NULL |
+| `topics` table, nullable `messages.topic_id`, index — migration **3**, additive | `store.test.cjs` §11; a fresh database reports schema v4 |
+| `topics.title_locked` — migration **4**, for provisional titles | `store.test.cjs` §13; a fresh database reports schema v4 |
+| The v0.1 store upgrades without a rewrite | `store.test.cjs` §12 builds a **v2** database from the shipped migration SQL, and asserts one topic is created, titled from the earliest user message and locked, with every old row in it and no `topic_id` left NULL |
 | The backfill is idempotent | reopening that upgraded store still reports exactly one topic |
-| Boundaries decided locally — no extra request, no model call | `app/topics.js`; `decideBoundary` returns `first`/`idle`/`shift`/`continue` |
+| **The local rule proposes; the model decides** (ADR-012 revision 1) | `proposeBoundary` returns `propose` + `first`/`idle`/`shift`/`continue`; `main.js` supplies `confirmBoundary`; §10 shows a boundary opening only after a "yes" |
+| Nothing can confirm → nothing splits, silently | §10b: no confirmer, a confirmer that throws, and one that returns null all keep the message in place, and all leave the turn usable |
+| The local rule is tuned for recall, and the cheap path still works | §9 — interjections and on-topic messages spend no request; zero-overlap messages with substance always do |
 | CJK bigrams for the similarity signal, not the FTS single characters | `contentTerms`; the index keeps single characters for a different reason (ADR-002) |
-| Constants measured against labelled exchanges, not guessed | `conversation.test.cjs` §9 — 8 continuations, 5 changes of subject, the idle band, truncation |
 | Topics select context; the profile stays global | §10: a new topic's `historyBefore` does not contain the previous topic's messages |
 | Switching changes what is drawn *and* what is sent | §10 covers the transcript; `renderer.test.cjs` asserts the switch replaces the transcript instead of appending |
-| Titles derived, truncated at 24 characters, renamable | §9; `/rename` in `renderer.test.cjs` |
-| Manual override (`/new`, `/switch`) | §10 asserts a manually created empty topic is never abandoned by the detector |
+| Titles: the model names a new topic; a derived title is only the fallback | §10 asserts the confirmed topic carries the confirmer's name, not the truncated sentence |
+| A greeting does not become a permanent name, or a leftover topic | §10c and §11: a provisional title is replaced by the first message substantial enough to name a subject, and the greeting topic is absorbed into the subject that follows |
+| Manual override (`/new`, `/switch`) | §10 asserts a manually created empty topic is never abandoned by the proposer |
+| A real conversation is the evaluation set, and it is replayed | `docs/eval/topics-2026-09-14.json` + §12: the recorded human judgement drives the confirmer, and the replay asserts proposals, layout and per-turn history |
 | Search UI over FTS5, cross-topic with the topic title on each hit | `/search` in `renderer.test.cjs`; `store.test.cjs` §11 scopes it to one topic |
 | The command surface adds **no** CSS and no new `.line` class | `renderer.test.cjs` compares the `.line.*` classes before and after the command tests |
 | The preload ↔ main channel contract cannot drift silently | `renderer.test.cjs` cross-checks every channel `preload.cjs` uses against `main.js`, and every `api.*` the page calls against the preload surface — shown to fail by renaming a channel. Without it, the fake API used by those tests would hide a typo until a command silently did nothing in a real window |
@@ -95,10 +99,12 @@ What Phase 2 deliberately did **not** do: semantic search. ADR-007 keeps Phase 2
 leaves embeddings to Phase 5, so "semantic search" stays an open item by decision rather than
 by omission.
 
-Two defects were found while building it, both before any release, both recorded in ADR-012: an
-explicitly created empty topic was immediately abandoned by the detector (so `/new` could never
-work with a long message), and the boundary decision and the message timestamps read the clock
-separately (which made the idle rule silently never fire under an injected clock).
+Two defects were found while building the first version of it, both before any release, both
+recorded in ADR-012: an explicitly created empty topic was immediately abandoned by the rules
+(so `/new` could never work with a long message), and the boundary decision and the message
+timestamps read the clock separately (which made the idle rule silently never fire under an
+injected clock). A third was found by the tests while adding the confirmation step: any message
+could retitle a topic, so a two-term laugh named one "哈哈哈" and locked it.
 
 ---
 
@@ -157,26 +163,37 @@ Not blockers, but they should not be forgotten.
 6. **Nothing evaluates reply *quality*.** ADR-010 defers this to a corpus built from real
    Phase 2 conversations. Until then, "the reply was bad" is diagnosed with
    `npm run inspect`, not measured.
-7. **Phase 2's boundaries were tuned on constructed exchanges, not real ones.** ADR-010 wanted
-   the evaluation set to *start being collected* here, and it exists — `conversation.test.cjs`
-   §9 holds 8 continuations, 5 changes of subject and the idle band — but every case was written
-   to represent a shape of conversation, not copied from one. The constants in `app/topics.js`
-   (`MIN_TERMS_TO_JUDGE` 8, `SHIFT_COVERAGE` 0.05, `IDLE_COVERAGE` 0.2, `IDLE_GAP_MS` 6 h) are
-   the first things to re-measure once real transcripts exist: they were tuned to remove every
-   observed *false split*, which is the expensive mistake (she loses the subject), at the known
-   cost of merging short genuinely-new subjects into the current topic.
-8. **Topic detection cannot see paraphrase, and that is structural.** A subject continued in
-   entirely different words scores near-zero lexical overlap and reads as a change of subject.
-   `/new` and `/switch` are the escape hatch, and embeddings are the real fix — the same Phase 5
-   decision ADR-007 defers. Revisit the two together.
-9. **v0.2 is not released.** The code is in the tree and the gate is green, but no artifact has
+7. **The evaluation set is started, and it already paid for itself.** `docs/eval/topics-2026-09-14.json`
+   is one real conversation with a judgement recorded for every turn, and replaying it is what
+   disproved ADR-012 revision 0: a continuation and a change of subject both scored 0.000
+   coverage, so no threshold could have separated them. Its entries are data, replayed by
+   `conversation.test.cjs` §12 — adding the next case is appending a turn and a judgement. What
+   it does **not** cover is reply quality, and it is one conversation: it is a start, not a
+   corpus.
+8. **The confirmer's own quality is unmeasured, and untested against the live API.** Everything
+   around it is asserted offline (proposals, layout, per-turn history, every failure path), but
+   whether the model's `same`/`new` verdict is any good can only be judged by running the real
+   conversation again and comparing its answers with the recorded ones. The request itself has
+   never been sent: this environment has no network, so `main.js`'s `confirmBoundary` is written
+   defensively (JSON extracted from surrounding prose, 8-second timeout, every failure → stay)
+   but has not met the API. **It needs one live run before it can be called working.**
+9. **A boundary now costs a request, and the reply waits for it.** One extra small call on every
+   proposed turn — turns whose message shares no vocabulary with the current subject, which was
+   5 of 8 turns in the transcribed conversation — plus its latency before the first token
+   arrives. This withdraws revision 0's "no extra request", and it is the standing price of
+   ADR-012 revision 1. The lever if it proves annoying is `PROPOSE_COVERAGE`: raising it asks
+   less often and misses more.
+10. **The local constants are still guesses**, now tuned for recall rather than precision:
+   `MIN_PROPOSAL_TERMS` 5, `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. The
+   transcripts in `docs/eval` are the only data behind them, and there is exactly one.
+11. **v0.2 is not released.** The code is in the tree and the gate is green, but no artifact has
    been built, nothing is committed, and nothing is pushed. `release.ps1` needs the sandbox
    escalation for `electron-builder` and for `git push`/`gh`, and pushing is a decision for the
    owner of the repository rather than a step to take automatically.
-10. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
-    the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
-    they are verified by running them once. `--topic` was checked against a two-topic scratch
-    store, including that `--prompt` then describes only the topic in progress.
+12. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
+   the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
+   they are verified by running them once. `--topic` was checked against a two-topic scratch
+   store, including that `--prompt` then describes only the topic in progress.
 
 ---
 

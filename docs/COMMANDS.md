@@ -46,6 +46,29 @@ Two things worth knowing, because they are deliberate rather than missing:
   topic's history (ADR-012), so switching is not just a display change. `/topics` is also how you
   find out that an automatic boundary happened where you did not expect one.
 
+### 1.2 Reading what the boundary logic did
+
+The app logs one line per turn, and it is the fastest way to tell a boundary that was never
+considered from one that was considered and refused:
+
+```
+turn t3: topic shift (confirmed: new topic) -> 0001789374921900-0000-0826f930
+turn t4: topic shift (confirmed: kept) -> 0001789374412300-0000-1a2b3c4d
+turn t5: topic continue (not proposed) -> 0001789374412300-0000-1a2b3c4d
+```
+
+- `not proposed` — the message shared enough vocabulary with the current subject; nothing was
+  asked, nothing was spent.
+- `confirmed: new topic` — the model agreed a subject changed, and this message opened it.
+- `confirmed: kept` — the local rule proposed and the model said it was still the same subject.
+  This is the case the earlier local-only rule got wrong.
+- `staying in the current topic:` on stderr — a confirmation request failed (no key, timeout,
+  unparseable answer). The turn continues in the topic it was in.
+
+`docs/eval/` holds real conversations with a human judgement recorded per turn, and
+`conversation.test.cjs` replays them. To add a case: append a turn and its `expect` to the JSON.
+That is the whole mechanism ADR-010 asked for, and it is a data change, not a code change.
+
 ## 2. Talk to her without polluting the real history
 
 You will open the app constantly and ask the same things. Those throwaway turns would pile

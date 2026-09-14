@@ -412,7 +412,7 @@ and "把这个对话存成文件吧" each name the single relevant limit and inv
 
 ## ADR-010 — Behaviour quality gets an evaluation set, features do not get one
 
-**Status:** Proposed (start collecting during Phase 2)
+**Status:** Accepted — started during Phase 2, and its first entry is a real transcript
 
 **Context**
 
@@ -432,6 +432,18 @@ start as a manual pass before any automated judge is introduced.
 - Costs almost nothing to start and is expensive to reconstruct later.
 - An automated judge (a second model grading responses) is a later, optional upgrade, and
   costs API credits; the manual set is the prerequisite for it.
+
+**How it works in practice.** Entries live as data in `docs/eval/*.json`, and
+`tests/conversation.test.cjs` replays them: the recorded human judgement is supplied as the
+confirmer's answer, and the test asserts everything *except* the model's own quality — which
+turns were proposed, where each message landed, what history each turn received. The model's
+answer is the thing under evaluation, so it stays data rather than becoming an implementation
+detail. Adding a case is appending a turn and a judgement, not writing an assertion.
+
+**First entry: `docs/eval/topics-2026-09-14.json`.** The conversation that broke revision 0 of
+ADR-012, kept verbatim. It is the reason that ADR has a revision, and it is the reason this
+one moved from Proposed to Accepted: the set did not just cost nothing to start, it found a
+defect on its first real use.
 
 ---
 
@@ -587,6 +599,101 @@ design and stayed deferred.
   that six commands already cover. Deferred, not rejected (see the deferred table).
 - *`topic_id NOT NULL` with a default row*: rejected already in ADR-006, and it would put a fake
   topic in every store that never used topics.
+
+---
+
+**Revision 1 — the local rule proposes, the model decides.**
+
+The decision above was wrong, and the first real conversation is what showed it. The transcript
+is preserved verbatim as `docs/eval/topics-2026-09-14.json`; replayed through revision 0's rule,
+it produced **five topics from eight turns, four of them one project**:
+
+| turn | terms | coverage | revision 0 said | actually |
+| --- | --- | --- | --- | --- |
+| 那个终端项目的全文搜索做到哪一步了 | 15 | 0.333 | continue | continue |
+| 中文分词你是怎么处理的… | 15 | 0.000 | **split** | same subject |
+| 我想给这个软件再加点本事… | 21 | 0.000 | **split** | same subject |
+| 给我推荐几部科幻电影吧… | 19 | 0.000 | split | new subject |
+| 附近有什么好吃的 | 6 | 0.000 | continue | new subject |
+
+A continuation and a change of subject both scored **0.000**, and their term counts
+**interleaved** (false splits at 15 and 21, real splits at 17 and 19). No value of either
+constant separates those cases, so the tuning described under "Consequences" below could never
+have worked: it was the wrong axis, not the wrong number.
+
+Two further findings made the failure serious rather than untidy.
+
+**A false split changes what the user's sentence means.** With `historyBefore` empty,
+"中文分词你是怎么处理的" stopped meaning *how does your project handle Chinese tokenization* and
+became *how do you yourself tokenize*; she answered about her own tokenizer. "我想给这个软件再
+加点本事" stopped meaning *add a feature to my app* and became *modify yourself*; she answered
+that she cannot change her own code. Being handed no context does not just lose information — it
+reinterprets the question.
+
+**The tuning was fitted to a distribution that does not exist.** The cases revision 0 was tuned
+on were written by the developer, and in every one of them the assistant reply cooperatively
+echoed the user's vocabulary — which is the only bridge the metric has. Real replies refuse and
+pivot: asked about search progress, she replied *"我这边没有那个项目的记录…你想聊哪一块，
+schema、迁移还是查询封装？"* and never said 中文分词. The bridge the rule relied on was absent in
+production. A metric fitted on invented replies to invented questions measured the invention.
+
+So the roles changed:
+
+- **`proposeBoundary` (was `decideBoundary`) only proposes.** It is tuned for **recall**:
+  `MIN_PROPOSAL_TERMS` dropped 8 → **5** and `PROPOSE_COVERAGE` 0.05 → **0.15**, because a
+  proposal that is wrong now costs one small request, while a proposal that is missing costs a
+  subject that never gets its own topic. `IDLE_COVERAGE` widened 0.2 → **0.35** for the same
+  reason.
+- **A boundary is opened only when the confirmer says so** — a small non-streaming request
+  (`confirmBoundary` in `main.js`) that answers `{same, title}`. It also **names** the topic,
+  which retires the "title is a truncated sentence" problem: `给我推荐几部科幻电影吧，最好是硬科幻
+  那种，别太商…` becomes a noun phrase.
+- **Anything other than an explicit "yes" keeps the message where it is.** A missing key, a
+  timeout, a parse failure, a thrown error and an explicit "same" are all one outcome: stay. A
+  classifier that cannot answer must not be able to invent boundaries, so `topics.js` without a
+  confirmer behaves exactly like the "one topic per sitting" fallback that was the alternative
+  to this design. That is asserted in `conversation.test.cjs` §10b.
+- **Cost, stated plainly:** one extra request on each proposed turn — turns whose message shares
+  no vocabulary with the current subject — and the latency of that request before the reply
+  starts. In the transcript that was 5 of 8 turns. It buys boundaries that are actually right,
+  and the title. Changing this is a change to `docs/ADR.md` and `RELEASE_NOTES.md`, not a
+  preference: revision 0's "no extra request" is withdrawn.
+
+**Titles became a separate, smaller problem.** A session opens with a greeting, so the topic it
+creates is named "你好" and should not keep that name. Migration 4 adds `title_locked`: a title
+is provisional until the user renames it or a message substantial enough to name a subject
+arrives. A topic that is still provisional when a confirmed boundary happens is **absorbed** into
+the new topic rather than left behind, so a sitting does not accumulate one nameless topic per
+greeting. A migrated v0.1 topic is locked at backfill: its title comes from a whole conversation,
+and re-deriving it from whichever message arrives next would mislabel hundreds of messages.
+
+**The measurement to make next.** The confirmer's own quality is now the open question, and it is
+the one thing that cannot be asserted offline: `docs/eval` records the human judgement per turn
+and the tests replay it as the confirmer's answer, which verifies everything *except* whether the
+model agrees. Evaluating the model means running the real conversation again and comparing its
+verdicts against the recorded ones.
+
+**Three defects this revision's own implementation produced, all caught by tests before release**
+
+1. **Any message could name a topic.** The provisional-title path ran for every message, not just
+   substantial ones, so a two-term laugh retitled a greeting topic to "哈哈哈" — and because
+   naming locks the title, it also blocked that topic from being absorbed. The rule is now that a
+   message can only name a topic if it could have named it in the first place.
+2. **An explicitly created empty topic was abandoned by the detector** (revision 0's defect,
+   kept here because the fix is what makes `/new` usable).
+3. **The boundary decision and the message timestamps read the clock separately**, which made the
+   idle rule silently never fire under an injected clock.
+
+**Alternatives rejected**
+
+- *Keeping revision 0 and tuning further*: no value of either constant separates the cases in the
+  table above. Measured, not argued.
+- *Embeddings for the boundary*: still the right long-term answer, still ADR-007's Phase 5
+  decision, and the natural replacement for the confirmer when it lands.
+- *One topic per sitting* (the fallback this revision degrades to): it never misleads, but it does
+  not deliver topic detection either. It is now the failure mode rather than the design.
+- *Asking the confirmer on every turn*: doubles the request count to catch a boundary the local
+  rule would have proposed anyway.
 
 ---
 
