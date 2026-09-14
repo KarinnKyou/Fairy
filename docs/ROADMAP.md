@@ -170,12 +170,12 @@ Not blockers, but they should not be forgotten.
    `conversation.test.cjs` §12 — adding the next case is appending a turn and a judgement. What
    it does **not** cover is reply quality, and it is one conversation: it is a start, not a
    corpus.
-8. **The confirmer works, and has now run once.** Verified in production: a real conversation
-   produced a topic named 「电影推荐」 — a noun phrase from the model, which could only appear if
-   the request was made, answered, parsed and used. What remains unmeasured is the *quality* of
-   its verdicts: the same run never asked it about the two turns that should have been asked
-   (ADR-012 revision 2), so it has been observed succeeding once, not being judged. Comparing its
-   answers against the recorded judgements in `docs/eval` means running more real conversations.
+8. **The confirmer works in both directions, and has been observed doing it.** A real conversation
+   produced a topic named 「电影推荐」 — proof the request is made, answered, parsed and used — and
+   a later one answered `same` on five proposals, every one of them correctly, including the two
+   sentences that broke the original design. What is still unmeasured is its *quality over time*:
+   three transcripts is a small sample, and none of them was adversarial. Growing `docs/eval` is
+   how that gets settled.
 9. **A boundary costs a request, and the reply waits for it.** One extra small call on every
    proposed turn, plus its latency before the first token. Measured across both transcripts, that
    is most turns where the subject drifts — 8 of 12 decisive turns after revision 2, against 6

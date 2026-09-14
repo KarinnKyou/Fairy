@@ -740,6 +740,36 @@ short real sentence. Neither error was findable by thinking harder about the sam
 took a real conversation. That is the argument for the corpus being the thing that gets grown, not
 the reasoning.
 
+**Revision 2, addendum — the confirmer also names the topic it did not split.**
+
+The third real conversation (`docs/eval/topics-2026-09-14-run3.json`) passed every boundary
+judgement, including the two sentences that broke revision 0 and the two revision 1 never asked
+about. It is also the first run in which **`confirmed: kept` was observed** — until then the
+confirmer had only ever been seen opening a topic, never refusing one. Five of its turns were
+kept, and all five were right.
+
+It exposed one defect, and it was a naming defect rather than a boundary one. Four of the five
+topics carried a noun phrase from the model; the fifth — the project topic — was called
+「我在做 HDD 这个终端项目，数据库用的是内置的…」, a truncated user sentence. The cause: that topic
+began with 「你好」, which is too thin to name anything, so its title stayed provisional; the next
+substantive message was answered `same`, and the only name available on that path was the message
+itself.
+
+Since a greeting opens most sessions, this would have been the normal outcome rather than an edge
+case. The fix costs nothing: the confirmation request is made anyway, so it now returns a name on
+**either** answer — the new topic when the subject changed, the current topic when it did not —
+and a provisional title takes it. A locked title is still never touched, and a name that is empty,
+punctuation-only, or the placeholder is rejected in favour of the derived one. Covered by
+`conversation.test.cjs` §11b; the recorded run predates the fix, so the corpus keeps what actually
+happened and does not assert the name the model would now produce.
+
+**Alternatives rejected**
+
+- *A second request just to name the topic*: unnecessary, since the confirmation already carries a
+  conversation summary and the answer is one JSON field.
+- *Naming the first topic from a derived message and leaving it*: that is the defect above, and it
+  produces names like a truncated sentence in the one place the user reads names.
+
 ---
 
 ## Deferred decisions (with revisit triggers)
