@@ -38,17 +38,34 @@ const IDLE_GAP_MS = 6 * 60 * 60 * 1000;
 const RECENT_WINDOW_MESSAGES = 8;
 
 /*
- * A message carrying fewer content terms than this is not worth a request. "嗯", "为什么？" and
- * "在吗" are follow-ups whatever they are about, and proposing on them would spend a call to
- * ask a question whose answer is obvious.
+ * A message carrying fewer content terms than this is not worth a request. Interjections
+ * ("嗯", "为什么？", "哈哈哈") and bare greetings sit below it, and asking about them would spend a
+ * call to answer a question whose answer is obvious.
+ *
+ * Lowered 5 -> 3 by production evidence: "上学好烦啊" carries four terms and is plainly a change
+ * of subject, and at 5 it was never asked about at all.
  */
-const MIN_PROPOSAL_TERMS = 5;
+const MIN_PROPOSAL_TERMS = 3;
 
 /*
- * Share of the message's content terms that must already be on-topic for it to pass without
- * asking. Measured against the replayed transcript: the two genuine changes of subject scored
- * 0.000 and the continuing message scored 0.333, so anything above 0.15 keeps the cheap
- * continue path for messages that plainly belong where they are.
+ * One shared term is a coincidence, not a shared subject.
+ *
+ * This is the rule the first production run was missing. "附近有什么好吃的？" (6 terms) shared
+ * exactly one term with its topic — 「有什」, a bigram spanning 有|什么, matched against the
+ * greeting's 「有什么事？」 — which came to 0.167 coverage, just over the bar below. A change of
+ * subject was suppressed by two characters that mean nothing together.
+ *
+ * So a message is only treated as plainly on-topic when it shares at least two content terms
+ * AND a high enough share of its own. Anything less is asked about, which is affordable; being
+ * silently wrong is not.
+ */
+const MIN_SHARED_TERMS = 2;
+
+/*
+ * Share of the message's content terms that must already be on-topic, together with
+ * MIN_SHARED_TERMS, for it to pass without asking. Measured against the replayed transcripts:
+ * the genuine changes of subject scored 0.000, while the one continuation that stays cheap
+ * scored 0.333.
  */
 const PROPOSE_COVERAGE = 0.15;
 
@@ -120,6 +137,15 @@ function contentTerms(text) {
   return out;
 }
 
+/* How many of the message's distinct content terms also appear in the topic's recent text.
+ * Exposed because one shared term is the unit that decides whether a question gets asked. */
+function sharedCount(newTerms, recentTerms) {
+  const recent = new Set(recentTerms);
+  let hit = 0;
+  for (const term of new Set(newTerms)) if (recent.has(term)) hit++;
+  return hit;
+}
+
 /*
  * How much of the new message is already on-topic: the share of its distinct content terms
  * that also appear in the current subject's recent text. A message with no content terms at
@@ -128,10 +154,7 @@ function contentTerms(text) {
 function coverage(newTerms, recentTerms) {
   const unique = new Set(newTerms);
   if (!unique.size) return 1;
-  const recent = new Set(recentTerms);
-  let hit = 0;
-  for (const term of unique) if (recent.has(term)) hit++;
-  return hit / unique.size;
+  return sharedCount(unique, recentTerms) / unique.size;
 }
 
 /*
@@ -151,20 +174,24 @@ function proposeBoundary(input) {
   const opts = input || {};
   if (!opts.hasTopic) return { propose: false, reason: 'first' };
 
-  const terms = new Set(contentTerms(opts.text));
-  if (terms.size < MIN_PROPOSAL_TERMS) return { propose: false, reason: 'continue' };
+  const unique = new Set(contentTerms(opts.text));
+  if (unique.size < MIN_PROPOSAL_TERMS) return { propose: false, reason: 'continue' };
 
-  const score = coverage(terms, contentTerms((opts.recentTexts || []).join('\n')));
+  const recentTerms = contentTerms((opts.recentTexts || []).join('\n'));
+  const shared = sharedCount(unique, recentTerms);
+  const score = shared / unique.size;
+  const plainlyOnTopic = shared >= MIN_SHARED_TERMS && score >= PROPOSE_COVERAGE;
+
   const idle = Boolean(opts.lastMessageAt) && opts.now - opts.lastMessageAt >= IDLE_GAP_MS;
-
   if (idle) {
-    return score < IDLE_COVERAGE
-      ? { propose: true, reason: 'idle' }
-      : { propose: false, reason: 'continue' };
+    const stillOnTopic = shared >= MIN_SHARED_TERMS && score >= IDLE_COVERAGE;
+    return stillOnTopic
+      ? { propose: false, reason: 'continue' }
+      : { propose: true, reason: 'idle' };
   }
-  return score < PROPOSE_COVERAGE
-    ? { propose: true, reason: 'shift' }
-    : { propose: false, reason: 'continue' };
+  return plainlyOnTopic
+    ? { propose: false, reason: 'continue' }
+    : { propose: true, reason: 'shift' };
 }
 
 /* A title derived from the message that opened the topic. Truncation is by character count,
@@ -180,11 +207,13 @@ function titleFromText(text) {
 module.exports = {
   contentTerms,
   coverage,
+  sharedCount,
   proposeBoundary,
   titleFromText,
   IDLE_GAP_MS,
   RECENT_WINDOW_MESSAGES,
   MIN_PROPOSAL_TERMS,
+  MIN_SHARED_TERMS,
   PROPOSE_COVERAGE,
   IDLE_COVERAGE,
   TITLE_MAX_CHARS,

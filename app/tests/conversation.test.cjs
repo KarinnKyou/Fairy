@@ -341,7 +341,7 @@ function open(name, extra) {
   /* Messages that must NOT cost a request: interjections, and messages that plainly belong
    * where they are. The cheap path's job is to keep ordinary conversation free. */
   const cheap = [
-    [['我今天很累'], '想早点睡', '短句接续'],
+    [['今天天气不错，想出去走走'], '天气不错的话就去公园', '共享主题词（短句也走便宜路径）'],
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '那个终端项目的数据库部分做得怎么样了', '共享主题词'],
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '嗯', '只有语气词'],
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '为什么？', '只有疑问词'],
@@ -354,17 +354,14 @@ function open(name, extra) {
   }
 
   /* Messages that MUST be put to the confirmer. This list is the one that matters: being wrong
-   * costs a request, not asking costs a subject. Everything below shares no vocabulary with the
-   * current subject and carries enough content to be worth a question — including several that
-   * the old rule "got right" by guessing, which is exactly what it could no longer be trusted
-   * to do. */
+   * costs a request, not asking costs a subject. Everything below is either too short or too
+   * thinly connected to be trusted to the cheap path. */
   const proposals = [
     [['我在做 HDD 这个终端项目', '主人，我记住了，是一个终端界面。'], '给我推荐几部科幻电影吧', 'shift'],
     [['我们在聊 SQLite 的全文检索和分词', '主人，中文需要按字切分。'], '今晚吃什么好呢，冰箱里只有鸡蛋和西红柿', 'shift'],
     [['我们在讨论 SQLite FTS5 的 trigram tokenizer'], '推荐几家附近的川菜馆', 'shift'],
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '听说最近有一部新电影上映了，想去看', 'shift'],
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '我今天面试了一个新工作，有点紧张', 'idle'],
-    [['我在做 HDD 这个终端项目', '主人，我记住了。'], '附近有什么好吃的', 'shift'],
     [['中文分词你是怎么处理的，为什么要一个字一个字切开', '我不做分词。文字先由 tokenizer 切成 token。'],
       '我想给这个软件再加点本事，让它能记住以前聊过的事情', 'shift'],
     /* These three the old rule resolved correctly on its own — a zero-overlap sentence that
@@ -379,12 +376,31 @@ function open(name, extra) {
     /* Coming back to the same subject after hours now gets asked too, because a long gap is
      * weaker evidence about the subject than a sentence in the middle of one. */
     [['我在做 HDD 这个终端项目', '主人，我记住了。'], '终端项目今天继续，我想加一个搜索功能', 'idle'],
+    /* The two the first production run got wrong, both now asked about. */
+    [['你好', '主人好。有什么事？', '为我推荐一些电影吧', '可以，先给几部不同方向的。'],
+      '附近有什么好吃的？', 'shift'],
+    [['你好', '主人好。有什么事？', '为我推荐一些电影吧', '可以，先给几部不同方向的。'],
+      '上学好烦啊', 'shift'],
   ];
   for (const [recent, text, reason] of proposals) {
     const gap = reason === 'idle' ? 8 * H : 60000;
     const d = propose(recent, text, gap);
     check(d.propose && d.reason === reason,
       '应该提议（' + reason + '）：' + text + ' -> ' + d.propose + '/' + d.reason);
+  }
+
+  /* One shared term is a coincidence, so a message needs two before it can pass unchallenged —
+   * and that run's 「附近有什么好吃的？」 shared exactly one, 「有什」, with its topic. The case
+   * above and this one are the same defect from both directions. */
+  {
+    const recent = ['你好', '主人好。有什么事？', '为我推荐一些电影吧', '可以，先给几部不同方向的。'];
+    const terms = t.contentTerms('附近有什么好吃的？');
+    const shared = t.sharedCount(terms, t.contentTerms(recent.join('\n')));
+    check(shared === 1, '「附近有什么好吃的？」与话题只有 1 个词项重叠（「有什」）：' + shared);
+    check(t.coverage(terms, t.contentTerms(recent.join('\n'))) > t.PROPOSE_COVERAGE,
+      '而这一个词项的重叠率恰好越过了覆盖率门槛——正是它当初压住了提议');
+    check(t.proposeBoundary({ hasTopic: true, lastMessageAt: at - 60000, now: at, text: '附近有什么好吃的？', recentTexts: recent }).propose,
+      '共享词项不足 2 个时一律提议（两个毫无关系的字不该成为"同一话题"的证据）');
   }
 
   check(!propose(['我在做 HDD 这个终端项目', '主人，我记住了。'], '在吗', 8 * H).propose,
@@ -607,84 +623,97 @@ function stubConfirmer(newOn, options) {
   c.close();
 }
 
-/* ---------------------------------------------------------------- 12. the real transcript
- * ADR-010 asked for an evaluation set built from real conversations, and this is the first
- * entry: `docs/eval/topics-2026-09-14.json` is the conversation that broke the previous
- * version, kept verbatim, with a human judgement recorded for every turn.
+/* ---------------------------------------------------------------- 12. the evaluation set
+ * ADR-010 asked for an evaluation set built from real conversations, and every file in
+ * `docs/eval/` is one: a conversation kept verbatim, with a human judgement recorded for each
+ * turn. Adding a case is appending a turn and its `expect` — nothing in this file changes.
  *
  * The judgement is replayed as the confirmer's answer, which is the only way to assert this
  * offline: what is under test is everything *except* the model's quality — which turns get
- * proposed, where messages land, what history each turn receives. The model's own answer is
- * the thing being evaluated, so it is data here, not an implementation detail. */
+ * proposed, where messages land, what history each turn receives. The model's own answer is the
+ * thing being evaluated, so it is data here, not an implementation detail.
+ *
+ * The clock is synthetic (a minute per turn) rather than the recorded timestamps: both
+ * transcripts run within minutes, far inside the idle threshold, so nothing depends on the
+ * difference and the tests do not change behaviour with the calendar. */
 {
-  const fsEval = require('fs');
-  const evalPath = path.join(__dirname, '..', '..', 'docs', 'eval', 'topics-2026-09-14.json');
-  check(fsEval.existsSync(evalPath), '评测语料存在：docs/eval/topics-2026-09-14.json');
+  const evalDir = path.join(__dirname, '..', '..', 'docs', 'eval');
+  const corpusFiles = fs.readdirSync(evalDir).filter((f) => f.endsWith('.json')).sort();
+  check(corpusFiles.length >= 2, '评测语料至少两条真实对话：' + corpusFiles.join(', '));
 
-  const corpus = JSON.parse(fsEval.readFileSync(evalPath, 'utf8'));
-  check(Array.isArray(corpus.turns) && corpus.turns.length === 8,
-    '语料包含全部 ' + corpus.turns.length + ' 个真实回合');
+  for (const file of corpusFiles) {
+    const corpus = JSON.parse(fs.readFileSync(path.join(evalDir, file), 'utf8'));
+    check(Array.isArray(corpus.turns) && corpus.turns.length > 0,
+      file + '：包含 ' + (corpus.turns || []).length + ' 个真实回合');
 
-  /* The recorded judgement becomes the confirmer. */
-  let turnIndex = -1;
-  const judged = async () => {
-    const expect = corpus.turns[turnIndex].expect;
-    return { isNew: expect === 'new', title: expect === 'new' ? '由判定命名的话题' : '' };
-  };
-  const proposals = [];
-  const confirmer = async (input) => {
-    proposals.push(turnIndex);
-    return judged();
-  };
+    /* The recorded judgement becomes the confirmer, and the interval it was asked on is
+     * recorded too: a turn that should have been asked about and was not is the failure this
+     * whole corpus exists to catch. */
+    let idx = -1;
+    const proposals = [];
+    const confirm = async () => {
+      proposals.push(idx);
+      const turn = corpus.turns[idx];
+      const isNew = turn.expect === 'new';
+      const observed = corpus.observedTitles ? corpus.observedTitles[String(idx)] : null;
+      /* The name the real confirmer produced, where the run recorded one. */
+      return { isNew, title: isNew ? (observed || '判定命名的话题') : '' };
+    };
 
-  let clock = new Date('2026-09-14T16:27:53').getTime();
-  const c = open('real-transcript', { now: () => clock, confirmBoundary: confirmer });
-
-  for (let i = 0; i < corpus.turns.length; i++) {
-    turnIndex = i;
-    const turn = corpus.turns[i];
-    const t = await c.beginTurn(turn.user);
-    check(t.topicConfirmed === null || typeof t.topicConfirmed === 'boolean',
-      '回合 ' + (i + 1) + ' 记录了确认结果：' + t.topicConfirmed);
-    c.finishTurn(t, turn.assistant);
-    clock += 1000;
-  }
-
-  /* Recall: the turns where the local rule must spend a request, from the corpus. */
-  check(JSON.stringify(proposals) === JSON.stringify(corpus.expectedProposals),
-    '提议的回合与语料记录一致：' + JSON.stringify(proposals) +
-    ' vs ' + JSON.stringify(corpus.expectedProposals));
-
-  /* The layout: what the whole conversation collapses into. The previous version produced five
-   * topics from these eight turns, four of them one project. Checked against the corpus rather
-   * than against indices written here, so the data is the authority — including the greeting,
-   * which must end up inside the project topic it opened. */
-  const topics = c.listTopics();
-  check(topics.length === corpus.expectedTopics.length,
-    '整段对话收敛成 ' + corpus.expectedTopics.length + ' 个话题（旧版是 5 个）：' + topics.length);
-
-  for (const group of corpus.expectedTopics) {
-    const owners = group.turns.map((i) => {
-      const row = c._store.db.prepare('SELECT topic_id FROM messages WHERE content = ? AND role = ?')
-        .get(corpus.turns[i].user, 'user');
-      return row ? row.topic_id : null;
+    let clock = 1_700_000_000_000;
+    const c = open('eval-' + file.replace(/\.json$/, ''), {
+      now: () => { clock += 60000; return clock; },
+      confirmBoundary: confirm,
     });
-    check(owners.every((id) => id && id === owners[0]),
-      '「' + group.title + '」的 ' + group.turns.length + ' 个回合最终落在同一个话题里（回合 ' +
-      group.turns.join(',') + '）');
+
+    for (let i = 0; i < corpus.turns.length; i++) {
+      idx = i;
+      const turn = await c.beginTurn(corpus.turns[i].user);
+      c.finishTurn(turn, corpus.turns[i].assistant);
+    }
+
+    check(JSON.stringify(proposals) === JSON.stringify(corpus.expectedProposals),
+      file + '：提议的回合与语料记录一致 -> ' + JSON.stringify(proposals));
+
+    /* Layout: what the conversation collapses into, against the corpus rather than against
+     * indices written here, so the data is the authority. */
+    const topics = c.listTopics();
+    check(topics.length === corpus.expectedTopics.length,
+      file + '：收敛成 ' + corpus.expectedTopics.length + ' 个话题，实得 ' + topics.length + ' 个：' +
+      topics.map((t) => t.title).join(' / '));
+
+    for (const group of corpus.expectedTopics) {
+      const owners = group.turns.map((i) => {
+        const row = c._store.db.prepare('SELECT topic_id FROM messages WHERE content = ? AND role = ?')
+          .get(corpus.turns[i].user, 'user');
+        return row ? row.topic_id : null;
+      });
+      check(owners.every((id) => id && id === owners[0]),
+        file + '：「' + group.title + '」的 ' + group.turns.length + ' 个回合落在同一个话题里（回合 ' +
+        group.turns.join(',') + '）');
+    }
+
+    /* And no two groups may share a topic, or the check above would be satisfied by everything
+     * landing in one. */
+    const groupIds = corpus.expectedTopics.map((group) => {
+      const row = c._store.db.prepare('SELECT topic_id FROM messages WHERE content = ? AND role = ?')
+        .get(corpus.turns[group.turns[0]].user, 'user');
+      return row && row.topic_id;
+    });
+    check(new Set(groupIds).size === groupIds.length,
+      file + '：这几组话题互不相同 -> ' + new Set(groupIds).size + ' 个话题');
+
+    /* Where the model's own naming was observed, the topic must carry exactly that name. */
+    for (const [turnIndex, title] of Object.entries(corpus.observedTitles || {})) {
+      const row = c._store.db.prepare('SELECT topic_id FROM messages WHERE content = ? AND role = ?')
+        .get(corpus.turns[Number(turnIndex)].user, 'user');
+      const topic = row ? store.getTopic(c._store.db, row.topic_id) : null;
+      check(topic && topic.title === title,
+        file + '：模型给的名字被采用（回合 ' + turnIndex + ' -> 「' + title + '」）');
+    }
+
+    c.close();
   }
-
-  /* And no two of them may be the same topic, or the grouping above would be satisfied by
-   * everything landing in one. */
-  const groupIds = corpus.expectedTopics.map((group) => {
-    const row = c._store.db.prepare('SELECT topic_id FROM messages WHERE content = ? AND role = ?')
-      .get(corpus.turns[group.turns[0]].user, 'user');
-    return row && row.topic_id;
-  });
-  check(new Set(groupIds).size === groupIds.length,
-    '这几组话题互不相同：' + groupIds.length + ' 组 -> ' + new Set(groupIds).size + ' 个话题');
-
-  c.close();
 }
 
 /* ---------------------------------------------------------------- cleanup */

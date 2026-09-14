@@ -1,0 +1,44 @@
+{
+  "name": "topics-2026-09-14-run2",
+  "kind": "topics",
+  "source": "The second real conversation, run after the local rule was reduced to a proposer and a model confirmation was added. Reconstructed verbatim from `npm run inspect:dev`.",
+  "why": "This run is where the confirmer proved itself and the proposer did not. The topic came out of it named 「电影推荐」 — a noun phrase, produced by the model, which means the confirmation request was made, answered, parsed and used. But two genuine changes of subject were never asked about at all, and the reasons were both in the local rule: one shared term was enough to look on-topic, and four content terms were too few to be worth asking.",
+  "howToRead": "`expect` is a human judgement about the turn. `same` continues the current subject, `new` opens one. Every turn here is `new` or the first, because this conversation changed subject on every message — which is exactly why it is useful: it is a recall test with no continuations to hide behind.",
+  "observedTitles": {
+    "1": "电影推荐"
+  },
+  "observedTitlesNote": "「电影推荐」 is the name the real confirmer produced for the topic opened at turn 1, taken from the run's own `/topics` output. The other two turns never opened a topic in that run, so no model title was observed for them.",
+  "turns": [
+    {
+      "user": "你好",
+      "assistant": "主人好。有什么事？",
+      "expect": "new",
+      "note": "Opens the session. Zero content terms, so the title stays provisional — which is why the topic that survives is named after the film message rather than after this one."
+    },
+    {
+      "user": "为我推荐一些电影吧",
+      "assistant": "可以，不过我不知道主人的口味，先给几部不同方向的：《肖申克的救赎》——剧情，几乎不会踩雷；《星际穿越》——科幻，视效与情感都强；《让子弹飞》——国产，节奏和台词都有意思；《千与千寻》——动画，什么时候看都不亏；《搏击俱乐部》——悬疑，看完得缓一会儿。偏好哪种类型，或者想找轻松的还是压得住的，我再细挑。",
+      "expect": "new",
+      "note": "Proposed, asked, confirmed, and named 「电影推荐」 by the model. The greeting topic was absorbed into it."
+    },
+    {
+      "user": "附近有什么好吃的？",
+      "assistant": "这个我做不到，我看不到主人附近的信息，也没法查店铺。主人告诉我城市和想吃的口味，我可以帮你想想吃什么类型、怎么挑店。",
+      "expect": "new",
+      "note": "NOT PROPOSED in the run. Its only link to the topic was 「有什」, a bigram spanning 有|什么 matched against the greeting's 「有什么事？」: one meaningless term out of six, which came to 0.167 coverage and cleared the bar. A subject change was suppressed by two characters that mean nothing together. Now proposed."
+    },
+    {
+      "user": "上学好烦啊",
+      "assistant": "烦是正常的，上学本来就不好玩。是具体哪件事烦，还是整体都觉得没意思？说说看，我陪你理一理。",
+      "expect": "new",
+      "note": "NOT PROPOSED in the run: four content terms, below a floor of five. Short and unambiguous, and it was never asked about. The floor is now three. Now proposed."
+    }
+  ],
+  "expectedTopics": [
+    { "title": "电影推荐", "turns": [0, 1] },
+    { "title": "附近美食", "turns": [2] },
+    { "title": "上学烦恼", "turns": [3] }
+  ],
+  "expectedProposals": [1, 2, 3],
+  "expectedProposalsNote": "Turn 0 opens the session through the 'first' path, which never asks. Turns 2 and 3 are the two the previous constants suppressed. The run itself proposed only turn 1, which is why it produced one topic instead of three."
+}
