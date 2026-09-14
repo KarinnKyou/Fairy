@@ -1,5 +1,71 @@
 # HDD — version record
 
+## 0.2.0 (release name: HDD-0.2.0)
+
+Phase 2: the conversation stopped being one undifferentiated transcript. It is split into
+**topics** — subjects — as it happens, and switching between them changes what she is reminded
+of, not merely what is on screen.
+
+### What is new
+
+- **Topics, with a boundary that is decided rather than guessed.** A cheap local rule
+  (`app/topics.js`) watches for a message that shares almost no vocabulary with the current
+  subject; only then is the model asked one small question — same subject, or a new one? A new
+  topic is opened **only** on an explicit "yes". If the request fails, times out, cannot be
+  parsed, or there is no API key, the message stays where it is: a classifier that cannot answer
+  is never allowed to invent a boundary. With no key the app degrades to one topic per sitting.
+- **The model also names the topic**, on either answer, so a session that opens with a greeting
+  is not titled after whatever sentence followed it. Titles are noun phrases; `/rename` overrides
+  one, and a name the user chose is never touched again.
+- **Topics select context.** The history sent to the model is the current topic's history, so
+  switching changes what she knows. The profile (first meeting, turns spoken) stays global — that
+  is about the relationship, not a subject.
+- **Six commands** on the existing input line: `/topics`, `/switch`, `/new`, `/rename`,
+  `/search`, `/help`. They print through the same elements as everything else, so **no CSS, no
+  layout and no visual rule changed** — the mask, `pinBottom()` and the font-weight override are
+  the same code as in 0.1.0.
+- **Full-text search you can reach** (`/search`), across every topic, Chinese included, with the
+  topic each hit came from. This is FTS5, not semantic retrieval — that is Phase 5 (ADR-007).
+- **An evaluation set built from real conversations.** `docs/eval/` holds three transcripts kept
+  verbatim with a human judgement recorded for every turn — 27 turns in total — and the tests
+  replay them, driving the confirmer with the recorded judgement so that everything except the
+  model's own quality is asserted offline. It found a defect on first use.
+- **Schema v4**, still additive: migration 3 adds `topics` and a nullable `messages.topic_id`
+  plus an index; migration 4 adds `topics.title_locked` for provisional names. A v0.1 store
+  upgrades in place — its single implicit conversation becomes exactly one topic, titled from the
+  earliest user message and locked, so a later sentence cannot rename hundreds of messages.
+- **`inspect` shows topics**: each message is tagged with the topic it landed in, and `--topic N`
+  prints one topic; `--prompt` describes the topic in progress, because that is what the next
+  turn would actually send.
+
+### Known limitations
+
+- **A boundary can cost a request, and the reply waits for it.** One extra small call on turns
+  that look like a change of subject — measured on one real 15-turn conversation, 10 of them.
+  This is the deliberate price of deciding boundaries instead of guessing them; the transcript it
+  replaced split a single project into three topics.
+- **The local thresholds are still estimates.** `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
+  `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. They have been corrected twice
+  by real conversations, after reasoning alone had twice been confidently wrong. Three
+  transcripts are the whole of the evidence (ADR-012).
+- **Topic quality depends on the model's verdict.** It has been observed right on every turn of
+  the third recording, but that is 15 turns.
+- **The command surface has never run in a real window.** Electron cannot start in the
+  environment this build was developed in, so `/topics`, `/switch`, `/new`, `/rename`, `/search`
+  and `/help` are covered by jsdom and by a static cross-check that every IPC channel the preload
+  uses exists in the main process — not by hand. `main.js`'s handlers have never been exercised
+  outside a real launch, which is also true of the 0.1.0 build.
+- Windows x64 only, one portable exe, always full-screen, `Esc` to quit, no way to cancel a reply
+  in progress.
+- **The published exe contains no font** and renders in the system sans-serif (ADR-011): the font
+  is the developer's own licensed file and a published artifact must not redistribute it. A local
+  `npm run dist` still embeds it.
+- The packaged data-directory branch (`app.getPath('userData')`) is still not covered by the
+  automated tests, and is verified by launching the built exe.
+
+The interface invariants listed under 0.0.1 (font-weight override, fade mask on `#out`,
+unconditional `pinBottom()`) still hold and are still asserted by the tests.
+
 ## 0.1.0 (release name: HDD-0.1.0)
 
 Phase 1: the conversation became real. `0.0.1` showed the look; this build remembers what
