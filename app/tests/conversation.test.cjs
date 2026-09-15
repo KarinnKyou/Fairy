@@ -1218,6 +1218,98 @@ function stubConfirmer(newOn, options) {
   check(conv.memorySection([]) === '' && conv.memorySection(null) === '', '没有记忆时返回空字符串');
 }
 
+/* ---------------------------------------------------------------- 17. the side requests
+ * api.js holds the two requests that are not the reply. They moved out of main.js because a module
+ * that cannot be loaded outside Electron can never be tested — which is how ADR-012's boundary
+ * parser ended up with no coverage at all. What is testable here is the prompts and the parsing;
+ * whether the model answers well is what the headless probe and docs/eval are for. */
+{
+  const api = require('../api.js');
+
+  /* Reading the verdict, which is the piece that decides whether a boundary happens at all. */
+  const wrapped = api.parseBoundaryVerdict('好的，结果如下：\n```json\n{"same": false, "title": "科幻电影"}\n```');
+  check(wrapped && wrapped.isNew === true && wrapped.title === '科幻电影',
+    '从散文和代码块里读出判断：' + JSON.stringify(wrapped));
+  const same = api.parseBoundaryVerdict('{"same": true, "title": "终端项目"}');
+  check(same && same.isNew === false && same.title === '终端项目', 'same=true 读成「不是新话题」');
+  for (const bad of ['', null, '抱歉，我无法判断', '{"same":', '{"title":"x"}', '{"same":"yes"}']) {
+    check(api.parseBoundaryVerdict(bad) === null,
+      '读不出来时返回 null（不允许猜一个默认值）：' + JSON.stringify(bad));
+  }
+
+  /* The boundary question. */
+  const bp = api.boundaryPrompt({
+    topic: { id: 't1', title: '终端项目' },
+    recent: [{ role: 'user', content: '我在做 HDD' }, { role: 'assistant', content: '记下了' }],
+    text: '给我推荐几部电影',
+  });
+  check(/当前话题：终端项目/.test(bp.user), '边界问题里带着当前话题名');
+  check(/主人：我在做 HDD/.test(bp.user) && /你：记下了/.test(bp.user),
+    '最近对话按角色标注（不按位置猜）');
+  check(/新消息：给我推荐几部电影/.test(bp.user), '边界问题里带着新消息');
+  check(/title 始终要给出/.test(bp.system), '要求两种回答都给出名字（否则暂定标题会留下来）');
+  check(/即使.*同一个项目.*不同方面.*same/.test(bp.system), '要求同一个项目的不同方面仍算 same');
+
+  /* The extraction question. */
+  const ep = api.extractionPrompt({
+    existing: [{ id: 'mem-1', text: '主人住在杭州' }],
+    userText: '我搬到上海了',
+    assistantText: '好的',
+  });
+  check(ep.user.indexOf('mem-1 :: 主人住在杭州') >= 0, '把已相信的记忆连同 id 一起给出，好让它认出「这是更新」');
+  check(ep.user.indexOf('主人：我搬到上海了') >= 0 && ep.user.indexOf('你：好的') >= 0,
+    '抽取问题里带着这一轮的两条消息');
+  /* The rule that came from watching the first memory the app ever stored. */
+  check(/不要用「最近」/.test(ep.system) && /会悄悄变成假话/.test(ep.system),
+    '禁止模糊时间词：记忆没有有效期，而它已经真的存过一次「主人最近在写…」');
+  check(/具体时间/.test(ep.system), '同时说明时间本身是事实时该怎么写');
+  check(/replaces/.test(ep.system), '说明了取代（而不是新增重复）的方法');
+  check(/没有值得长期记住的内容时/.test(ep.system), '说明了「没有」该怎么回答');
+
+  /* With no key, both requests answer null without touching the network. */
+  const noKey = api.createApi({ apiKey: '', model: 'test', baseUrl: 'https://invalid.example' });
+  const noKeyBoundary = await noKey.confirmBoundary({ topic: { title: 'x' }, recent: [], text: 'y' });
+  const noKeyMemory = await noKey.extractMemories({ existing: [], userText: 'y', assistantText: '' });
+  check(noKeyBoundary === null && noKeyMemory === null,
+    '没有 key 时两个请求都返回 null，且不碰网络（地址故意是无效的）');
+}
+
+/* ---------------------------------------------------------------- 18. packaging
+ * `build.files` is a hand-maintained list, and forgetting to add to it has now broken this project
+ * three times: the modules added in Phase 1 (the v0.1 exe died on startup), `capabilities.js`
+ * (caught by a check written after that), and now the modules added in Phase 3. `release.ps1` walks
+ * the require graph inside the built asar and does catch it — but only at release time, after a
+ * build that takes minutes. This walks the same graph against the source, so the same failure
+ * arrives as a failing test in seconds.
+ *
+ * It lives in this suite because the checks that hold two layers together already do: capabilities
+ * against the code, the page CSP against the declared network capability.
+ */
+{
+  const appDir = path.join(__dirname, '..');
+  const pkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8'));
+  const listed = new Set((pkg.build && pkg.build.files) || []);
+
+  const seen = new Set();
+  const missing = [];
+  const queue = ['main.js'];
+  while (queue.length) {
+    const file = queue.shift();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (!listed.has(file)) missing.push(file);
+    const src = fs.readFileSync(path.join(appDir, file), 'utf8');
+    for (const m of src.matchAll(/require\(['"]\.\/([^'"]+)['"]\)/g)) queue.push(m[1]);
+  }
+
+  check(missing.length === 0,
+    'main.js 依赖图里的每个本地模块都在 build.files 里（漏掉的：' + (missing.join(', ') || '无') + '）');
+  check(seen.has('memory.js') && seen.has('api.js') && seen.has('topics.js'),
+    '依赖图确实走到了 Phase 2/3 新加的模块（否则这个检查是空的）：' + seen.size + ' 个模块');
+  check(listed.has('preload.cjs') && listed.has('config.json'),
+    'build.files 仍然带着 Electron 直接加载、不在 require 图里的那两个文件');
+}
+
 /* ---------------------------------------------------------------- cleanup */
 fs.rmSync(scratch, { recursive: true, force: true });
 check(!fs.existsSync(scratch), '临时目录已清理');

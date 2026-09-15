@@ -13,6 +13,7 @@
     "start": "npm run prep && electron .",
     "dev": "node scripts/dev.cjs",
     "dev:fresh": "node scripts/dev.cjs --fresh",
+    "probe": "node scripts/probe.cjs",
     "inspect": "node scripts/inspect.cjs",
     "inspect:dev": "node scripts/inspect.cjs --dev",
     "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"
@@ -36,6 +37,8 @@
       "conversation.js",
       "capabilities.js",
       "topics.js",
+      "memory.js",
+      "api.js",
       "personality.js",
       "store.js",
       "config.json",

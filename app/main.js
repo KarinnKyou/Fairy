@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const conversation = require('./conversation.js');
 const personality = require('./personality.js');
+const api = require('./api.js');
 
 /* Config: environment variables win over config.json. */
 const config = { apiKey: '', model: 'deepseek-v4-flash', baseUrl: 'https://api.deepseek.com' };
@@ -24,160 +25,11 @@ function loadConfig() {
 loadConfig();
 
 /*
- * Ask the model whether the message really opens a new subject (ADR-012, revision 1).
- *
- * The local rule in topics.js only proposes; this decides. It exists because the first real
- * transcript showed that lexical overlap cannot tell a subject continued in different words
- * from a subject that actually changed — both scored zero — and acting on that guess made her
- * answer about herself instead of about the project she was asked about.
- *
- * Every failure returns null, which the conversation reads as "stay where you are". A
- * classifier that is unreachable must not be able to invent topic boundaries: silence has to
- * mean "no", so that a missing key or a dead network degrades to one topic per sitting rather
- * than to splits nobody asked for.
- *
- * The request is small and non-streaming, and it is only made when the local rule proposes a
- * boundary — typically a message that shares no vocabulary with the current subject.
+ * The two side requests — deciding a topic boundary and extracting memories — live in api.js,
+ * because they need a key and a network rather than an Electron app, and a module main.js cannot
+ * load was the reason neither of them could ever be tested without opening a window.
  */
-const CONFIRM_TIMEOUT_MS = 8000;
-
-async function confirmBoundary(input) {
-  if (!config.apiKey) return null;
-  const recent = (input.recent || []).slice(-6);
-  const transcript = recent
-    .map((m) => (m.role === 'user' ? '主人：' : '你：') + m.content)
-    .join('\n');
-
-  const system = [
-    '你是话题切分器。判断主人这条新消息是否仍在延续当前话题，并给话题起名字。',
-    '只输出一个 JSON 对象，不要输出解释、不要加代码块。',
-    '格式：{"same": true|false, "title": "..."}',
-    'title 始终要给出，是 4 到 12 个字的名词短语，概括话题主题',
-    '（例如「终端项目的全文搜索」「科幻电影推荐」），不要照抄原句、不要带标点和引号。',
-    'same 为 true 表示延续当前话题，此时 title 是当前话题的名字（当前名字已经合适就原样返回）。',
-    'same 为 false 表示换了新话题，此时 title 是新话题的名字。',
-    '判断标准：即使在讨论同一个项目的不同方面，只要仍在谈同一件事，就算 same。',
-  ].join('\n');
-
-  const user = '当前话题：' + input.topic.title + '\n' +
-    (transcript ? '最近的对话：\n' + transcript + '\n' : '') +
-    '新消息：' + input.text;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIRM_TIMEOUT_MS);
-  try {
-    const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + config.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-        stream: false,
-        max_tokens: 80,
-        temperature: 0,
-      }),
-      signal: controller.signal,
-    });
-    if (!res || !res.ok) return null;
-    const data = await res.json();
-    const text = (data.choices && data.choices[0] && data.choices[0].message &&
-      data.choices[0].message.content) || '';
-    return parseBoundaryVerdict(text);
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/*
- * Read the verdict out of whatever came back. Models wrap JSON in prose or code fences, and a
- * classifier that fails to parse is the same as one that was never asked, so this returns null
- * rather than guessing a default.
- */
-function parseBoundaryVerdict(text) {
-  const s = String(text == null ? '' : text);
-  const start = s.indexOf('{');
-  const end = s.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(s.slice(start, end + 1));
-  } catch (_) {
-    return null;
-  }
-  if (!parsed || typeof parsed.same !== 'boolean') return null;
-  return {
-    isNew: !parsed.same,
-    title: typeof parsed.title === 'string' ? parsed.title.trim() : '',
-  };
-}
-
-/*
- * Ask the model what, if anything, is worth remembering about the owner (ADR-013).
- *
- * The local rule in memory.js has already decided that this turn is worth the request; this decides
- * what comes back. It is given the memories that are currently believed so that an update becomes a
- * supersession rather than a duplicate — the model can tell "same fact, corrected" from "new fact"
- * far better than a term comparison could.
- *
- * Returns the raw answer; parsing it lives in memory.js, where a test can reach it. Every failure
- * returns null, which the conversation reads as "remember nothing" — an extractor that cannot
- * answer must not be able to invent a fact about the owner.
- */
-const EXTRACT_TIMEOUT_MS = 15000;
-
-async function extractMemories(input) {
-  if (!config.apiKey) return null;
-  const existing = (input.existing || []).length
-    ? input.existing.map((m) => '- ' + m.id + ' :: ' + m.text).join('\n')
-    : '(还没有任何记忆)';
-
-  const system = [
-    '你负责从对话中提取关于主人的长期事实，供以后回忆时使用。',
-    '只输出一个 JSON 对象，不要解释、不要加代码块。',
-    '格式：{"memories":[{"text":"...","replaces":"<已有记忆的 id，可省略>"}]}',
-    '只提取关于主人的稳定事实：身份、住处、工作或学业、长期偏好、习惯、重要关系、长期目标。',
-    '不要提取：一次性的请求或情绪、临时状态、助手自己的情况、以及你没有把握的内容。',
-    '每条一句话，用第三人称陈述，例如「主人在做 HDD 终端项目」「主人住在杭州」。',
-    '如果新信息更新或纠正了某条已有记忆，把 replaces 填成那条记忆的 id，不要新增重复的一条。',
-    '没有值得长期记住的内容时，返回 {"memories":[]}。',
-  ].join('\n');
-
-  const user = '已有记忆：\n' + existing + '\n\n这一轮对话：\n主人：' + input.userText +
-    (input.assistantText ? '\n你：' + input.assistantText : '');
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS);
-  try {
-    const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + config.apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-        stream: false,
-        max_tokens: 500,
-        temperature: 0,
-      }),
-      signal: controller.signal,
-    });
-    if (!res || !res.ok) return null;
-    const data = await res.json();
-    return (data.choices && data.choices[0] && data.choices[0].message &&
-      data.choices[0].message.content) || null;
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const model = api.createApi(config);
 
 /*
  * The conversation — this process owns the truth (docs/ADR.md ADR-001): it stores the
@@ -193,14 +45,14 @@ function openConversation() {
     examples: personality.EXAMPLES,
     model: config.model,
     pickExample: (pool) => pool[Math.floor(Math.random() * pool.length)],
-    /* A boundary is only opened when this agrees. See confirmBoundary above. */
-    confirmBoundary,
+    /* A boundary is only opened when this agrees. See api.js. */
+    confirmBoundary: model.confirmBoundary,
     onConfirmError: (err) => {
       console.error('topic confirmation failed, staying in the current topic: ' +
         String((err && err.message) || err));
     },
     /* Memories are only extracted when memory.js says the turn is worth a request. */
-    extractMemories,
+    extractMemories: model.extractMemories,
     onMemoryError: (err) => {
       console.error('memory extraction failed, nothing was remembered: ' +
         String((err && err.message) || err));
