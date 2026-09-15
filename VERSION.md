@@ -1,5 +1,78 @@
 # HDD — version record
 
+## 0.3.0 (release name: HDD-0.3.0)
+
+Phase 3: she remembers. Stable facts about the owner — where they live, what they work on, what
+they like — are learned as you talk, linked to the messages they came from, and used in later
+conversations.
+
+**This release also fixes a defect in v0.2.** The topic confirmation request was capped at 80
+output tokens, and the configured model is a *reasoning* model: it spends the budget thinking and
+then has nothing left to write the answer with. Measured on a replayed real conversation, 8 of 13
+calls returned nothing — and because an unreadable answer means "stay in the current topic", topic
+splitting appeared to work while mostly not happening. Both side requests now go to a
+non-reasoning model (`deepseek-chat` by default, configurable), with room to answer.
+
+### What is new
+
+- **Memories, with a decision behind each one.** A cheap local rule (`app/memory.js`) decides when
+  a turn is worth *asking about*; only then does one small request go out asking what is worth
+  keeping. Every failure — no key, a timeout, an answer that cannot be read — remembers nothing,
+  because an extractor that cannot answer must not be able to invent a fact about the owner.
+- **Nothing is overwritten.** A correction appends a new memory and marks the old one superseded,
+  so what she used to believe, and when it changed, stays readable. `/forget` is deliberately
+  different: it deletes the fact **and every earlier version of it**, because a person asking for
+  something to be gone is not the same as the app correcting itself.
+- **Every memory is traceable.** Each one is linked to the messages it came from, and `/memories`
+  shows whether it came from something you stated or was inferred, and how many messages it was
+  drawn from.
+- **Three commands, no new CSS:** `/memories`, `/remember`, `/forget` — reusing the same `.line`
+  elements as everything else, so the mask, `pinBottom()` and the font-weight override are
+  untouched.
+- **Memories are bounded twice** on the way into the prompt — twenty of them, twelve hundred
+  characters, newest first — because ADR-008 warns about the prompt budget and a memory is a
+  sentence, not a word.
+- **The capability declaration gained `memory`,** and the cross-check that enforces it compares the
+  declaration against the *assembled prompt* rather than against a function name, so it keeps
+  working only while the injection is really called.
+- **Schema v5**, still additive: migration 5 adds `memories` and `memory_sources`, with the source
+  links enforced by foreign keys and a `CHECK` that keeps a supersession from being written half
+  way. Migration 4 added `topics.title_locked`.
+- **A headless probe** (`npm run probe`), so the two requests that need a network can be run and
+  inspected without opening a window: it replays a recorded conversation, asks the real model, and
+  writes every prompt, answer and stored memory to a report file. `--corpus` also compares the
+  model's verdicts against the recorded human judgement, which no offline test can do.
+- **A packaging check in the test suite.** `build.files` is hand-maintained and had now been
+  forgotten three times, most recently for the two modules this release adds — a packaged v0.3
+  would have died on startup. The test walks the `require` graph in seconds instead of waiting for
+  a release build to fail.
+
+### Known limitations
+
+- **Two requests now run besides the reply.** One decides a topic boundary and the reply waits for
+  it; the other extracts memories and runs *after* the reply is on screen, so it delays nothing.
+  Measured on a replayed conversation: 10 boundary calls and 2 extraction calls over 15 turns.
+- **The memory cue misses facts.** Two of the fifteen real turns held a fact that should have been
+  remembered and was not asked about: a preference stated inside a request, and an identity fact
+  with no first-person pronoun. Loosening the cue would catch them and would spend a request on
+  every turn shaped like 帮我…, which is the most common shape there is. Both misses are recorded as
+  assertions in `docs/eval/memories-2026-09-14.json`.
+- **The topic confirmer over-splits short follow-ups**, measured twice: three short capability
+  questions became three topics where one would do. Recorded rather than acted on — one
+  conversation is not enough to change a prompt for.
+- **The commands have still never been driven by hand in a real window**, except `/memories`. They
+  are covered by jsdom and by a static cross-check that every IPC channel the preload uses exists
+  in the main process. `main.js`'s handlers have never been exercised outside a real launch.
+- Windows x64 only, one portable exe, always full-screen, `Esc` to quit, no cancel for a reply in
+  progress.
+- **The published exe contains no font** and renders in the system sans-serif (ADR-011).
+- The packaged data-directory branch (`app.getPath('userData')`) is still not covered by the
+  automated tests; it is verified by launching the built exe.
+
+The interface invariants listed under 0.0.1 (font-weight override, fade mask on `#out`,
+unconditional `pinBottom()`) still hold and are still asserted by the tests. `npm test` reports
+548 passing assertions across four suites.
+
 ## 0.2.0 (release name: HDD-0.2.0)
 
 Phase 2: the conversation stopped being one undifferentiated transcript. It is split into
