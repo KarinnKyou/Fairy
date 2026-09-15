@@ -213,10 +213,17 @@ Not blockers, but they should not be forgotten.
    `hardware`, `actions`, `files`) are statements about absence that no test can meaningfully
    verify — they exist so whoever adds a capability sees what was already considered. Phase 6
    should generate the tool entry from the real tool registry.
-3. **The packaged data-directory branch is not covered by automation.** `getDataDir()`
-   returns `app.getPath('userData')/data` when packaged, and the tests run outside Electron.
-   Verified once by launching a built exe (it created `%APPDATA%\HDD\data\hdd.db` at schema
-   v2 and reopened cleanly after a kill), but a regression here would only be caught by hand.
+3. **The packaged data-directory branch is not covered by automation.** `getDataDir()` returns
+   `app.getPath('userData')/data` when packaged, and the tests run outside Electron, so a regression
+   here is only ever caught by hand. **Verified again on 2026-09-15 with `HDD-0.3.0.exe`**: launched
+   with the key supplied through `DEEPSEEK_API_KEY` (the artifact ships the placeholder, so a launch
+   without one leaves the input disabled), it unpacked into `%TEMP%`, started four Electron
+   processes, and opened `%APPDATA%\HDD\data\hdd.db` for writing — the `-wal` sidecar carries the
+   launch timestamp, and a read-only open reports **schema v5** with `memories`, `memory_sources`
+   and `topics` present. The store file itself dates from 2026-09-10 (the v0.1 era), so that launch
+   also carried a real upgrade from an older schema. It was then killed rather than closed, which is
+   the second useful thing it shows: an abrupt exit leaves the store readable at v5, since the WAL
+   sidecars were still present afterwards.
 4. **`NOTICE` is a verbatim copy of the upstream file** and references a `TRADEMARKS.md`
    that this repository does not contain. Left verbatim deliberately — it is the upstream
    project's notice — but the dangling reference should be resolved when the licensing
@@ -262,14 +269,15 @@ Not blockers, but they should not be forgotten.
     by reasoning, and tuned for recall: `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
     `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h, plus memory's
     `COOLDOWN_TURNS` 4. Three transcripts in `docs/eval` are the whole of the evidence behind them.
-13. **The command surface has almost never been driven by hand.** Electron cannot start in the
-    environment this was developed in, so `/topics`, `/switch`, `/new`, `/rename`, `/search`,
-    `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static
-    cross-check that every IPC channel the preload uses exists in the main process — not by a
-    person clicking. `/memories` has been run by hand once, in v0.2's development; `/forget` and
-    `/remember` have not been run by hand at all. `main.js`'s handlers have never been exercised
-    outside a real launch. Launching `HDD-0.3.0.exe` once and typing them closes this, and would
-    verify the packaged data-directory branch in debt 3 at the same time.
+13. **The commands have never been typed by hand, and cannot be by an agent.** Electron cannot start
+    in the development environment, so `/topics`, `/switch`, `/new`, `/rename`, `/search`,
+    `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static cross-check
+    that every IPC channel the preload uses exists in the main process — not by a person clicking.
+    `/memories` has been run by hand once; **`/forget` and `/remember` never have.** The app itself
+    starting is no longer in doubt (see debt 3), but typing into it needs a human at the keyboard,
+    and that is the whole of what remains. Closing it permanently means an Electron end-to-end
+    harness that drives its own window — worth doing when there is a reason to touch this area
+    again, since it is the only layer no test reaches.
 14. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
     the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
     they are verified by running them once. `--topic` was checked against a two-topic scratch
