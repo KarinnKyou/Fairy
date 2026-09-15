@@ -730,6 +730,87 @@ function stubConfirmer(newOn, options) {
 
   for (const file of corpusFiles) {
     const corpus = JSON.parse(fs.readFileSync(path.join(evalDir, file), 'utf8'));
+
+    /* A corpus covers one dimension of a conversation. Topics came first; memory is the second, and
+     * it references the same transcript rather than repeating it, so one real conversation can be
+     * judged on both without the two copies drifting apart. */
+    if (corpus.kind === 'memory') {
+      check(typeof corpus.conversation === 'string' && corpus.conversation.length > 0,
+        file + '：指明了它回放的是哪一段对话');
+      const base = JSON.parse(fs.readFileSync(path.join(evalDir, corpus.conversation), 'utf8'));
+      check(Array.isArray(corpus.judgement) && corpus.judgement.length === base.turns.length,
+        file + '：判断覆盖了对话的每一轮（' + (corpus.judgement || []).length +
+        ' / ' + base.turns.length + '）');
+
+      let mIdx = -1;
+      const askedAt = [];
+      const extractor = async () => {
+        /* The judgement is the extractor's answer, exactly as the topic corpus uses the judgement
+         * as the confirmer's answer: the model's quality is what is being measured, so it is data. */
+        return JSON.stringify({
+          memories: (corpus.judgement[mIdx].expect || []).map((text) => ({ text })),
+        });
+      };
+
+      let clock = 1_700_000_000_000;
+      const c = open('eval-' + file.replace(/\.json$/, ''), {
+        now: () => { clock += 60000; return clock; },
+        extractMemories: extractor,
+      });
+
+      for (let i = 0; i < base.turns.length; i++) {
+        mIdx = i;
+        const turn = await c.beginTurn(base.turns[i].user);
+        c.finishTurn(turn, base.turns[i].assistant);
+        const result = await c.rememberTurn(turn);
+        if (result.asked) askedAt.push(i);
+        /* What the judgement records the trigger doing is asserted per turn, so a change to the
+         * cue cannot pass silently. */
+        check(result.asked === corpus.judgement[i].asked,
+          file + '：第 ' + i + ' 轮的触发结果与记录一致（记录 ' + corpus.judgement[i].asked +
+          '，实得 ' + result.asked + '）');
+      }
+
+      check(JSON.stringify(askedAt) === JSON.stringify(corpus.expectedAsked),
+        file + '：花掉请求的回合与记录一致 -> ' + JSON.stringify(askedAt));
+
+      /* A fact the judgement expected has to be there, active, and traceable to that turn. */
+      const stored = c.memories();
+      let expectedCount = 0;
+      for (let i = 0; i < corpus.judgement.length; i++) {
+        const facts = corpus.judgement[i].expect || [];
+        if (corpus.judgement[i].asked) expectedCount += facts.length;
+      }
+      check(stored.length === expectedCount,
+        file + '：实际存下的记忆条数与「问过且有内容」的轮数一致（' +
+        stored.length + ' / ' + expectedCount + '）');
+
+      for (let i = 0; i < corpus.judgement.length; i++) {
+        if (!corpus.judgement[i].asked) continue;
+        for (const text of corpus.judgement[i].expect || []) {
+          const memory = stored.filter((m) => m.text === text)[0];
+          check(Boolean(memory), file + '：第 ' + i + ' 轮的事实已经记住：「' + text + '」');
+          if (!memory) continue;
+          const sources = store.memorySources(c._store.db, memory.id);
+          check(sources.some((s) => s.content === base.turns[i].user),
+            file + '：它的来源指向说出它的那条消息（第 ' + i + ' 轮）');
+          check(memory.sourceCount === 2, file + '：来源是那一轮的两条消息：' + memory.sourceCount);
+        }
+      }
+
+      /* The gaps are asserted, not merely noted. Improving the trigger has to update this file,
+       * which is the point of writing them down. */
+      const gaps = corpus.expectedGaps || { missed: [], wasted: [] };
+      check(JSON.stringify(gaps.missed) === JSON.stringify([5, 10]),
+        file + '：仍然漏掉这两轮（偏好被请求框吞掉、事实没有第一人称）-> ' +
+        JSON.stringify(gaps.missed));
+      check(JSON.stringify(gaps.wasted) === JSON.stringify([13]),
+        file + '：仍然有一次被浪费的请求 -> ' + JSON.stringify(gaps.wasted));
+
+      c.close();
+      continue;
+    }
+
     check(Array.isArray(corpus.turns) && corpus.turns.length > 0,
       file + '：包含 ' + (corpus.turns || []).length + ' 个真实回合');
 

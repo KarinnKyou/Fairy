@@ -1,0 +1,94 @@
+{
+  "name": "memories-2026-09-14",
+  "kind": "memory",
+  "conversation": "topics-2026-09-14-run3.json",
+  "source": "The same real conversation as the topics corpus for 2026-09-14 (run 3), replayed for the memory dimension instead of the topic dimension.",
+  "why": "ADR-010 names 'did the memory extractor pick the right fact' as a tuning problem rather than something an assertion can settle. This file is the first attempt to measure it: a real conversation, a judgement for every turn, and an explicit record of every place where the judgement and the mechanism disagree.",
+  "howToRead": "`expect` is the human judgement: the facts about the owner that SHOULD be remembered from that turn. `asked` is what the local trigger in app/memory.js actually does — recorded so that a change to the trigger shows up here instead of passing unnoticed. Where the two disagree, `gap` says which way. The test asserts the gaps still exist, so fixing the trigger forces this file to be updated rather than leaving a silent improvement behind. The conversation itself is not repeated here: it is referenced, so the two dimensions of one real transcript cannot drift apart.",
+  "judgement": [
+    {
+      "expect": [],
+      "asked": false,
+      "why": "招呼，没有任何关于主人的内容。"
+    },
+    {
+      "expect": ["主人在做 HDD 终端项目，数据库用的是内置的 node:sqlite"],
+      "asked": true,
+      "why": "整段对话里唯一一次明确、稳定、值得长期记住的事实。触发器和判断在这里一致。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "在问项目进度，没有新的关于主人的事实。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "提议给项目加功能。这是任务，不是关于主人的长期事实——做完就过期了。触发器因为冷却期未过而没有问，两种理由都指向不记。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "对设计的一句评价，没有新事实。"
+    },
+    {
+      "expect": ["主人偏好硬科幻电影"],
+      "asked": false,
+      "gap": "偏好被请求框吞掉了：「给我推荐几部科幻电影吧，最好是硬科幻那种」里唯一的「我」是宾语，所以线索看不见它。一条真实的长期偏好因此没有被问起。",
+      "why": "「最好是硬科幻那种」是一句真实的口味偏好，值得长期记住。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "追问上一轮的推荐，没有新的关于主人的事实。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "「嗯」，没有内容。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "「为什么？」，没有内容。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "「继续」，没有内容。"
+    },
+    {
+      "expect": ["主人在上学"],
+      "asked": false,
+      "gap": "事实是间接说出来的：「上学好烦啊」里没有第一人称，而线索只认第一人称指代。这是一次真实的漏记，记录在案而不是当成可以接受——要修就得放宽线索，而放宽线索会让每一次「帮我…」都多花一次请求。",
+      "why": "「上学好烦啊」明确说明主人还在念书，这是一个稳定的、以后有用的身份事实。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "问附近有什么吃的，没有关于主人的事实。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "问助手能做什么，关于助手而不是关于主人。"
+    },
+    {
+      "expect": [],
+      "asked": true,
+      "gap": "已知且接受的误触发：「帮我看看我现在的表情」剥掉请求框之后还剩一个「我的表情」，于是花了一次请求、什么都没记。这个代价被 ADR-013 明确接受，因为否决所有以请求开头的话会连带漏掉「帮我记一下我住在杭州」。",
+      "why": "主人的表情是此刻的状态，不是长期事实。"
+    },
+    {
+      "expect": [],
+      "asked": false,
+      "why": "请求存文件，没有关于主人的事实。"
+    }
+  ],
+  "expectedAsked": [1, 13],
+  "expectedGaps": {
+    "missed": [5, 10],
+    "wasted": [13],
+    "note": "两轮该记而没问（偏好、在上学），一轮问了而没内容（表情）。15 轮里只有 1 轮既该记又真的问了。这个比例是当前线索的实测代价与代价之间的取舍，而不是一个可以调掉的 bug：把线索放宽能救回第 5 轮和第 10 轮，代价是每一次带「我」的请求都要花一次调用。"
+  }
+}
