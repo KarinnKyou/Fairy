@@ -10,11 +10,11 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 
 | | |
 | --- | --- |
-| Current release | **v0.2** (`0.2.0`), pre-release, tag `v0.2` |
-| Released | 2026-09-14 |
-| Artifact | `HDD-0.2.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `DD3C433C…` |
-| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.2 |
-| Phase in progress | **Phase 3 — long-term memory**, in the working tree, **not yet released** |
+| Current release | **v0.3** (`0.3.0`), pre-release, tag `v0.3` |
+| Released | 2026-09-15 |
+| Artifact | `HDD-0.3.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B0DFE344…` |
+| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.3 |
+| Phase in progress | **Phase 4 — context assembly and projects**, no ADR yet, not started |
 | Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
@@ -123,8 +123,8 @@ order is the plan.
 | Phase | Version | Status | Scope (per ADR) | New tables (ADR-004) |
 | --- | --- | --- | --- | --- |
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
-| 3 | v0.3 | **in tree, unreleased** | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
-| 4 | v0.4 | not started | Context assembly and projects; topics linked to projects | `projects`, context tables |
+| 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
+| 4 | v0.4 | **next — no ADR yet** | Context assembly and projects; topics linked to projects | `projects`, context tables |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
@@ -138,7 +138,7 @@ constants in `app/topics.js` are the part most likely to move — see the debts 
 
 ---
 
-## Phase 3 — long-term memory (in the tree, not yet released)
+## Phase 3 — long-term memory (shipped as v0.3)
 
 **Goal:** she remembers things about the owner across sessions, on purpose rather than by luck.
 Memories are structured and updatable, and **every one is linked to the messages it came from**,
@@ -178,6 +178,12 @@ phase had to take are recorded in **ADR-013**.
 
 The third real conversation already contained the request this phase answers — 「我想给这个软件再
 加点本事，让它能记住以前聊过的事情」 — kept in `docs/eval/topics-2026-09-14-run3.json`.
+
+**Released as `v0.3` on 2026-09-15.** Four things were found by a live run before publishing and
+fixed and re-verified against the model: names carrying the previous subject over, the first topic
+of a store keeping a truncated name, memories keeping a trailing full stop, and — the serious one —
+the topic confirmation request being capped at 80 output tokens on a reasoning model, which made
+topic splitting silently fail in the shipped v0.2.
 
 **What the memory corpus says about the current cue, measured rather than assumed.** Of the fifteen
 real turns, one both should have been asked about and was. Two real facts went unasked — a
@@ -256,13 +262,14 @@ Not blockers, but they should not be forgotten.
     by reasoning, and tuned for recall: `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
     `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h, plus memory's
     `COOLDOWN_TURNS` 4. Three transcripts in `docs/eval` are the whole of the evidence behind them.
-13. **The command surface has never been driven by hand in a real window.** Electron cannot start
-    in the environment this was developed in, so `/topics`, `/switch`, `/new`, `/rename`,
-    `/search`, `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static
+13. **The command surface has almost never been driven by hand.** Electron cannot start in the
+    environment this was developed in, so `/topics`, `/switch`, `/new`, `/rename`, `/search`,
+    `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static
     cross-check that every IPC channel the preload uses exists in the main process — not by a
-    person clicking. `main.js`'s handlers have never been exercised outside a real launch, which
-    was also true of the 0.1.0 build. Launching `HDD-0.3.0.exe` once and typing `/help` closes
-    this, and would verify the packaged data-directory branch in debt 3 at the same time.
+    person clicking. `/memories` has been run by hand once, in v0.2's development; `/forget` and
+    `/remember` have not been run by hand at all. `main.js`'s handlers have never been exercised
+    outside a real launch. Launching `HDD-0.3.0.exe` once and typing them closes this, and would
+    verify the packaged data-directory branch in debt 3 at the same time.
 14. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
     the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
     they are verified by running them once. `--topic` was checked against a two-topic scratch
