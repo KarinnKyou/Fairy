@@ -187,6 +187,40 @@ const MIGRATIONS = [
     ALTER TABLE topics ADD COLUMN title_locked INTEGER NOT NULL DEFAULT 0;
     `,
   ],
+  [
+    5,
+    `
+    -- Memories (Phase 3, ADR-013): structured facts about the owner, each traceable to the
+    -- messages it came from.
+    --
+    -- There is no "active" column on purpose. A memory is active exactly while nothing has
+    -- superseded it, so superseded_by IS NULL *is* the status; a second column could disagree
+    -- with it and then two queries would return different answers to the same question. The
+    -- CHECK keeps the pair together, and the partial index keeps the common query cheap.
+    CREATE TABLE memories (
+      id            TEXT PRIMARY KEY,
+      text          TEXT NOT NULL,
+      origin        TEXT NOT NULL DEFAULT 'inferred' CHECK (origin IN ('inferred','owner')),
+      created_at    INTEGER NOT NULL,
+      superseded_by TEXT REFERENCES memories(id),
+      superseded_at INTEGER,
+      CHECK ((superseded_by IS NULL) = (superseded_at IS NULL))
+    );
+    CREATE INDEX idx_memories_active ON memories(created_at, id) WHERE superseded_by IS NULL;
+
+    -- Which messages a memory came from: many-to-many, because one memory can distil several
+    -- turns and one turn can carry several memories. ON DELETE CASCADE means forgetting a memory
+    -- takes its provenance with it; the reference to messages is deliberate, so a link can never
+    -- point at a message that does not exist.
+    CREATE TABLE memory_sources (
+      memory_id  TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+      message_id TEXT NOT NULL REFERENCES messages(id),
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (memory_id, message_id)
+    );
+    CREATE INDEX idx_memory_sources_message ON memory_sources(message_id);
+    `,
+  ],
 ];
 
 const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
@@ -684,6 +718,193 @@ function toMessage(row) {
   };
 }
 
+/* ------------------------------------------------------------------ memories */
+
+/*
+ * Store one memory, with the messages it came from.
+ *
+ * `sourceMessageIds` is not optional in spirit: a memory without provenance cannot be traced back
+ * to what produced it, and that traceability is the property Phase 3 asks for. The links are
+ * written in the same transaction as the memory, so a memory is never briefly sourceless.
+ *
+ * A missing message id is refused rather than skipped. The reference is a foreign key, so a
+ * skipped link would mean the caller believes a memory came from something the store never had —
+ * a silent lie about where a belief came from.
+ */
+function createMemory(db, memory) {
+  const opts = memory || {};
+  const text = String(opts.text == null ? '' : opts.text).trim();
+  if (!text) throw new Error('a memory needs text');
+  const createdAt = opts.createdAt == null ? nowMs() : opts.createdAt;
+  const id = opts.id || newId(createdAt);
+  const origin = opts.origin === 'owner' ? 'owner' : 'inferred';
+  const sources = (opts.sourceMessageIds || []).map(String);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('INSERT INTO memories (id, text, origin, created_at) VALUES (?,?,?,?)')
+      .run(id, text, origin, createdAt);
+    for (const messageId of sources) {
+      db.prepare('INSERT OR IGNORE INTO memory_sources (memory_id, message_id, created_at) VALUES (?,?,?)')
+        .run(id, messageId, createdAt);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    throw new Error('could not store the memory: ' + err.message);
+  }
+  return getMemory(db, id);
+}
+
+function getMemory(db, id) {
+  if (!id) return null;
+  const row = db.prepare('SELECT * FROM memories WHERE id = ?').get(id);
+  return row ? toMemory(row) : null;
+}
+
+/* Active memories, newest first. `includeSuperseded` is for inspection and for the evaluation set;
+ * the prompt only ever sees active ones. */
+function listMemories(db, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
+  const offset = Math.max(0, opts.offset == null ? 0 : Number(opts.offset));
+  const sql = opts.includeSuperseded
+    ? 'SELECT * FROM memories ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
+    : 'SELECT * FROM memories WHERE superseded_by IS NULL ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
+  return db.prepare(sql).all(limit, offset).map(toMemory);
+}
+
+/*
+ * What goes into the prompt: a bounded slice of what she currently believes. Newest first,
+ * because a newer belief is more likely to still be true — and capped by the caller, since
+ * ADR-008 warns about the prompt budget.
+ */
+function activeMemories(db, limit) {
+  return listMemories(db, { limit: limit == null ? 20 : limit });
+}
+
+function countMemories(db, options) {
+  const opts = options || {};
+  const sql = opts.includeSuperseded
+    ? 'SELECT COUNT(*) AS n FROM memories'
+    : 'SELECT COUNT(*) AS n FROM memories WHERE superseded_by IS NULL';
+  return db.prepare(sql).get().n;
+}
+
+/* The messages a memory came from, oldest first — the order they were said in. */
+function memorySources(db, memoryId) {
+  return db.prepare(
+    `SELECT m.id, m.role, m.content, m.created_at, m.topic_id
+       FROM memory_sources s JOIN messages m ON m.id = s.message_id
+      WHERE s.memory_id = ?
+      ORDER BY m.created_at ASC, m.id ASC`
+  ).all(String(memoryId)).map((r) => ({
+    id: r.id, role: r.role, content: r.content, createdAt: r.created_at, topicId: r.topic_id,
+  }));
+}
+
+/* Which memories were drawn from a given message — what makes the provenance usable in reverse,
+ * e.g. "this message produced these beliefs". */
+function memoriesFromMessage(db, messageId) {
+  return db.prepare(
+    `SELECT m.* FROM memory_sources s JOIN memories m ON m.id = s.memory_id
+      WHERE s.message_id = ?
+      ORDER BY m.created_at ASC, m.id ASC`
+  ).all(String(messageId)).map(toMemory);
+}
+
+/* The whole supersession chain ending at `id`, oldest first: A <- B <- id.
+ *
+ * Walking it is what makes deletion safe. The self-reference on superseded_by is enforced by the
+ * database, so a successor cannot be removed while its predecessor still points at it — the error
+ * is loud instead of leaving a pointer to a row that is gone, and a predecessor whose pointer was
+ * cleared would read as active again, resurrecting a fact the user just asked to forget. */
+function memoryChain(db, id) {
+  const chain = [];
+  const seen = new Set();
+  let current = getMemory(db, id);
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    chain.unshift(current);
+    const predecessor = db.prepare('SELECT * FROM memories WHERE superseded_by = ?').get(current.id);
+    current = predecessor ? toMemory(predecessor) : null;
+  }
+  return chain;
+}
+
+/*
+ * Correct a memory: append the replacement and mark what it replaces, in one transaction. The old
+ * row is kept, because "what she used to believe, and when it changed" is the thing that makes a
+ * wrong memory trustworthy rather than merely gone (ADR-013).
+ */
+function supersedeMemory(db, oldId, replacement) {
+  const old = getMemory(db, oldId);
+  if (!old) return null;
+  if (old.supersededBy) throw new Error('memory ' + oldId + ' was already superseded');
+
+  const opts = replacement || {};
+  const createdAt = opts.createdAt == null ? nowMs() : opts.createdAt;
+  const id = opts.id || newId(createdAt);
+  const text = String(opts.text == null ? '' : opts.text).trim();
+  if (!text) throw new Error('a memory needs text');
+  const origin = opts.origin === 'owner' ? 'owner' : 'inferred';
+  const sources = (opts.sourceMessageIds || []).map(String);
+
+  db.exec('BEGIN');
+  try {
+    db.prepare('INSERT INTO memories (id, text, origin, created_at) VALUES (?,?,?,?)')
+      .run(id, text, origin, createdAt);
+    for (const messageId of sources) {
+      db.prepare('INSERT OR IGNORE INTO memory_sources (memory_id, message_id, created_at) VALUES (?,?,?)')
+        .run(id, messageId, createdAt);
+    }
+    db.prepare('UPDATE memories SET superseded_by = ?, superseded_at = ? WHERE id = ?')
+      .run(id, createdAt, old.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    throw new Error('could not supersede the memory: ' + err.message);
+  }
+  return getMemory(db, id);
+}
+
+/*
+ * Forget a memory and everything it superseded, oldest first.
+ *
+ * The whole chain goes because a chain is one fact at successive moments: removing only the newest
+ * would either leave its predecessors pointing at a row that no longer exists, or — worse — make
+ * one of them active again, quietly restoring the belief the user just asked to be rid of. Source
+ * links go with each row (ON DELETE CASCADE).
+ */
+function forgetMemory(db, id) {
+  const chain = memoryChain(db, id);
+  if (!chain.length) return 0;
+
+  db.exec('BEGIN');
+  try {
+    for (const memory of chain) {
+      db.prepare('DELETE FROM memories WHERE id = ?').run(memory.id);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) { /* already rolled back */ }
+    throw new Error('could not forget the memory: ' + err.message);
+  }
+  return chain.length;
+}
+
+function toMemory(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    origin: row.origin,
+    createdAt: row.created_at,
+    supersededBy: row.superseded_by == null ? null : row.superseded_by,
+    supersededAt: row.superseded_at == null ? null : Number(row.superseded_at),
+    active: row.superseded_by == null,
+  };
+}
+
 /* ------------------------------------------------------------------ teardown */
 
 function close(store) {
@@ -726,6 +947,16 @@ module.exports = {
   lastMessageAt,
   setMessageTopic,
   searchMessages,
+  createMemory,
+  getMemory,
+  listMemories,
+  activeMemories,
+  countMemories,
+  memorySources,
+  memoriesFromMessage,
+  memoryChain,
+  supersedeMemory,
+  forgetMemory,
   /* exported for tests and for Phase 2 tooling that needs the same tokenization */
   tokenizeForIndex,
   toMatchQuery,

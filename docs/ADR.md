@@ -824,6 +824,15 @@ The two operations are deliberately different — automatic correction tombstone
 instruction removes — and the distinction is stated here because it is exactly the kind of thing
 that gets silently unified later by someone tidying up.
 
+**Forgetting removes the whole supersession chain, not one row.** A chain is one fact at successive
+moments, so `A ← B ← C` is a single belief that was corrected twice. Deleting only `C` would leave
+`B` pointing at a row that no longer exists — and because a memory is active exactly when nothing
+supersedes it, clearing that pointer would quietly make `B` active again, restoring the belief the
+user just asked to be rid of. The self-reference on `superseded_by` is declared as a foreign key for
+this reason: the database refuses the half-deletion, so the mistake is a loud error rather than a
+resurrected fact. Forgetting a middle row is allowed and takes only what came before it; the newer
+belief survives untouched. Source links cascade with each row.
+
 **3. `/memories`, `/forget` and `/remember` are in scope.**
 
 A wrong memory is worse than no memory: it is the program asserting a false fact about the user,

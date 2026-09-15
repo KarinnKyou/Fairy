@@ -397,6 +397,114 @@ function fresh(name) {
   store.close(s);
 }
 
+/* ---------------------------------------------------------------- 14. memories (ADR-013)
+ * Structured facts about the owner, each linked to the messages it came from. The row rules matter
+ * more than the column list: nothing is overwritten, forgetting takes the whole chain with it, and
+ * a memory can never be sourceless or point at a message that never existed. */
+{
+  const { s } = fresh('memories');
+
+  const tables = s.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
+  check(tables.includes('memories'), '迁移 5 建立了 memories 表');
+  check(tables.includes('memory_sources'), '迁移 5 建立了 memory_sources 表');
+  const indexes = s.db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map((r) => r.name);
+  check(indexes.includes('idx_memories_active'), '存在只覆盖活跃记忆的部分索引');
+
+  const m1 = store.appendMessage(s.db, { role: 'user', content: '我在做 HDD 这个终端项目', createdAt: 1000 });
+  const m2 = store.appendMessage(s.db, { role: 'user', content: '数据库用的是 node:sqlite', createdAt: 1001 });
+  const m3 = store.appendMessage(s.db, { role: 'user', content: '我住在杭州', createdAt: 1002 });
+
+  const a = store.createMemory(s.db, {
+    text: '  主人在做 HDD 终端项目  ', createdAt: 2000, sourceMessageIds: [m1.id, m2.id],
+  });
+  check(a.text === '主人在做 HDD 终端项目', '记忆文本去掉首尾空白：' + JSON.stringify(a.text));
+  check(a.active === true && a.supersededBy === null, '新记忆是活跃的');
+  check(a.origin === 'inferred', '默认来源是推断：' + a.origin);
+  check(store.countMemories(s.db) === 1, '活跃记忆计数为 1');
+
+  const sources = store.memorySources(s.db, a.id);
+  check(sources.length === 2, '一条记忆可以来自多条消息：' + sources.length);
+  check(sources[0].content === '我在做 HDD 这个终端项目' && sources[1].content === '数据库用的是 node:sqlite',
+    '来源按说出的顺序返回');
+  check(store.memoriesFromMessage(s.db, m1.id).length === 1, '反向也能查：这条消息产生了 1 条记忆');
+
+  /* Provenance is enforced, not hoped for. */
+  let noText = null;
+  try { store.createMemory(s.db, { text: '   ', sourceMessageIds: [m3.id] }); } catch (e) { noText = e.message; }
+  check(noText !== null && /needs text/.test(noText), '拒绝空文本的记忆：' + noText);
+
+  let ghostSource = null;
+  try { store.createMemory(s.db, { text: '来自不存在的消息', sourceMessageIds: ['no-such-message'] }); }
+  catch (e) { ghostSource = e.message; }
+  check(ghostSource !== null && /FOREIGN KEY/.test(ghostSource),
+    '拒绝指向不存在消息的来源：' + String(ghostSource).slice(0, 70));
+  check(store.countMemories(s.db) === 1, '被拒绝之后没有留下半条记忆（事务回滚）');
+
+  const b = store.createMemory(s.db, {
+    text: '主人住在杭州', createdAt: 2001, origin: 'owner', sourceMessageIds: [m3.id],
+  });
+  check(b.origin === 'owner', '可以标记为主人自己说的：' + b.origin);
+
+  /* Superseding: the old belief stays, marked rather than rewritten. */
+  const c = store.supersedeMemory(s.db, a.id, {
+    text: '主人在做 HDD 终端项目，用 node:sqlite', createdAt: 3000, sourceMessageIds: [m2.id],
+  });
+  const oldA = store.getMemory(s.db, a.id);
+  check(oldA.active === false && oldA.supersededBy === c.id, '旧记忆被标记为已被取代，而不是被改写');
+  check(oldA.text === '主人在做 HDD 终端项目', '旧记忆的原文仍然可读');
+  check(oldA.supersededAt === 3000, '记录了被取代的时间');
+  check(store.getMemory(s.db, c.id).active === true, '取代它的那条是活跃的');
+  check(store.countMemories(s.db) === 2, '活跃记忆是 2 条（旧的已不计入）：' + store.countMemories(s.db));
+  check(store.countMemories(s.db, { includeSuperseded: true }) === 3, '含被取代的共 3 条');
+  check(store.listMemories(s.db).every((m) => m.active), '默认列表只给活跃记忆');
+  check(store.listMemories(s.db, { includeSuperseded: true }).length === 3, '可以要求包含被取代的');
+  check(store.activeMemories(s.db, 10).length === 2, '给 prompt 用的那份也只有活跃记忆');
+
+  const chain = store.memoryChain(s.db, c.id);
+  check(chain.length === 2 && chain[0].id === a.id && chain[1].id === c.id,
+    '取代链可以完整回溯（旧 -> 新）');
+
+  let twice = null;
+  try { store.supersedeMemory(s.db, a.id, { text: '再改一次' }); } catch (e) { twice = e.message; }
+  check(twice !== null && /already superseded/.test(twice), '拒绝重复取代同一条记忆：' + twice);
+  check(store.supersedeMemory(s.db, 'no-such-memory', { text: 'x' }) === null,
+    '取代不存在的记忆返回 null 而不是抛错');
+
+  /* The rules the schema enforces by itself, so no code path has to remember them. */
+  let halfMarked = null;
+  try {
+    s.db.prepare('INSERT INTO memories (id, text, created_at, superseded_by, superseded_at) VALUES (?,?,?,?,?)')
+      .run('x1', 't', 1, c.id, null);
+  } catch (e) { halfMarked = e.message; }
+  check(halfMarked !== null, '拒绝"只标记了一半"的取代（两个字段必须同时有值）');
+
+  let badOrigin = null;
+  try {
+    s.db.prepare('INSERT INTO memories (id, text, origin, created_at) VALUES (?,?,?,?)')
+      .run('x2', 't', 'bogus', 1);
+  } catch (e) { badOrigin = e.message; }
+  check(badOrigin !== null, '拒绝未知的来源类型：' + String(badOrigin).slice(0, 50));
+
+  /* Forgetting takes the chain, so nothing is resurrected and no pointer dangles. */
+  const removed = store.forgetMemory(s.db, c.id);
+  check(removed === 2, '忘记最新那条会一并带走它取代过的：' + removed);
+  check(store.getMemory(s.db, c.id) === null && store.getMemory(s.db, a.id) === null, '整条链都已删除');
+  check(store.countMemories(s.db, { includeSuperseded: true }) === 1, '只剩下与这条事实无关的记忆');
+  check(store.memorySources(s.db, a.id).length === 0, '来源链接随记忆一起删除（无残留）');
+  check(store.forgetMemory(s.db, 'no-such-memory') === 0, '忘记不存在的记忆返回 0，不抛错');
+
+  /* Forgetting a middle row: the newer belief survives, and nothing points at the gap. */
+  const d = store.createMemory(s.db, { text: '第一版', createdAt: 4000, sourceMessageIds: [m1.id] });
+  const e = store.supersedeMemory(s.db, d.id, { text: '第二版', createdAt: 4001, sourceMessageIds: [m1.id] });
+  const f = store.supersedeMemory(s.db, e.id, { text: '第三版', createdAt: 4002, sourceMessageIds: [m1.id] });
+  check(store.memoryChain(s.db, f.id).length === 3, '三次取代形成一条三节的链');
+  check(store.forgetMemory(s.db, e.id) === 2, '忘记中间那条会带走比它更早的两条');
+  check(store.getMemory(s.db, f.id).active === true, '更新的那条仍然活跃，没有被牵连');
+  check(store.getMemory(s.db, f.id).supersededBy === null, '它也没有留下指向已删除行的指针');
+  check(store.memoryChain(s.db, f.id).length === 1, '取代链现在只剩它自己');
+  store.close(s);
+}
+
 /* ---------------------------------------------------------------- cleanup */
 fs.rmSync(scratch, { recursive: true, force: true });
 check(!fs.existsSync(scratch), '临时目录已清理');
