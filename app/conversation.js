@@ -50,16 +50,50 @@ function profileLine(identity) {
 }
 
 /*
+ * The memories she currently believes, rendered beside the profile — both are facts about the
+ * owner, so they belong in the same part of the prompt, before the time.
+ *
+ * Two ceilings, because one is not enough. The count keeps the section from growing without bound
+ * as memories accumulate, and the character ceiling is what actually protects the prompt budget
+ * ADR-008 warns about: a memory is a sentence, so counting them bounds the number of statements
+ * rather than their size. Newest first, so a ceiling that bites drops the oldest beliefs — which
+ * ones lose out is a question for `docs/eval`, not for this comment.
+ */
+const MEMORY_INJECT_LIMIT = 20;
+const MEMORY_SECTION_MAX_CHARS = 1200;
+
+function memorySection(memories) {
+  const list = (memories || []).slice(0, MEMORY_INJECT_LIMIT);
+  if (!list.length) return '';
+
+  const lines = [];
+  let used = 0;
+  for (const m of list) {
+    const text = String(m && m.text == null ? '' : m.text).trim();
+    if (!text) continue;
+    const line = '- ' + text;
+    if (used + line.length > MEMORY_SECTION_MAX_CHARS) break;
+    lines.push(line);
+    used += line.length;
+  }
+  if (!lines.length) return '';
+
+  return '\n\n# 关于主人的长期记忆\n' +
+    '以下是你在之前的对话里了解到的关于主人的事。\n' + lines.join('\n');
+}
+
+/*
  * Build the full system prompt: persona, then what the program can actually do, then the
- * observed profile, then the current time. Rebuilt every turn so "now" is always accurate.
+ * observed profile, then what she remembers about the owner, then the current time. Rebuilt
+ * every turn so "now" is always accurate.
  *
  * Order matters at the top: the capability facts sit immediately after the persona because
  * they constrain what she may claim, and they must not be buried under flavour. See
  * capabilities.js for why they are not part of the persona.
  */
-function buildSystemPrompt(persona, identity, now) {
+function buildSystemPrompt(persona, identity, now, memories) {
   return String(persona) + capabilities.capabilitySection() + profileLine(identity) +
-    '\n\n# 当前时间\n' + nowLine(now);
+    memorySection(memories) + '\n\n# 当前时间\n' + nowLine(now);
 }
 
 /*
@@ -96,7 +130,7 @@ function buildMessages(options) {
   const identity = options.identity;
   const now = options.now;
 
-  let system = buildSystemPrompt(persona, identity, now);
+  let system = buildSystemPrompt(persona, identity, now, options.memories);
   if (history.length <= EXAMPLE_HISTORY_LIMIT) {
     system += styleReferenceSection(examples, options.pickExample);
   }
@@ -513,6 +547,9 @@ function openConversation(options) {
       identity: identity(),
       history: (turn && turn.historyBefore) || [],
       pickExample: opts.pickExample,
+      /* Read at assembly time rather than captured earlier, so a memory stored by the previous
+       * turn is already part of what this turn is told. */
+      memories: activeMemoryList(),
       now: Date.now(),
     });
     if (turn && turn.userText) {
@@ -623,4 +660,8 @@ module.exports = {
   nowLine,
   EXAMPLE_HISTORY_LIMIT,
   CONTEXT_MESSAGE_LIMIT,
+  MEMORY_CONTEXT_LIMIT,
+  MEMORY_INJECT_LIMIT,
+  MEMORY_SECTION_MAX_CHARS,
+  memorySection,
 };

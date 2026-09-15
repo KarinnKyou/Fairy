@@ -195,16 +195,19 @@ function open(name, extra) {
 
 /* ---------------------------------------------------------------- 7. prompt assembly unit */
 {
-  const sys = conv.buildSystemPrompt(PERSONA, { firstSeen: Date.now(), turns: 5 }, Date.now());
+  const sys = conv.buildSystemPrompt(PERSONA, { firstSeen: Date.now(), turns: 5 }, Date.now(),
+    [{ text: '主人住在杭州' }]);
   const personaAt = sys.indexOf('你是 Fairy');
   const capsAt = sys.indexOf('# 你能做什么');
   const profileAt = sys.indexOf('# 主人画像');
+  const memoryAt = sys.indexOf('# 关于主人的长期记忆');
   const timeAt = sys.indexOf('# 当前时间');
-  check(personaAt >= 0 && capsAt > personaAt && profileAt > capsAt && timeAt > profileAt,
-    '拼装顺序为 性格 → 能力 → 画像 → 时间');
+  check(personaAt >= 0 && capsAt > personaAt && profileAt > capsAt && memoryAt > profileAt &&
+    timeAt > memoryAt, '拼装顺序为 性格 → 能力 → 画像 → 长期记忆 → 时间');
 
   const noProfile = conv.buildSystemPrompt(PERSONA, null, Date.now());
   check(noProfile.indexOf('# 主人画像') < 0, '无身份时不注入画像段落');
+  check(noProfile.indexOf('# 关于主人的长期记忆') < 0, '没有记忆时不注入记忆段落');
 
   const line = conv.profileLine({ firstSeen: Date.now(), turns: 0 });
   check(/首次见面/.test(line), 'profileLine 生成首次见面行');
@@ -1040,6 +1043,79 @@ function stubConfirmer(newOn, options) {
   check(noExtractor.memories().length === 0, '没有抽取器就不会有记忆');
   check(noExtractor.remember('主人住在杭州') !== null, '但 /remember 仍然可用（不依赖模型）');
   noExtractor.close();
+}
+
+/* ---------------------------------------------------------------- 16. what the prompt is told
+ * Injection rules (ADR-013): active memories only, beside the profile, and bounded twice — by count
+ * and by characters — because this section is in every single request and ADR-008 warns about the
+ * prompt budget. */
+{
+  let clock = 1_700_000_000_000;
+  const c = open('memory-inject', { now: () => clock });
+
+  const t0 = await c.beginTurn('你好');
+  c.finishTurn(t0, '主人好。');
+  const bare = await c.beginTurn('在想点什么');
+  const bareSys = c.messagesFor(bare)[0].content;
+  check(!/# 关于主人的长期记忆/.test(bareSys), '一条记忆都没有时，不出现记忆段');
+  c.finishTurn(bare, '嗯。');
+
+  const older = c.remember('主人住在杭州');
+  clock += 1000;
+  const newer = c.remember('主人喜欢科幻电影');
+  clock += 1000;
+  const t1 = await c.beginTurn('随便说说');
+  const sys1 = c.messagesFor(t1)[0].content;
+  check(/# 关于主人的长期记忆/.test(sys1), '有记忆时出现记忆段');
+  check(/主人住在杭州/.test(sys1) && /主人喜欢科幻电影/.test(sys1), '两条都在里面');
+  check(sys1.indexOf('主人喜欢科幻电影') < sys1.indexOf('主人住在杭州'), '最新的记忆排在最前');
+  check(sys1.indexOf('# 主人画像') < sys1.indexOf('# 关于主人的长期记忆') &&
+    sys1.indexOf('# 关于主人的长期记忆') < sys1.indexOf('# 当前时间'),
+    '记忆段夹在画像与当前时间之间');
+  c.finishTurn(t1, '好。');
+
+  /* A corrected belief stops being injected the moment it is superseded. */
+  store.supersedeMemory(c._store.db, older.id, { text: '主人住在上海', createdAt: clock });
+  clock += 1000;
+  const t2 = await c.beginTurn('继续');
+  const sys2 = c.messagesFor(t2)[0].content;
+  check(/主人住在上海/.test(sys2) && !/主人住在杭州/.test(sys2),
+    '被取代的记忆不再进入 prompt，取代它的那条进来');
+  c.finishTurn(t2, '好。');
+  c.close();
+
+  /* Two ceilings. The count keeps the section from growing forever; the character ceiling is the
+   * one that actually protects the budget, since a memory is a sentence, not a word.
+   * Bullets are counted inside the memory section only — the capability and profile blocks are
+   * bulleted too, and counting the whole prompt would have measured them by accident. */
+  const memoryBullets = (prompt) => {
+    const at = prompt.indexOf('# 关于主人的长期记忆');
+    if (at < 0) return [];
+    return prompt.slice(at).split('\n').filter((l) => l.startsWith('- '));
+  };
+
+  const counted = open('memory-count-cap', { now: () => clock });
+  for (let i = 0; i < conv.MEMORY_INJECT_LIMIT + 15; i++) counted.remember('记忆条目' + i + '号');
+  const ct = await counted.beginTurn('看看');
+  const countBullets = memoryBullets(counted.messagesFor(ct)[0].content);
+  check(countBullets.length === conv.MEMORY_INJECT_LIMIT,
+    '按条数封顶：' + countBullets.length + ' 条（上限 ' + conv.MEMORY_INJECT_LIMIT + '）');
+  counted.close();
+
+  const sized = open('memory-char-cap', { now: () => clock });
+  for (let i = 0; i < conv.MEMORY_INJECT_LIMIT; i++) sized.remember('第' + i + '条' + '内容'.repeat(50));
+  const st = await sized.beginTurn('看看');
+  const sizeBullets = memoryBullets(sized.messagesFor(st)[0].content);
+  const body = sizeBullets.join('\n');
+  check(body.length <= conv.MEMORY_SECTION_MAX_CHARS,
+    '按字符封顶：' + body.length + ' <= ' + conv.MEMORY_SECTION_MAX_CHARS);
+  check(sizeBullets.length < conv.MEMORY_INJECT_LIMIT,
+    '字符上限真的起了作用（没有把 ' + conv.MEMORY_INJECT_LIMIT + ' 条全塞进去）：' + sizeBullets.length);
+  sized.close();
+
+  /* Empty text cannot produce an empty bullet. */
+  check(conv.memorySection([{ text: '   ' }]) === '', '空白记忆不产生条目');
+  check(conv.memorySection([]) === '' && conv.memorySection(null) === '', '没有记忆时返回空字符串');
 }
 
 /* ---------------------------------------------------------------- cleanup */
