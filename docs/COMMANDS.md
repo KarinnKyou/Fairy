@@ -23,7 +23,7 @@ npm start                 # prep, then open the window; data goes to app/data/hd
 
 Use this when you want a conversation you intend to keep. `Esc` quits.
 
-### 1.1 Commands you type to her (Phase 2)
+### 1.1 Commands you type to her
 
 A message starting with `/` is a command for the app, handled in the renderer, and never sent
 to the model. Anything else is a message for her.
@@ -36,8 +36,11 @@ to the model. Anything else is a message for her.
 | `/new [标题]` | Start a new topic and switch to it. Without a title, it takes the name from the next message |
 | `/rename <标题>` | Rename the current topic (`/topic` is an alias) |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
+| `/memories` | What she currently believes about the owner, where each belief came from, and how many older ones have been superseded |
+| `/remember <一句话>` | State a fact about yourself directly. It is recorded as coming from you rather than inferred |
+| `/forget <序号\|id>` | Remove a memory, and every earlier version of the same fact along with it |
 
-Two things worth knowing, because they are deliberate rather than missing:
+Things worth knowing, because they are deliberate rather than missing:
 
 - **There is no escape for a literal leading `/`.** A message that starts with `/` is a command;
   an unknown one is reported as unknown rather than passed to her, because silently treating a
@@ -45,6 +48,12 @@ Two things worth knowing, because they are deliberate rather than missing:
 - **Switching changes what she is reminded of.** The history sent to the model is the current
   topic's history (ADR-012), so switching is not just a display change. `/topics` is also how you
   find out that an automatic boundary happened where you did not expect one.
+- **`/forget` really deletes, and takes the history with it.** A memory the owner removes is gone
+  from the database rather than flagged as ignored: an automatic correction and a person asking
+  for something to be gone are not the same thing (ADR-013).
+- **Memories are text about you, not a search index.** She does not query them; the active ones
+  are placed in front of her each turn, newest first, up to a fixed size. `/memories` is the only
+  way to see which ones those are.
 
 ### 1.2 Reading what the boundary logic did
 
@@ -55,6 +64,8 @@ considered from one that was considered and refused:
 turn t3: topic shift (confirmed: new topic) -> 0001789374921900-0000-0826f930
 turn t4: topic shift (confirmed: kept) -> 0001789374412300-0000-1a2b3c4d
 turn t5: topic continue (not proposed) -> 0001789374412300-0000-1a2b3c4d
+  memory: asked (self) -> stored 1, superseded 0
+  memory: skipped (cooldown)
 ```
 
 - `not proposed` — the message shared enough vocabulary with the current subject; nothing was
@@ -66,10 +77,17 @@ turn t5: topic continue (not proposed) -> 0001789374412300-0000-1a2b3c4d
   This is the case the earlier local-only rule got wrong.
 - `staying in the current topic:` on stderr — a confirmation request failed (no key, timeout,
   unparseable answer). The turn continues in the topic it was in.
+- `memory: asked (…) -> stored N, superseded M` — the extraction ran *after* the reply reached the
+  screen. `superseded` counts beliefs this turn corrected rather than added.
+- `memory: skipped (…)` — no request spent. `cooldown` means this topic was asked about recently;
+  `nothing` means the turn did not look like a fact about the owner.
+- `memory extraction failed, nothing was remembered:` on stderr — every failure remembers nothing,
+  because an extractor that cannot answer must not be able to invent a fact about the owner.
 
-`docs/eval/` holds real conversations with a human judgement recorded per turn, and
-`conversation.test.cjs` replays them. To add a case: append a turn and its `expect` to the JSON.
-That is the whole mechanism ADR-010 asked for, and it is a data change, not a code change.
+`docs/eval/` holds real conversations with a human judgement recorded for each turn, and the tests
+replay them: the topic dimension and the memory dimension separately, over the same transcripts.
+To add a case, append a turn and its judgement to the JSON — that is the whole mechanism ADR-010
+asked for, and it is a data change rather than a code change.
 
 ## 2. Talk to her without polluting the real history
 

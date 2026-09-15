@@ -14,7 +14,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Released | 2026-09-14 |
 | Artifact | `HDD-0.2.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `DD3C433C…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.2 |
-| Phase in progress | **Phase 3 — long-term memory**, decisions recorded in ADR-013, not started |
+| Phase in progress | **Phase 3 — long-term memory**, in the working tree, **not yet released** |
 | Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
@@ -123,7 +123,7 @@ order is the plan.
 | Phase | Version | Status | Scope (per ADR) | New tables (ADR-004) |
 | --- | --- | --- | --- | --- |
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
-| 3 | v0.3 | **in design — ADR-013** | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
+| 3 | v0.3 | **in tree, unreleased** | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
 | 4 | v0.4 | not started | Context assembly and projects; topics linked to projects | `projects`, context tables |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
@@ -138,13 +138,13 @@ constants in `app/topics.js` are the part most likely to move — see the debts 
 
 ---
 
-## Phase 3 — long-term memory (in design)
+## Phase 3 — long-term memory (in the tree, not yet released)
 
 **Goal:** she remembers things about the owner across sessions, on purpose rather than by luck.
 Memories are structured and updatable, and **every one is linked to the messages it came from**,
 so a wrong memory can be traced back to what produced it.
 
-Four ADRs already fix most of the shape, so none of this is open for debate:
+Four ADRs already fixed most of the shape, so none of it was open for debate:
 
 | Already decided | Where |
 | --- | --- |
@@ -155,35 +155,36 @@ Four ADRs already fix most of the shape, so none of this is open for debate:
 | **No retrieval layer yet** — "Recent-N plus a profile covers Phase 1–3" | ADR-007 deferred table |
 | Watch the prompt budget as memory joins it | ADR-008 |
 
-Three further decisions were taken when the phase started, recorded in **ADR-013**:
+Delivered so far, each verified against the code rather than these notes. The three decisions the
+phase had to take are recorded in **ADR-013**.
 
-1. **A local rule decides *when* it is worth asking; the model decides *what* to remember.** The
-   same shape as the topic boundary (ADR-012), and for the same reason: v0.2 measured that a
-   second request on every turn is a real cost — 10 of 15 turns in one conversation — so the
-   cheap local rule carries the "is anything here worth keeping" question and the request is
-   spent only when it says yes.
-2. **Updating means superseding, not overwriting.** A corrected memory appends a new row and
-   marks the old one superseded. A memory is a claim about the owner, so being able to see that
-   it *changed*, and what it changed from, matters more than a tidy single row.
-3. **`/memories`, `/forget` and `/remember` are in scope.** A wrong memory is worse than no
-   memory — it is the program asserting a false fact about the user, which is exactly what
-   ADR-009 forbids her to do — so memories have to be visible and removable. Commands reuse the
-   existing `.line` elements, so this adds no CSS and no layout change.
+| Item | Evidence |
+| --- | --- |
+| `memories` and `memory_sources` — migration **5**, additive | `store.test.cjs` §14; a fresh database reports schema v5 |
+| No "active" column: a memory is active exactly while nothing superseded it | `superseded_by IS NULL` is the status, with a partial index for the query the prompt runs |
+| A correction supersedes rather than overwrites, and the old row stays readable | §14: the superseded row keeps its text and gains a `superseded_by`/`superseded_at` pair, which a `CHECK` forces to agree |
+| `/forget` removes the whole chain, oldest first, so nothing is resurrected | §14 covers the middle-row case too; the self-reference makes the database refuse a half-deletion rather than leave a predecessor reading as active |
+| Provenance is enforced, not hoped for | §14: a source id that names no message is refused by the foreign key, and the transaction rolls back so no half-memory is left |
+| The local rule decides **when** to ask; the model decides **what** to remember | `app/memory.js`; §13 pins the cue, the cooldown and the correction that cuts through it |
+| The cue is first-person reference, not a list of phrasings | §13: the earlier draft missed 我在做 HDD 这个终端项目 |
+| A request inside 帮我…/给我… is an object, not a fact | §13; three of the four wrong firings on the first probe of the module were that shape |
+| Every failure remembers nothing | §15: no extractor, an unreadable answer, a thrown request, an invented id |
+| The reply is never delayed by the extraction | §15, and `main.js` emits `done` before asking |
+| Active memories render beside the profile, bounded twice | §16: by count (20) and by characters (1200), newest first |
+| Superseded memories stop being injected immediately | §16 |
+| `/memories`, `/forget`, `/remember` with no new CSS | `renderer.test.cjs`; the command-surface test still compares the `.line.*` classes before and after |
+| The capability declaration gained `memory`, and cannot drift from the machinery | §8 of `conversation.test.cjs`: the check compares the declaration against the **assembled prompt**, not against a function name, and was shown to fail by removing the injection and by renaming the wiring |
+| A memory dimension in the evaluation set | `docs/eval/memories-2026-09-14.json`, replayed by §12, which now dispatches on the corpus kind |
 
-Two consequences follow from decisions already on the books, and both are part of the phase
-rather than optional polish:
-
-- **The capability declaration has to change.** `capabilities.js` currently declares `chat` and
-  `time`, and lists no memory capability at all. ADR-009's rule is that a capability which exists
-  in the code must appear in that list, so remembering across sessions needs an entry there and
-  an extension of the cross-check test that enforces it. Without that, the declaration and the
-  build drift apart silently — which is the entire reason ADR-009 exists.
-- **The evaluation set has to grow a memory dimension.** ADR-010 names "did the memory extractor
-  pick the right fact" as a behavioural tuning problem. The harness built in Phase 2 already
-  takes this shape: a `docs/eval` entry with a judgement per turn, replayed by the tests.
-
-The third real conversation already contains the request this phase answers — 「我想给这个软件再
+The third real conversation already contained the request this phase answers — 「我想给这个软件再
 加点本事，让它能记住以前聊过的事情」 — kept in `docs/eval/topics-2026-09-14-run3.json`.
+
+**What the memory corpus says about the current cue, measured rather than assumed.** Of the fifteen
+real turns, one both should have been asked about and was. Two real facts went unasked — a
+preference swallowed by the request frame, and an identity fact stated without a first-person
+pronoun — and one turn spent a request on nothing. Those three disagreements are recorded as
+assertions in the corpus, so improving the cue forces that file to be updated instead of leaving a
+silent improvement behind.
 
 ---
 
@@ -237,24 +238,38 @@ Not blockers, but they should not be forgotten.
    that is most turns where the subject drifts — 10 of 15 turns in the third one. This withdraws
    revision 0's "no extra request" and it is the standing price of ADR-012 revision 1. The levers
    if it proves annoying are `PROPOSE_COVERAGE` and `MIN_SHARED_TERMS`: both raise the bar for
-   asking, and both make silent misses more likely. **Phase 3 adds a second such request**, which
-   is why its extraction is triggered by a local rule rather than run on every turn.
-10. **The local constants are still guesses**, now twice corrected by real transcripts rather than
+   asking, and both make silent misses more likely.
+10. **Memory adds a second request, and the trigger is what keeps it rare.** The extraction runs
+    after the reply is on screen, so it delays nothing the user waits for — but it is a real
+    request. On the fifteen real turns of the memory corpus it was spent twice: once on a fact
+    worth keeping, once on nothing. The levers are `COOLDOWN_TURNS`, `MIN_SELF_TERMS` and the
+    request-frame list in `app/memory.js`.
+11. **The memory cue misses facts, and the misses are recorded rather than accepted.** Two of the
+    fifteen real turns held a fact that should have been remembered and was not asked about: a
+    preference stated inside a request ("最好是硬科幻那种"), and an identity fact with no
+    first-person pronoun ("上学好烦啊"). Loosening the cue would catch them and would spend a
+    request on every turn shaped like 帮我…, which is the most common shape there is. The trade is
+    measured in `docs/eval/memories-2026-09-14.json` and asserted by the tests, so changing it
+    cannot happen silently. **This is the first thing the next real conversation should be judged
+    against.**
+12. **The local constants are still guesses**, now twice corrected by real transcripts rather than
     by reasoning, and tuned for recall: `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
-    `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. Three transcripts in
-    `docs/eval` are the whole of the evidence behind them.
-11. **The command surface has never been driven by hand in a real window.** Electron cannot start
+    `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h, plus memory's
+    `COOLDOWN_TURNS` 4. Three transcripts in `docs/eval` are the whole of the evidence behind them.
+13. **The command surface has never been driven by hand in a real window.** Electron cannot start
     in the environment this was developed in, so `/topics`, `/switch`, `/new`, `/rename`,
-    `/search` and `/help` are covered by jsdom and by a static cross-check that every IPC channel
-    the preload uses exists in the main process — not by a person clicking. `main.js`'s handlers
-    have never been exercised outside a real launch, which was also true of the 0.1.0 build.
-    Launching `HDD-0.2.0.exe` once and typing `/help` closes this, and would verify the packaged
-    data-directory branch in debt 3 at the same time.
-12. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
+    `/search`, `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static
+    cross-check that every IPC channel the preload uses exists in the main process — not by a
+    person clicking. `main.js`'s handlers have never been exercised outside a real launch, which
+    was also true of the 0.1.0 build. Launching `HDD-0.3.0.exe` once and typing `/help` closes
+    this, and would verify the packaged data-directory branch in debt 3 at the same time.
+14. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
     the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
     they are verified by running them once. `--topic` was checked against a two-topic scratch
-    store, including that `--prompt` then describes only the topic in progress.
-13. **Phase scope lives in this repository, or it cannot be checked.** Every phase's scope is
+    store, including that `--prompt` then describes only the topic in progress. **It also does not
+    show memories yet**, which is now the audit gap it exists to close: `--prompt` prints what the
+    next turn would send, and that includes the memory section, but nothing prints what is stored.
+15. **Phase scope lives in this repository, or it cannot be checked.** Every phase's scope is
     defined by the ADRs here, and the code is cross-checked against them — which works only for
     requirements that are written down here. A requirement that exists only outside this
     repository cannot be verified against the build, and will surface as a surprise after a

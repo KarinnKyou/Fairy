@@ -40,6 +40,11 @@ page itself is fully local (CSP blocks network access).
   of, not just what is on screen. `/topics`, `/switch`, `/new`, `/rename`, `/search`, `/help`
 - **Full-text search** over everything ever said, Chinese included (`/search`), with the topic
   each hit came from
+- **Long-term memory**: she learns stable facts about you as you talk — where you live, what you
+  work on, what you like — and uses them in later conversations. A cheap local rule decides when a
+  turn is *worth asking about*, the model decides what is in it, and every memory is linked to the
+  messages it came from. `/memories` shows what she believes and where each belief came from,
+  `/forget` removes one for good, `/remember` states one yourself
 - Font size, weight and column width are CSS variables, all easy to tune
 
 ## 2. Requirements
@@ -100,7 +105,7 @@ npm start              # runs prep (generates www/) then opens the dev window
 
 #### Where conversations are stored
 
-Conversations, the profile and future memories live in a SQLite database that the main
+Conversations, the profile and memories live in a SQLite database that the main
 process owns. Its location depends on how the app is started:
 
 | How | Data directory |
@@ -239,7 +244,7 @@ npm run app:dist       # same as 3.3
    returns to normal when finished.
 3. Press **Esc** to quit. Clicking anywhere in the text area refocuses the input row.
 4. The glitch/flicker is purely visual and does not affect the conversation.
-5. Type `/help` for the topic and search commands (below).
+5. Type `/help` for the topic, search and memory commands (below).
 
 ## 4.0 Topics and search
 
@@ -254,7 +259,6 @@ and rename them:
 | `/rename <标题>` | Rename the current topic |
 | `/search <关键词>` | Full-text search across every topic, showing where each hit came from |
 | `/help` | The list |
-
 A message starting with `/` is a command for the app and is never sent to the model.
 
 **How a topic boundary is decided.** A cheap local rule in `app/topics.js` does the watching: a
@@ -286,6 +290,36 @@ because that is about the relationship rather than a subject.
 revision 1 records the first real conversation, in which a purely local rule split one project
 into three topics — and made her answer "how do *you* tokenize" when the question had been about
 the project's tokenizer. Both the failure and the fix are measured there.
+
+## 4.0.1 What she remembers
+
+She keeps **memories** — stable facts about you — and uses them in later conversations:
+
+| Command | What it does |
+| --- | --- |
+| `/memories` | What she believes about you, where each belief came from, and how many older beliefs have been superseded |
+| `/remember <一句话>` | State a fact about yourself directly (recorded as coming from you, not inferred) |
+| `/forget <序号\|id>` | Remove a memory — and every earlier version of the same fact with it |
+
+**Nothing is remembered by guessing.** A cheap local rule in `app/memory.js` decides when a turn is
+worth *asking about* — a first-person statement with enough content, not asked again in the same
+subject for the next few turns, and a correction cuts to the front of the queue. Only then does one
+small request go out asking what, if anything, is worth keeping. Every failure — no key, a
+timeout, an answer that cannot be read — remembers nothing, because an extractor that cannot answer
+must not be able to invent a fact about you.
+
+**Every memory is traceable.** Each one is linked to the messages it came from, and `/memories`
+says whether it came from something you stated or was inferred, and how many messages it was drawn
+from. A correction does not overwrite: the new belief is stored and the old one is marked
+superseded, so you can see that it changed. `/forget` is different on purpose — it removes the fact
+and its history, because a person asking for something to be gone is not the same as the app
+correcting itself.
+
+**It is not perfect, and the imperfections are written down.** On the real conversation in
+`docs/eval/memories-2026-09-14.json`, two facts that should have been remembered were never asked
+about — a preference stated inside a request, and "上学好烦啊", which states a fact without ever
+saying 我 — and one turn spent a request on nothing. Those are recorded as assertions in the
+evaluation set rather than accepted quietly, so tightening or loosening the cue has to face them.
 
 ## 4.1 Fairy's personality
 
@@ -403,6 +437,7 @@ HDD/
     ├── personality.js         ← Fairy's persona: identity, honesty rule, speech rules
     ├── capabilities.js        ← what the app can/cannot do, as data (facts, not persona)
     ├── topics.js              ← when the subject changes, and what a topic is called (pure policy)
+    ├── memory.js              ← when a turn is worth asking about, and how to read the answer
     ├── store.js               ← persistent state (SQLite via node:sqlite; main process only)
     ├── conversation.js        ← owns turns and assembles the prompt per turn
     ├── data/                  ← created at runtime: hdd.db (gitignored)
