@@ -774,6 +774,64 @@ function stubConfirmer(newOn, options) {
   }
 }
 
+/* ---------------------------------------------------------------- 13. the memory trigger
+ * ADR-013: the local rule decides *when* it is worth asking; the model decides *what* to remember.
+ * So this section is only about the cue — the cost it spends and the cost it refuses to spend.
+ *
+ * It is deliberately blunt, and the bluntness is the point: an earlier draft matched phrasings
+ * (我住在 / 我叫 / 我喜欢) and missed 我在做 HDD 这个终端项目, one of the most memorable things the
+ * owner has said. Verb patterns are endless; first-person reference is not. */
+{
+  const memory = require('../memory.js');
+  const ask = (text, turnsSinceAsk) => memory.shouldExtract({ text, turnsSinceAsk });
+
+  /* Facts about the owner: short ones are the valuable ones, so the floor is low. */
+  const disclosures = [
+    '我叫小林', '我住在杭州', '我在做 HDD 这个终端项目', '我平时喜欢看科幻电影',
+    '我对花生过敏', '我的生日是三月', '我养了一只猫', '我今年 30 岁', '我需要一个提醒功能',
+  ];
+  for (const text of disclosures) {
+    const d = ask(text, 9);
+    check(d.ask && d.reason === 'self', '自我介绍式的句子会被问一次：' + text + ' -> ' + d.reason);
+  }
+
+  /* Nothing about the owner, nothing asked. */
+  const silent = ['今天天气不错', '那个终端项目怎么样了', '嗯', '为什么？', '把这句对话存成文件吧'];
+  for (const text of silent) {
+    const d = ask(text, 9);
+    check(!d.ask, '与主人无关的句子不问：' + text + ' -> ' + d.reason);
+  }
+
+  /* Requests are what gets said to a terminal assistant most often, and the pronoun in them is an
+   * object. Three of the four wrong firings on the first probe of this module were this shape. */
+  const requests = ['帮我推荐几部电影吧', '你能帮我做什么', '给我推荐几部科幻电影', '让你久等了'];
+  for (const text of requests) {
+    const d = ask(text, 9);
+    check(!d.ask, '请求里的「我」不算关于主人的事实：' + text + ' -> ' + d.reason);
+  }
+
+  /* And the over-fire that is kept on purpose, pinned here so it stays a decision rather than
+   * becoming an accident: the second pronoun survives the request frame. Vetoing every
+   * request-opening utterance would fix it and would also skip 帮我记一下我住在杭州. */
+  check(ask('帮我看看我现在的表情', 9).ask,
+    '已知且接受的误触发（请求里出现了第二个「我」）——代价是一次被浪费的请求');
+
+  /* The cooldown is what bounds the cost, since the cue fires often by design. */
+  check(!ask('我住在杭州', 0).ask && ask('我住在杭州', 0).reason === 'cooldown',
+    '刚问过就不重复问');
+  check(!ask('我住在杭州', memory.COOLDOWN_TURNS - 1).ask, '冷却期内不问');
+  check(ask('我住在杭州', memory.COOLDOWN_TURNS).ask, '冷却期满可以再问');
+  check(ask('我住在杭州', null).ask, '没有冷却信息时按可问处理（重启后最多多花一次请求）');
+
+  /* A correction cuts through the cooldown: a belief the owner has just contradicted must not
+   * queue behind a request already spent on something else. */
+  for (const text of ['不对，我现在住上海', '我搬家了，现在住上海']) {
+    const d = ask(text, 0);
+    check(d.ask && d.reason === 'correction', '纠正类的话即使刚问过也要问：' + text + ' -> ' + d.reason);
+  }
+  check(!ask('不对', 0).ask, '只有纠正词、没有内容的短句不问（词项不足）');
+}
+
 /* ---------------------------------------------------------------- cleanup */
 fs.rmSync(scratch, { recursive: true, force: true });
 check(!fs.existsSync(scratch), '临时目录已清理');
