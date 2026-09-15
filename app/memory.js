@@ -109,12 +109,65 @@ function shouldExtract(input) {
   return { ask: true, reason: 'self' };
 }
 
+/* A single turn should not be able to flood the prompt with forty facts. Five is generous for one
+ * exchange, and the cap is a guard against a model that decides to summarise everything. */
+const MAX_PER_TURN = 5;
+
+/* A memory is a fact, not a paragraph. A longer answer is refused rather than truncated: cutting a
+ * statement in half can turn it into a different, false one, and an oversized memory is a
+ * prompt-budget problem (ADR-008) hiding in the data. */
+const MAX_TEXT_CHARS = 200;
+
+/*
+ * Read the extractor's answer.
+ *
+ * This lives here rather than in `main.js` on purpose. `main.js` cannot be loaded outside Electron,
+ * so anything left there has no coverage at all — which is how the topic-boundary parser became the
+ * least-tested and most failure-prone piece of ADR-012. Pure parsing belongs in a module a test can
+ * require.
+ *
+ * Returns `[]` when the answer is readable and says there is nothing to keep, and `null` when it
+ * could not be read at all. The two are different: `[]` is an honest "nothing memorable here",
+ * while `null` means the extractor is unusable, and every failure in this design points the same
+ * way — an extractor that cannot answer must not be able to invent a fact about the owner.
+ */
+function parseExtraction(raw) {
+  const s = String(raw == null ? '' : raw);
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(s.slice(start, end + 1));
+  } catch (_) {
+    return null;
+  }
+  if (!parsed || !Array.isArray(parsed.memories)) return null;
+
+  const out = [];
+  for (const entry of parsed.memories) {
+    if (out.length >= MAX_PER_TURN) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const text = String(entry.text == null ? '' : entry.text).trim();
+    if (!text || text.length > MAX_TEXT_CHARS) continue;
+    const replaces = typeof entry.replaces === 'string' && entry.replaces.trim()
+      ? entry.replaces.trim()
+      : null;
+    out.push({ text, replaces });
+  }
+  return out;
+}
+
 module.exports = {
   shouldExtract,
   isSelfReference,
+  parseExtraction,
   MIN_SELF_TERMS,
   MIN_CORRECTION_TERMS,
   COOLDOWN_TURNS,
+  MAX_PER_TURN,
+  MAX_TEXT_CHARS,
   SELF_RE,
   REQUEST_FRAME_RE,
   CORRECTION_RE,

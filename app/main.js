@@ -117,6 +117,69 @@ function parseBoundaryVerdict(text) {
 }
 
 /*
+ * Ask the model what, if anything, is worth remembering about the owner (ADR-013).
+ *
+ * The local rule in memory.js has already decided that this turn is worth the request; this decides
+ * what comes back. It is given the memories that are currently believed so that an update becomes a
+ * supersession rather than a duplicate — the model can tell "same fact, corrected" from "new fact"
+ * far better than a term comparison could.
+ *
+ * Returns the raw answer; parsing it lives in memory.js, where a test can reach it. Every failure
+ * returns null, which the conversation reads as "remember nothing" — an extractor that cannot
+ * answer must not be able to invent a fact about the owner.
+ */
+const EXTRACT_TIMEOUT_MS = 15000;
+
+async function extractMemories(input) {
+  if (!config.apiKey) return null;
+  const existing = (input.existing || []).length
+    ? input.existing.map((m) => '- ' + m.id + ' :: ' + m.text).join('\n')
+    : '(还没有任何记忆)';
+
+  const system = [
+    '你负责从对话中提取关于主人的长期事实，供以后回忆时使用。',
+    '只输出一个 JSON 对象，不要解释、不要加代码块。',
+    '格式：{"memories":[{"text":"...","replaces":"<已有记忆的 id，可省略>"}]}',
+    '只提取关于主人的稳定事实：身份、住处、工作或学业、长期偏好、习惯、重要关系、长期目标。',
+    '不要提取：一次性的请求或情绪、临时状态、助手自己的情况、以及你没有把握的内容。',
+    '每条一句话，用第三人称陈述，例如「主人在做 HDD 终端项目」「主人住在杭州」。',
+    '如果新信息更新或纠正了某条已有记忆，把 replaces 填成那条记忆的 id，不要新增重复的一条。',
+    '没有值得长期记住的内容时，返回 {"memories":[]}。',
+  ].join('\n');
+
+  const user = '已有记忆：\n' + existing + '\n\n这一轮对话：\n主人：' + input.userText +
+    (input.assistantText ? '\n你：' + input.assistantText : '');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS);
+  try {
+    const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+        stream: false,
+        max_tokens: 500,
+        temperature: 0,
+      }),
+      signal: controller.signal,
+    });
+    if (!res || !res.ok) return null;
+    const data = await res.json();
+    return (data.choices && data.choices[0] && data.choices[0].message &&
+      data.choices[0].message.content) || null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/*
  * The conversation — this process owns the truth (docs/ADR.md ADR-001): it stores the
  * messages, assembles the prompt and persists the reply. The renderer only sends text.
  *
@@ -136,6 +199,12 @@ function openConversation() {
       console.error('topic confirmation failed, staying in the current topic: ' +
         String((err && err.message) || err));
     },
+    /* Memories are only extracted when memory.js says the turn is worth a request. */
+    extractMemories,
+    onMemoryError: (err) => {
+      console.error('memory extraction failed, nothing was remembered: ' +
+        String((err && err.message) || err));
+    },
   });
   if (conv.available) {
     console.log('store: ' + conv.file + ' (schema v' + conv.schemaVersion + ')');
@@ -143,6 +212,23 @@ function openConversation() {
     console.error('store unavailable, conversation will not be saved: ' +
       (conv.openError && conv.openError.message));
   }
+}
+
+/*
+ * Remember a finished turn, and report what happened.
+ *
+ * Called after the reply has been sent to the renderer: this is a second request, and nothing the
+ * user is waiting for should queue behind it. The line it logs is the only place the trigger's
+ * decision is visible — "skipped (cooldown)" and "asked (correction) -> stored 1" are the same
+ * silence in the transcript.
+ */
+async function rememberAfter(turn) {
+  if (!conv) return;
+  const result = await conv.rememberTurn(turn);
+  console.log('  memory: ' + (result.asked
+    ? 'asked (' + result.reason + ') -> stored ' + result.stored + ', superseded ' + result.superseded +
+      (result.error ? ' (failed: ' + result.error.message + ')' : '')
+    : 'skipped (' + result.reason + ')'));
 }
 
 app.setName('HDD');
@@ -322,6 +408,7 @@ ipcMain.on('fairy:ask', async (event, payload) => {
       if (msg.content) emit({ type: 'content', id, text: msg.content });
       conv.finishTurn(turn, msg.content || '', msg.reasoning_content || '');
       emit({ type: 'done', id });
+      await rememberAfter(turn);
       return;
     }
 
@@ -360,6 +447,7 @@ ipcMain.on('fairy:ask', async (event, payload) => {
     }
     conv.finishTurn(turn, content, reasoning);
     emit({ type: 'done', id });
+    await rememberAfter(turn);
   } catch (err) {
     const name = (err && err.name) || '';
     const msg = name === 'AbortError' ? 'Request timed out' : String((err && err.message) || err);
@@ -368,6 +456,9 @@ ipcMain.on('fairy:ask', async (event, payload) => {
     conv.finishTurn(turn, content, reasoning);
     conv.recordError(turn, msg);
     emit({ type: 'error', id, message: msg });
+    /* Still worth remembering: the failure was in the reply, not in what the owner said, and a
+     * fact stated during a turn that failed is exactly the kind that never gets repeated. */
+    await rememberAfter(turn);
   }
 });
 

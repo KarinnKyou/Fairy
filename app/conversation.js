@@ -13,6 +13,7 @@
 const store = require('./store.js');
 const capabilities = require('./capabilities.js');
 const topics = require('./topics.js');
+const memory = require('./memory.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -20,6 +21,10 @@ const EXAMPLE_HISTORY_LIMIT = 4;
 
 /* How many stored messages to send as context. Counts messages, not turns. */
 const CONTEXT_MESSAGE_LIMIT = 30;
+
+/* How many existing memories the extractor is shown, so it can recognise an update instead of
+ * adding a duplicate. Counts memories, and the section they render into is capped separately. */
+const MEMORY_CONTEXT_LIMIT = 20;
 
 function nowLine(now) {
   const d = now == null ? new Date() : new Date(now);
@@ -348,6 +353,111 @@ function openConversation(options) {
     }
   }
 
+  /* ---------------------------------------------------------------- memory */
+
+  /*
+   * Turns since the last extraction request in each topic, kept in memory only. Losing it on a
+   * restart costs one extra request; persisting a counter whose whole job is to save a request is
+   * not worth a schema change, and a schema change is not free (ADR-004).
+   */
+  const lastMemoryAsk = new Map();
+
+  function turnsSinceMemoryAsk(topicId) {
+    const last = lastMemoryAsk.get(topicId);
+    return typeof last === 'number' ? turnSeq - last : null;
+  }
+
+  function memories(options) {
+    if (!available) return [];
+    return store.listMemories(s.db, options || {});
+  }
+
+  function activeMemoryList(limit) {
+    if (!available) return [];
+    return store.activeMemories(s.db, limit == null ? MEMORY_CONTEXT_LIMIT : limit);
+  }
+
+  function forgetMemory(id) {
+    if (!available) return 0;
+    return store.forgetMemory(s.db, id);
+  }
+
+  /* The owner stating a fact about themselves. Deliberately sourceless: it was not inferred from
+   * any message, and attaching one would make the provenance say something untrue. */
+  function remember(text) {
+    if (!available) return null;
+    const clean = String(text == null ? '' : text).trim();
+    if (!clean) return null;
+    return store.createMemory(s.db, { text: clean, origin: 'owner', createdAt: now() });
+  }
+
+  /*
+   * Run the extractor for a turn that has already finished.
+   *
+   * Called after the reply is persisted and on its way to the screen, so this request never delays
+   * anything the user is waiting for. Every path through it is best-effort: no trigger means no
+   * request, no extractor means no memories, an unreadable answer means no memories, and a thrown
+   * error is reported rather than raised. What it must never do is fail a turn that has already
+   * succeeded.
+   *
+   * A memory's sources are the two messages of the turn — the owner's statement and the reply it
+   * drew. Turn granularity, not sentence granularity: the extractor returns text, not offsets, and
+   * inventing a finer link would claim a precision the data does not have.
+   */
+  async function rememberTurn(turn) {
+    const result = { asked: false, reason: null, stored: 0, superseded: 0, error: null };
+    if (!available || !turn || !turn.topicId) return result;
+
+    const decision = memory.shouldExtract({
+      text: turn.userText,
+      turnsSinceAsk: turnsSinceMemoryAsk(turn.topicId),
+    });
+    result.reason = decision.reason;
+    if (!decision.ask) return result;
+
+    result.asked = true;
+    /* Recorded before the request: whether it succeeds or fails, the cooldown has been spent, and a
+     * failing extractor must not become a request on every single turn. */
+    lastMemoryAsk.set(turn.topicId, turnSeq);
+
+    const extract = opts.extractMemories;
+    if (typeof extract !== 'function') return result;
+
+    try {
+      const existing = store.activeMemories(s.db, MEMORY_CONTEXT_LIMIT);
+      const raw = await extract({
+        userText: turn.userText,
+        assistantText: turn.assistantText == null ? '' : turn.assistantText,
+        existing: existing.map((m) => ({ id: m.id, text: m.text })),
+      });
+      const found = memory.parseExtraction(raw);
+      if (!found) return result;
+
+      const sources = [turn.userMessageId, turn.assistantMessageId].filter(Boolean);
+      for (const entry of found) {
+        /* `replaces` is only honoured when it names a memory that is actually there and still
+         * active. A model that invents an id gets a new memory rather than a failed turn — and the
+         * duplicate is visible in /memories rather than hidden. */
+        const target = entry.replaces ? existing.find((m) => m.id === entry.replaces) : null;
+        if (target) {
+          store.supersedeMemory(s.db, target.id, {
+            text: entry.text, createdAt: now(), sourceMessageIds: sources,
+          });
+          result.superseded++;
+        } else {
+          store.createMemory(s.db, {
+            text: entry.text, createdAt: now(), sourceMessageIds: sources,
+          });
+          result.stored++;
+        }
+      }
+    } catch (err) {
+      result.error = err;
+      if (opts.onMemoryError) opts.onMemoryError(err);
+    }
+    return result;
+  }
+
   /* Persist a user message and open a turn. Returns the turn handle used by the stream.
    * Async since ADR-012 revision 1, because the topic decision may involve a request. */
   async function beginTurn(text) {
@@ -450,6 +560,9 @@ function openConversation(options) {
     if (finalContent != null || finalReasoning != null) {
       recordAssistantDelta(turn, finalContent, finalReasoning);
     }
+    /* Kept on the turn so the extractor can see what was actually answered, and so a turn that is
+     * being remembered carries its own reply rather than reading it back out of the store. */
+    turn.assistantText = finalContent == null ? '' : String(finalContent);
     store.bumpTurns(s.db, 1);
     currentTurn = null;
   }
@@ -490,6 +603,11 @@ function openConversation(options) {
     messagesFor,
     recordAssistantDelta,
     finishTurn,
+    rememberTurn,
+    memories,
+    activeMemoryList,
+    remember,
+    forgetMemory,
     recordError,
     close,
     /* exposed for tests and diagnostics */

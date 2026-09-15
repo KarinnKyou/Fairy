@@ -70,6 +70,13 @@ function open(name, extra) {
   c.finishTurn(turn, '我在');
   c.recordError(turn, '写入失败');
   check(true, '不可用时的所有写入均为安全的空操作，未抛错');
+
+  /* Memory has its own two paths, and both have to be just as safe. */
+  const memTurn = await c.rememberTurn(turn);
+  check(memTurn.asked === false && memTurn.stored === 0, '存储不可用时抽取直接跳过');
+  check(c.remember('随便一句') === null && c.forgetMemory('anything') === 0,
+    '存储不可用时记忆的写入与删除都是安全空操作');
+  check(c.memories().length === 0 && c.activeMemoryList(5).length === 0, '存储不可用时记忆列表为空');
   c.close();
 }
 
@@ -830,6 +837,209 @@ function stubConfirmer(newOn, options) {
     check(d.ask && d.reason === 'correction', '纠正类的话即使刚问过也要问：' + text + ' -> ' + d.reason);
   }
   check(!ask('不对', 0).ask, '只有纠正词、没有内容的短句不问（词项不足）');
+}
+
+/* ---------------------------------------------------------------- 14. the extractor's answer
+ * The parser for what the extractor returns, and it sits in a module the tests can require rather
+ * than in `main.js`, which cannot be loaded outside Electron — the reason ADR-012's boundary parser
+ * has no coverage at all.
+ *
+ * The distinction that matters: `[]` is "readable, and there was nothing worth keeping", `null` is
+ * "unusable". Nothing is stored on either, but only one of them means the extractor is broken. */
+{
+  const memory = require('../memory.js');
+  const parse = (raw) => memory.parseExtraction(raw);
+
+  const plain = parse('{"memories":[{"text":"主人在做 HDD 终端项目"}]}');
+  check(plain && plain.length === 1 && plain[0].text === '主人在做 HDD 终端项目' && plain[0].replaces === null,
+    '读出最普通的一种回答');
+
+  const fenced = parse('好的，结果如下：\n```json\n{"memories":[{"text":"主人住在杭州"}]}\n```');
+  check(fenced && fenced.length === 1 && fenced[0].text === '主人住在杭州',
+    '模型把 JSON 包在散文和代码块里也能读出来');
+
+  const withReplaces = parse('{"memories":[{"text":"主人住在上海","replaces":"mem-1"}]}');
+  check(withReplaces && withReplaces[0].replaces === 'mem-1', '读得出它要取代哪一条记忆');
+
+  check(JSON.stringify(parse('{"memories":[]}')) === '[]',
+    '「没有值得记的」是一个合法回答，返回空数组而不是 null');
+  check(parse('{"memories":[]}') !== null, '空数组与读不出来是两回事');
+
+  /* Every unreadable shape points the same way: remember nothing. */
+  for (const bad of ['', null, undefined, '抱歉，我无法完成', '{"memories":', '[1,2,3]', '{"facts":[]}', '不是 JSON']) {
+    check(parse(bad) === null, '读不出来时返回 null（记住零条）：' + JSON.stringify(bad));
+  }
+
+  /* Entries that are structurally wrong are skipped, not fatal: one bad row must not lose the rest. */
+  const mixed = parse('{"memories":[{"text":"主人住在杭州"},{"text":"   "},null,"字符串",{"notext":1},{"text":"主人喜欢科幻"}]}');
+  check(mixed && mixed.length === 2, '跳过结构不对的条目，保留能用的：' + (mixed && mixed.length));
+  check(mixed[0].text === '主人住在杭州' && mixed[1].text === '主人喜欢科幻', '保留的是两条正常的事实');
+
+  /* A turn cannot flood the prompt. */
+  const flood = parse(JSON.stringify({
+    memories: Array.from({ length: 12 }, (_, i) => ({ text: '事实' + i + '号内容' })),
+  }));
+  check(flood.length === memory.MAX_PER_TURN, '一次最多接受 ' + memory.MAX_PER_TURN + ' 条：' + flood.length);
+
+  /* A paragraph is refused rather than cut: truncating a statement can make it a different one. */
+  const essay = parse(JSON.stringify({ memories: [{ text: '很长'.repeat(200) }] }));
+  check(essay.length === 0, '过长的条目被拒绝，而不是被截断成另一句话');
+  const justUnder = parse(JSON.stringify({ memories: [{ text: '好'.repeat(memory.MAX_TEXT_CHARS) }] }));
+  check(justUnder.length === 1, '恰好在上限内的条目仍然接受');
+}
+
+/* ---------------------------------------------------------------- 15. the extraction path
+ * ADR-013's other half: the trigger said yes, so now one request is spent and whatever comes back
+ * becomes memories — or does not. Every failure mode here ends the same way, remembering nothing,
+ * because an extractor that cannot answer must not be able to invent a fact about the owner. */
+{
+  let clock = 1_700_000_000_000;
+  const calls = [];
+  const errors = [];
+  let answer = null;
+  let unreachable = false;
+
+  const extractor = async (input) => {
+    calls.push(input);
+    if (unreachable) throw new Error('extractor unreachable');
+    return answer;
+  };
+
+  const c = open('memory-path', {
+    now: () => clock,
+    extractMemories: extractor,
+    onMemoryError: (err) => errors.push(err),
+  });
+
+  /* Enough turns to expire the cooldown, using text the trigger always refuses, so no request is
+   * spent getting to the next case. */
+  const clearCooldown = async () => {
+    for (let i = 0; i < require('../memory.js').COOLDOWN_TURNS; i++) {
+      clock += 60000;
+      const ft = await c.beginTurn('嗯');
+      c.finishTurn(ft, '好。');
+      await c.rememberTurn(ft);
+    }
+  };
+
+  const t1 = await c.beginTurn('我住在杭州，在做 HDD 这个终端项目');
+  c.finishTurn(t1, '主人，我记住了。');
+  check(calls.length === 0, 'finishTurn 自己不发请求，抽取是单独一步');
+
+  answer = '{"memories":[{"text":"主人住在杭州"},{"text":"主人在做 HDD 终端项目"}]}';
+  const r1 = await c.rememberTurn(t1);
+  check(r1.asked === true && r1.reason === 'self', '触发器同意才问这一次：' + r1.reason);
+  check(calls.length === 1, '只发了一次抽取请求');
+  check(calls[0].userText === '我住在杭州，在做 HDD 这个终端项目', '请求里带着主人的原话');
+  check(calls[0].assistantText === '主人，我记住了。', '也带着这一轮的回答');
+  check(Array.isArray(calls[0].existing), '并且带上已有的记忆，好让它认出「这是更新」');
+  check(r1.stored === 2 && r1.superseded === 0, '存下两条记忆：' + r1.stored);
+
+  const afterFirst = c.memories();
+  check(afterFirst.length === 2 && afterFirst.every((m) => m.active), '两条都是活跃记忆');
+  const linked = store.memorySources(c._store.db, afterFirst[0].id);
+  check(linked.length === 2, '记忆链接到这一轮的两条消息：' + linked.length);
+  check(linked.some((m) => m.role === 'user') && linked.some((m) => m.role === 'assistant'),
+    '来源既包括主人的话，也包括那一轮的回答');
+
+  /* Same topic again: the cooldown is what bounds the cost of a cue that fires often. */
+  clock += 60000;
+  const t2 = await c.beginTurn('我还想给这个项目加个搜索功能');
+  c.finishTurn(t2, '好。');
+  const r2 = await c.rememberTurn(t2);
+  check(r2.asked === false && r2.reason === 'cooldown', '冷却期内不再问：' + r2.reason);
+  check(calls.length === 1, '冷却期内没有产生新请求');
+
+  /* A correction cuts through the cooldown and updates rather than duplicating. */
+  clock += 60000;
+  const t3 = await c.beginTurn('不对，我搬到上海了');
+  c.finishTurn(t3, '好的。');
+  const hangzhou = c.memories().filter((m) => /杭州/.test(m.text))[0];
+  answer = JSON.stringify({ memories: [{ text: '主人住在上海', replaces: hangzhou.id }] });
+  const r3 = await c.rememberTurn(t3);
+  check(r3.asked === true && r3.reason === 'correction', '纠正类的话即使刚问过也要问：' + r3.reason);
+  check(r3.superseded === 1 && r3.stored === 0, '它是取代而不是新增：superseded=' + r3.superseded);
+  check(c.memories().length === 2, '活跃记忆仍是两条，没有变成三条');
+  check(c.memories().some((m) => /上海/.test(m.text)), '新的住处在活跃列表里');
+  const stale = store.getMemory(c._store.db, hangzhou.id);
+  check(stale.active === false && stale.text === '主人住在杭州', '旧的住处被标记取代，原文仍可读');
+  check(c.memories({ includeSuperseded: true }).length === 3, '含被取代的能看到三条');
+
+  await clearCooldown();
+
+  /* An id the model invented must not break the turn — and must not silently vanish either: it
+   * becomes a new memory, visible in /memories, rather than a failed extraction. */
+  clock += 60000;
+  const t4 = await c.beginTurn('我平时喜欢看科幻电影');
+  c.finishTurn(t4, '好。');
+  answer = '{"memories":[{"text":"主人喜欢科幻电影","replaces":"no-such-memory"}]}';
+  const r4 = await c.rememberTurn(t4);
+  check(r4.stored === 1 && r4.superseded === 0 && r4.error === null,
+    '指向不存在的 id 时按新增处理，不报错：stored=' + r4.stored);
+
+  await clearCooldown();
+
+  /* Every unreadable answer remembers nothing. */
+  clock += 60000;
+  const t5 = await c.beginTurn('我叫小林');
+  c.finishTurn(t5, '记住了。');
+  answer = '抱歉，我不确定该不该记';
+  const r5 = await c.rememberTurn(t5);
+  check(r5.asked === true && r5.stored === 0 && r5.error === null, '读不出来的回答等于没记住，也不算出错');
+
+  await clearCooldown();
+
+  /* A thrown request is reported, not raised into the turn. */
+  clock += 60000;
+  const t6 = await c.beginTurn('我养了一只猫');
+  c.finishTurn(t6, '好。');
+  unreachable = true;
+  const r6 = await c.rememberTurn(t6);
+  check(r6.asked === true && r6.stored === 0, '抽取失败时什么都不记');
+  check(r6.error instanceof Error && errors.length === 1, '失败被上报给调用方，而不是抛出去');
+  unreachable = false;
+
+  /* Turns the trigger refuses never reach the extractor at all. */
+  const before = calls.length;
+  clock += 60000;
+  const t7 = await c.beginTurn('今天天气不错');
+  c.finishTurn(t7, '嗯。');
+  const r7 = await c.rememberTurn(t7);
+  check(r7.asked === false && r7.reason === 'nothing', '与主人无关的一轮不问：' + r7.reason);
+  check(calls.length === before, '抽取器根本不会被调用');
+
+  /* Enough turns later, the cooldown expires on its own. */
+  await clearCooldown();
+  clock += 60000;
+  const t8 = await c.beginTurn('我也在学 Rust 了');
+  c.finishTurn(t8, '好。');
+  answer = '{"memories":[{"text":"主人在学 Rust"}]}';
+  const r8 = await c.rememberTurn(t8);
+  check(r8.asked === true && r8.reason === 'self', '冷却期满后会再问：' + r8.reason);
+  check(r8.stored === 1, '而且这次真的存下了一条：' + r8.stored);
+
+  /* /remember and /forget, the two things the owner controls directly. */
+  const mine = c.remember('主人养了一只猫');
+  check(mine && mine.origin === 'owner' && mine.active, '主人自己说的记忆标记为 owner 来源');
+  check(store.memorySources(c._store.db, mine.id).length === 0,
+    '直接说的记忆没有来源消息——来源就是主人自己');
+  check(c.remember('   ') === null, '拒绝空的 /remember');
+  const removed = c.forgetMemory(mine.id);
+  check(removed === 1 && !c.memories().some((m) => m.id === mine.id), '忘记之后它不在列表里');
+  check(c.forgetMemory('no-such-memory') === 0, '忘记不存在的记忆返回 0');
+  c.close();
+
+  /* With no extractor wired up at all — the default — the trigger still fires, and nothing is
+   * stored and nothing throws. This is what the tests of every other section are running with. */
+  const noExtractor = open('memory-no-extractor', { now: () => clock });
+  const n1 = await noExtractor.beginTurn('我住在杭州');
+  noExtractor.finishTurn(n1, '好。');
+  const nr = await noExtractor.rememberTurn(n1);
+  check(nr.asked === true && nr.stored === 0 && nr.error === null,
+    '没有配置抽取器时：问了，但什么都没记，也没出错');
+  check(noExtractor.memories().length === 0, '没有抽取器就不会有记忆');
+  check(noExtractor.remember('主人住在杭州') !== null, '但 /remember 仍然可用（不依赖模型）');
+  noExtractor.close();
 }
 
 /* ---------------------------------------------------------------- cleanup */
