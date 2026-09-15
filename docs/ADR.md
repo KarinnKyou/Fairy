@@ -772,6 +772,113 @@ happened and does not assert the name the model would now produce.
 
 ---
 
+## ADR-013 — Long-term memory: a triggered extractor, superseding rows, and a visible memory
+
+**Status:** Accepted
+
+**Context**
+
+Phase 3 is "structured, updatable memories linked to the messages they came from" (ROADMAP). Most of
+the shape was already fixed by earlier decisions and is not open here: memories live in the same
+SQLite database — that need is *why* SQLite was chosen (ADR-002) — they arrive as migration 5
+(ADR-004), they carry stable application ids and UTC timestamps and link to messages by foreign key
+(ADR-005), and the main process owns them (ADR-001). ADR-007's deferred table also settles a
+question that would otherwise dominate this phase: **no retrieval layer**, because "recent-N plus a
+profile covers Phase 1–3".
+
+Three things were genuinely open, and each had a cheaper option that this repository has already
+seen fail or has already measured:
+
+1. **Who writes a memory, and when.** Asking the model to extract after every turn doubles the
+   request count, and v0.2 measured what that costs: a second request on 10 of 15 turns in one real
+   conversation. But letting a local rule decide *what* is worth remembering repeats the mistake
+   ADR-012 documents — a lexical rule asked a semantic question, and got it wrong about half the
+   time in production.
+2. **What "updatable" means.** Overwriting a memory is simpler, and loses the fact that it changed.
+3. **Whether the user can see and correct memories.** Nothing in the phase description requires it.
+
+**Decision**
+
+**1. The local rule decides *when* to ask; the model decides *what* to remember.**
+
+A cheap local trigger runs on every turn and costs no request. Only when it fires is one extraction
+request made, and that request is what produces memories — it receives the turn's messages and must
+return, for each memory, which of those messages it came from. Nothing is invented locally: if the
+trigger fires and the model finds nothing worth keeping, nothing is stored.
+
+The trigger's thresholds are named constants in `app/memory.js`, exported, and tuned against
+`docs/eval` exactly as `app/topics.js`'s are — including the rule that a local judgement about a
+semantic question is only ever allowed to *propose*. A turn where the trigger does not fire costs
+nothing and stores nothing, which is a deliberate bias: a missed memory is a smaller loss than a
+wrong one.
+
+**2. Updating supersedes; it never overwrites.**
+
+A memory is a row with a status and a link to the row that replaced it. A correction appends a new
+memory and marks the old one superseded, so what she used to believe, and when that changed, stays
+readable.
+
+**`/forget`, by contrast, deletes.** A user asking her to forget something is asking for the text to
+be gone, not for it to be quietly flagged; keeping it would be a betrayal dressed as traceability.
+The two operations are deliberately different — automatic correction tombstones, an explicit
+instruction removes — and the distinction is stated here because it is exactly the kind of thing
+that gets silently unified later by someone tidying up.
+
+**3. `/memories`, `/forget` and `/remember` are in scope.**
+
+A wrong memory is worse than no memory: it is the program asserting a false fact about the user,
+which is the behaviour ADR-009 exists to forbid. So memories must be visible and removable by the
+person they are about, with their origin shown. `/remember` lets the user state one directly, with a
+source of "the owner said so" rather than a message it was inferred from. All three reuse the
+existing `.line` elements: no CSS, no layout change, same as the topic commands.
+
+**Consequences**
+
+- **The capability declaration must gain a memory entry.** `capabilities.js` declares `chat` and
+  `time` and mentions memory nowhere. ADR-009's rule — a capability that exists in the code must
+  appear in that list — applies the moment she can say "I remember you said…". The cross-check test
+  that enforces this is extended with it, so the declaration and the build cannot drift apart.
+- **Injection is a budgeted selection, not a search.** Active memories render beside the profile,
+  because they are facts about the owner; the section is capped, and ADR-008's warning about the
+  prompt budget applies. Which memories lose out when the cap bites is a question for `docs/eval`,
+  not for a comment.
+- **A new failure mode to measure: misattribution.** She can now be wrong in a way she could not be
+  before — not inventing a fact, but attaching a real memory to the wrong occasion, or stating as
+  something the owner said what was in fact inferred. Provenance in the prompt is the mitigation;
+  the evaluation set is how it gets checked, because ADR-010 names "did the memory extractor pick
+  the right fact" as a tuning problem rather than an assertion.
+- **The evaluation set grows a memory dimension**: a `docs/eval` entry of kind `memory`, recording
+  the facts that should have been extracted from each turn, replayed by the same harness that
+  already replays the topic conversations.
+- **The cost is real and bounded**: one extraction request per triggered turn, on top of ADR-012's
+  boundary request. Both are triggered rather than unconditional, and both are the price of
+  deciding instead of guessing.
+
+**Alternatives rejected**
+
+- *Extract on every turn*: doubles the measured cost of ADR-012's own request, for turns where
+  nothing memorable happened — which is most of them.
+- *Extract locally, without the model*: ADR-012 is the evidence that a lexical rule cannot answer a
+  semantic question. It proposed boundaries wrongly about half the time on the first real
+  transcript.
+- *Overwrite on update*: cheapest, and it destroys the only thing that makes a wrong memory
+  trustworthy — being able to see that it was corrected, and from what.
+- *Delete on update*: a superseded memory is evidence about the extractor, and the evaluation set
+  needs it. `/forget` remains available when the user wants something gone.
+- *Retrieval over memories now*: explicitly deferred by ADR-007's table, whose stated condition is
+  that recent-N plus a profile covers Phase 1–3. Revisit when volume makes that false.
+- *A memory panel or list UI*: the same reasoning as the topic panel in ADR-012 — three commands
+  cover it, and a panel is a visual design for a verified fullscreen layout.
+- *Free-text memories with no source links*: cheaper to write, and it removes the one property the
+  phase description explicitly asks for. Provenance is the feature.
+
+**Implementation order**, recorded because each step is verifiable on its own: migration 5 and the
+store layer with tests first; then the extraction path; then prompt injection with the budget; then
+the three commands; then the capability declaration and its cross-check; then the memory evaluation
+corpus.
+
+---
+
 ## Deferred decisions (with revisit triggers)
 
 Recorded so they are not silently forgotten. None of these should be built early.
@@ -805,3 +912,6 @@ Short list, to be checked before any structural change:
 8. Published artifacts never contain a real API key or a redistributed font.
 9. Topic membership and the active topic are decided in the main process; the renderer may only
    ask for a topic, switch to one, or name one (ADR-012).
+10. A memory is never overwritten. Corrections supersede and keep both rows; only an explicit
+    `/forget` removes one, because the user asking is different from the app correcting itself
+    (ADR-013).

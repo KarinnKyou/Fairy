@@ -10,15 +10,16 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 
 | | |
 | --- | --- |
-| Current release | **v0.1** (`0.1.0`), pre-release, tag `v0.1` |
-| Released | 2026-09-10 |
-| Artifact | `HDD-0.1.0.exe` (95.5 MB, portable, Windows x64) |
-| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.1 |
-| Phase in progress | **Phase 2 — topics**, implemented in the working tree, **not yet released** |
+| Current release | **v0.2** (`0.2.0`), pre-release, tag `v0.2` |
+| Released | 2026-09-14 |
+| Artifact | `HDD-0.2.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `DD3C433C…` |
+| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.2 |
+| Phase in progress | **Phase 3 — long-term memory**, decisions recorded in ADR-013, not started |
 | Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
 
-The previous release, `v0.01` (the "demo"), is kept as history: it showed the look, but
-before Phase 1 the app had no persistence and no real conversation state.
+The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
+per-turn prompt, an accumulating profile) but held one undifferentiated transcript. `v0.01` (the
+"demo") showed the look, before the app had any persistence at all.
 
 ---
 
@@ -65,7 +66,7 @@ a version is now a supported path.
 
 ---
 
-## Phase 2 — topics (in the tree, not yet released)
+## Phase 2 — topics (shipped as v0.2)
 
 **Goal:** the conversation stops being one undifferentiated transcript. Subjects are
 recognised as they happen, they can be switched between and searched, and switching changes
@@ -106,6 +107,12 @@ timestamps read the clock separately (which made the idle rule silently never fi
 injected clock). A third was found by the tests while adding the confirmation step: any message
 could retitle a topic, so a two-term laugh named one "哈哈哈" and locked it.
 
+**Released as `v0.2` on 2026-09-14.** The artifact passed all four packaging checks — no real API
+key inside, every module the app `require`s present in the asar (including `topics.js`, which
+would have died on startup if it were missing), no font bytes, and the three interface rules
+(mask, `pinBottom()`, font-weight override) still present. The published binary is the one those
+checks ran against: it was built once and not rebuilt at publish time.
+
 ---
 
 ## The remaining phases
@@ -115,8 +122,8 @@ order is the plan.
 
 | Phase | Version | Status | Scope (per ADR) | New tables (ADR-004) |
 | --- | --- | --- | --- | --- |
-| 2 | v0.2 | **in tree, unreleased** | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
-| 3 | v0.3 | not started | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
+| 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
+| 3 | v0.3 | **in design — ADR-013** | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
 | 4 | v0.4 | not started | Context assembly and projects; topics linked to projects | `projects`, context tables |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
@@ -128,6 +135,55 @@ order is the plan.
 Older phases stay open for revision: Phase 2's topic model was built before there were real
 conversations to build it on, so expect the shape of it to change now that there are some. The
 constants in `app/topics.js` are the part most likely to move — see the debts below.
+
+---
+
+## Phase 3 — long-term memory (in design)
+
+**Goal:** she remembers things about the owner across sessions, on purpose rather than by luck.
+Memories are structured and updatable, and **every one is linked to the messages it came from**,
+so a wrong memory can be traced back to what produced it.
+
+Four ADRs already fix most of the shape, so none of this is open for debate:
+
+| Already decided | Where |
+| --- | --- |
+| Same SQLite database — "structured, updatable memories" is the reason SQLite was chosen over JSON | ADR-002 |
+| Migration **5**, appended, never editing a shipped one | ADR-004 |
+| Stable application-generated ids, UTC epoch milliseconds, links to source messages are foreign keys | ADR-005 |
+| The main process owns them; the renderer only asks for what to draw | ADR-001 |
+| **No retrieval layer yet** — "Recent-N plus a profile covers Phase 1–3" | ADR-007 deferred table |
+| Watch the prompt budget as memory joins it | ADR-008 |
+
+Three further decisions were taken when the phase started, recorded in **ADR-013**:
+
+1. **A local rule decides *when* it is worth asking; the model decides *what* to remember.** The
+   same shape as the topic boundary (ADR-012), and for the same reason: v0.2 measured that a
+   second request on every turn is a real cost — 10 of 15 turns in one conversation — so the
+   cheap local rule carries the "is anything here worth keeping" question and the request is
+   spent only when it says yes.
+2. **Updating means superseding, not overwriting.** A corrected memory appends a new row and
+   marks the old one superseded. A memory is a claim about the owner, so being able to see that
+   it *changed*, and what it changed from, matters more than a tidy single row.
+3. **`/memories`, `/forget` and `/remember` are in scope.** A wrong memory is worse than no
+   memory — it is the program asserting a false fact about the user, which is exactly what
+   ADR-009 forbids her to do — so memories have to be visible and removable. Commands reuse the
+   existing `.line` elements, so this adds no CSS and no layout change.
+
+Two consequences follow from decisions already on the books, and both are part of the phase
+rather than optional polish:
+
+- **The capability declaration has to change.** `capabilities.js` currently declares `chat` and
+  `time`, and lists no memory capability at all. ADR-009's rule is that a capability which exists
+  in the code must appear in that list, so remembering across sessions needs an entry there and
+  an extension of the cross-check test that enforces it. Without that, the declaration and the
+  build drift apart silently — which is the entire reason ADR-009 exists.
+- **The evaluation set has to grow a memory dimension.** ADR-010 names "did the memory extractor
+  pick the right fact" as a behavioural tuning problem. The harness built in Phase 2 already
+  takes this shape: a `docs/eval` entry with a judgement per turn, replayed by the tests.
+
+The third real conversation already contains the request this phase answers — 「我想给这个软件再
+加点本事，让它能记住以前聊过的事情」 — kept in `docs/eval/topics-2026-09-14-run3.json`.
 
 ---
 
@@ -163,37 +219,47 @@ Not blockers, but they should not be forgotten.
 6. **Nothing evaluates reply *quality*.** ADR-010 defers this to a corpus built from real
    Phase 2 conversations. Until then, "the reply was bad" is diagnosed with
    `npm run inspect`, not measured.
-7. **The evaluation set is started, and it already paid for itself.** `docs/eval/topics-2026-09-14.json`
-   is one real conversation with a judgement recorded for every turn, and replaying it is what
-   disproved ADR-012 revision 0: a continuation and a change of subject both scored 0.000
-   coverage, so no threshold could have separated them. Its entries are data, replayed by
-   `conversation.test.cjs` §12 — adding the next case is appending a turn and a judgement. What
-   it does **not** cover is reply quality, and it is one conversation: it is a start, not a
+7. **The evaluation set exists and has already changed the design twice.** `docs/eval/` holds three
+   real conversations with a judgement recorded for every turn — 27 turns — and replaying them is
+   what disproved ADR-012 revision 0 (a continuation and a change of subject both scored 0.000
+   coverage, so no threshold could have separated them) and found the two turns revision 1 never
+   asked about. The entries are data, replayed by `conversation.test.cjs` §12, so adding the next
+   case is appending a turn and a judgement rather than writing an assertion. What it does **not**
+   cover is reply quality, and three transcripts is still a small sample: it is a start, not a
    corpus.
 8. **The confirmer works in both directions, and has been observed doing it.** A real conversation
    produced a topic named 「电影推荐」 — proof the request is made, answered, parsed and used — and
    a later one answered `same` on five proposals, every one of them correctly, including the two
    sentences that broke the original design. What is still unmeasured is its *quality over time*:
-   three transcripts is a small sample, and none of them was adversarial. Growing `docs/eval` is
-   how that gets settled.
+   none of the three transcripts was adversarial. Growing `docs/eval` is how that gets settled.
 9. **A boundary costs a request, and the reply waits for it.** One extra small call on every
-   proposed turn, plus its latency before the first token. Measured across both transcripts, that
-   is most turns where the subject drifts — 8 of 12 decisive turns after revision 2, against 6
-   before it. This withdraws revision 0's "no extra request" and it is the standing price of
-   ADR-012 revision 1. The levers if it proves annoying are `PROPOSE_COVERAGE` and
-   `MIN_SHARED_TERMS`: both raise the bar for asking, and both make silent misses more likely.
+   proposed turn, plus its latency before the first token. Measured across all three transcripts,
+   that is most turns where the subject drifts — 10 of 15 turns in the third one. This withdraws
+   revision 0's "no extra request" and it is the standing price of ADR-012 revision 1. The levers
+   if it proves annoying are `PROPOSE_COVERAGE` and `MIN_SHARED_TERMS`: both raise the bar for
+   asking, and both make silent misses more likely. **Phase 3 adds a second such request**, which
+   is why its extraction is triggered by a local rule rather than run on every turn.
 10. **The local constants are still guesses**, now twice corrected by real transcripts rather than
     by reasoning, and tuned for recall: `MIN_PROPOSAL_TERMS` 3, `MIN_SHARED_TERMS` 2,
-    `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. Two transcripts in
+    `PROPOSE_COVERAGE` 0.15, `IDLE_COVERAGE` 0.35, `IDLE_GAP_MS` 6 h. Three transcripts in
     `docs/eval` are the whole of the evidence behind them.
-11. **v0.2 is not released.** The code is in the tree and the gate is green, but no artifact has
-   been built, nothing is committed, and nothing is pushed. `release.ps1` needs the sandbox
-   escalation for `electron-builder` and for `git push`/`gh`, and pushing is a decision for the
-   owner of the repository rather than a step to take automatically.
+11. **The command surface has never been driven by hand in a real window.** Electron cannot start
+    in the environment this was developed in, so `/topics`, `/switch`, `/new`, `/rename`,
+    `/search` and `/help` are covered by jsdom and by a static cross-check that every IPC channel
+    the preload uses exists in the main process — not by a person clicking. `main.js`'s handlers
+    have never been exercised outside a real launch, which was also true of the 0.1.0 build.
+    Launching `HDD-0.2.0.exe` once and typing `/help` closes this, and would verify the packaged
+    data-directory branch in debt 3 at the same time.
 12. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
-   the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
-   they are verified by running them once. `--topic` was checked against a two-topic scratch
-   store, including that `--prompt` then describes only the topic in progress.
+    the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
+    they are verified by running them once. `--topic` was checked against a two-topic scratch
+    store, including that `--prompt` then describes only the topic in progress.
+13. **Phase scope lives in this repository, or it cannot be checked.** Every phase's scope is
+    defined by the ADRs here, and the code is cross-checked against them — which works only for
+    requirements that are written down here. A requirement that exists only outside this
+    repository cannot be verified against the build, and will surface as a surprise after a
+    release rather than as a failing test before one. Anything the project is expected to satisfy
+    belongs in `docs/`.
 
 ---
 
@@ -203,7 +269,14 @@ Not blockers, but they should not be forgotten.
 cd D:\Coding\HDD
 npm test                                   # the gate: bake + all four suites
 npm run app:start                          # in the running app: /topics, /search, /help
-.\release.ps1 -Version 0.2.0 -DryRun       # what the next release would do
+.\release.ps1 -Version 0.3.0 -DryRun       # what the next release would do
+```
+
+Re-verifying a published artifact without rebuilding it:
+
+```powershell
+cd D:\Coding\HDD
+.\release.ps1 -Version 0.2.0 -VerifyOnly   # re-runs the asar checks on app\dist
 ```
 
 `docs/COMMANDS.md` lists every command with the directory it must run from.
