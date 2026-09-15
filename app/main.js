@@ -319,6 +319,33 @@ ipcMain.handle('fairy:search', (_event, payload) => {
   return conv.search(p.query, { limit: p.limit, topicId: p.topicId });
 });
 
+/* Memories. A wrong memory is worse than no memory, so the owner can read and remove theirs
+ * (ADR-013); these three channels are the whole of that surface. `sourceCount` comes with each row
+ * because provenance that cannot be seen cannot be argued with. */
+ipcMain.handle('fairy:memories', () => {
+  if (!conv) return { memories: [], superseded: 0 };
+  const memories = conv.memories();
+  const all = conv.memories({ includeSuperseded: true });
+  return { memories, superseded: Math.max(0, all.length - memories.length) };
+});
+
+ipcMain.handle('fairy:memory-remember', (_event, payload) => {
+  if (!conv) return { memories: [], superseded: 0, stored: false };
+  const stored = Boolean(conv.remember(payload && payload.text));
+  const memories = conv.memories();
+  const all = conv.memories({ includeSuperseded: true });
+  return { memories, superseded: Math.max(0, all.length - memories.length), stored };
+});
+
+ipcMain.handle('fairy:memory-forget', (_event, payload) => {
+  if (!conv) return { memories: [], superseded: 0, removed: 0 };
+  const id = payload && payload.id;
+  const removed = id ? conv.forgetMemory(id) : 0;
+  const memories = conv.memories();
+  const all = conv.memories({ includeSuperseded: true });
+  return { memories, superseded: Math.max(0, all.length - memories.length), removed };
+});
+
 /* IPC: streaming chat. The payload is one user message, not a whole history: the main
  * process owns the transcript (ADR-001). */
 ipcMain.on('fairy:ask', async (event, payload) => {

@@ -763,15 +763,20 @@ function getMemory(db, id) {
 }
 
 /* Active memories, newest first. `includeSuperseded` is for inspection and for the evaluation set;
- * the prompt only ever sees active ones. */
+ * the prompt only ever sees active ones.
+ *
+ * `sourceCount` is carried on every row because provenance is only useful if it is visible: a
+ * memory that says nothing about where it came from cannot be argued with. */
 function listMemories(db, options) {
   const opts = options || {};
   const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
   const offset = Math.max(0, opts.offset == null ? 0 : Number(opts.offset));
-  const sql = opts.includeSuperseded
-    ? 'SELECT * FROM memories ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?'
-    : 'SELECT * FROM memories WHERE superseded_by IS NULL ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
-  return db.prepare(sql).all(limit, offset).map(toMemory);
+  const where = opts.includeSuperseded ? '' : ' WHERE m.superseded_by IS NULL';
+  return db.prepare(
+    `SELECT m.*, (SELECT COUNT(*) FROM memory_sources s WHERE s.memory_id = m.id) AS source_count
+       FROM memories m` + where + `
+      ORDER BY m.created_at DESC, m.id DESC LIMIT ? OFFSET ?`
+  ).all(limit, offset).map(toMemory);
 }
 
 /*
@@ -902,6 +907,9 @@ function toMemory(row) {
     supersededBy: row.superseded_by == null ? null : row.superseded_by,
     supersededAt: row.superseded_at == null ? null : Number(row.superseded_at),
     active: row.superseded_by == null,
+    /* Null rather than 0 when the query did not ask for it, so "no sources" and "not counted"
+     * cannot be confused by a caller that only wants to display it. */
+    sourceCount: row.source_count == null ? null : Number(row.source_count),
   };
 }
 

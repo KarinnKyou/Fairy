@@ -428,6 +428,12 @@ function fresh(name) {
     '来源按说出的顺序返回');
   check(store.memoriesFromMessage(s.db, m1.id).length === 1, '反向也能查：这条消息产生了 1 条记忆');
 
+  /* Provenance that cannot be seen cannot be argued with, so the listing carries the count. */
+  const listed = store.listMemories(s.db);
+  check(listed[0].sourceCount === 2, '列表带回来源条数：' + listed[0].sourceCount);
+  check(store.getMemory(s.db, a.id).sourceCount === null,
+    '单条读取没有统计它，返回 null 而不是假装是 0');
+
   /* Provenance is enforced, not hoped for. */
   let noText = null;
   try { store.createMemory(s.db, { text: '   ', sourceMessageIds: [m3.id] }); } catch (e) { noText = e.message; }

@@ -308,6 +308,9 @@
     '/new [标题]        新开一个话题并切过去',
     '/rename <标题>     给当前话题改名',
     '/search <关键词>   在所有话题里搜索原文',
+    '/memories          列出她记得的关于主人的事',
+    '/remember <一句话> 让主人直接指定一条记忆',
+    '/forget <序号|id>  删掉一条记忆（连同它取代过的旧版本）',
     '/help              显示这份说明',
   ];
 
@@ -322,18 +325,46 @@
     return { name: body.slice(0, sp).toLowerCase(), arg: body.slice(sp + 1).trim() };
   }
 
-  /* Accepts the 1-based number /topics prints, or an unambiguous id prefix. */
-  function resolveTopicArg(state, arg) {
-    if (!state || !state.topics) return null;
-    if (/^\d+$/.test(arg)) return state.topics[Number(arg) - 1] || null;
+  /* Accepts the 1-based number a listing printed, or an unambiguous id prefix. Shared by /switch
+     and /forget so the two cannot disagree about what "2" means. */
+  function pickNumberOrId(list, arg) {
+    if (!list || !list.length || !arg) return null;
+    if (/^\d+$/.test(arg)) return list[Number(arg) - 1] || null;
     var hit = null;
-    for (var i = 0; i < state.topics.length; i++) {
-      if (state.topics[i].id.indexOf(arg) === 0) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id.indexOf(arg) === 0) {
         if (hit) return null;   /* ambiguous prefix: refuse rather than guess */
-        hit = state.topics[i];
+        hit = list[i];
       }
     }
     return hit;
+  }
+
+  function resolveTopicArg(state, arg) {
+    return pickNumberOrId(state && state.topics, arg);
+  }
+
+  /* One memory as a printed line. Provenance is shown because a memory nobody can trace is a
+     memory nobody can argue with (ADR-013). */
+  function memoryLine(memory, index) {
+    var origin = memory.origin === 'owner'
+      ? '主人自己说的'
+      : '从对话里推断的' + (memory.sourceCount ? '，来自 ' + memory.sourceCount + ' 条消息' : '');
+    return (index + 1) + '. ' + memory.text + '  （' + origin + '）';
+  }
+
+  function printMemories(state) {
+    var list = (state && state.memories) || [];
+    if (!list.length) {
+      sysLine('还没有记住任何事。');
+    } else {
+      sysLine('关于主人的记忆（' + list.length + ' 条）：');
+      for (var i = 0; i < list.length; i++) sysLine(memoryLine(list[i], i));
+      sysLine('（/forget <序号> 删掉一条，/remember <一句话> 直接指定一条）');
+    }
+    if (state && state.superseded) {
+      sysLine('另有 ' + state.superseded + ' 条已经被更新的说法取代，不再使用。');
+    }
   }
 
   function runCommand(cmd, raw) {
@@ -410,6 +441,35 @@
           sysLine('  [' + (m.topicTitle || '未命名话题') + '] ' + who + '：' + cleanText(m.content));
         }
         done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'memories') {
+      return api.listMemories().then(function (state) {
+        printMemories(state);
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'remember') {
+      if (!cmd.arg) { sysLine('用法：/remember <一句话>'); return done(); }
+      return api.rememberMemory(cmd.arg).then(function (state) {
+        if (!state || !state.stored) { sysLine('这句话没能记下来。'); return done(); }
+        sysLine('记住了：「' + cmd.arg + '」');
+        printMemories(state);
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'forget') {
+      return api.listMemories().then(function (state) {
+        var target = pickNumberOrId(state && state.memories, cmd.arg);
+        if (!target) { sysLine('没有这个序号或 id，先看 /memories。'); return done(); }
+        return api.forgetMemory(target.id).then(function (next) {
+          sysLine('已经忘掉：「' + target.text + '」');
+          printMemories(next);
+          done();
+        });
       }).catch(fail);
     }
 

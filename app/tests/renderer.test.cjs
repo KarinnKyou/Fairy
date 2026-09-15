@@ -45,6 +45,17 @@ const historyByTopic = {
 const switchCalls = [];
 const newTopicCalls = [];
 const searchCalls = [];
+const forgetCalls = [];
+const rememberCalls = [];
+
+/* Memory state the main process would report: two active beliefs, one already superseded. */
+let memoryState = {
+  memories: [
+    { id: 'mem-1', text: '主人住在杭州', origin: 'owner', sourceCount: 0 },
+    { id: 'mem-2', text: '主人在做 HDD 终端项目', origin: 'inferred', sourceCount: 2 },
+  ],
+  superseded: 1,
+};
 
 const fakeApi = {
   getConfig: () => Promise.resolve({ configured: true, model: 'deepseek-v4-flash' }),
@@ -79,6 +90,23 @@ const fakeApi = {
     return Promise.resolve([
       { id: 'a1', role: 'user', content: '我在做 HDD 这个终端项目', topicId: 'topic-1', topicTitle: '终端项目' },
     ]);
+  },
+  listMemories: () => Promise.resolve(memoryState),
+  rememberMemory: (text) => {
+    rememberCalls.push(text);
+    memoryState = {
+      memories: [{ id: 'mem-9', text, origin: 'owner', sourceCount: 0 }].concat(memoryState.memories),
+      superseded: memoryState.superseded,
+    };
+    return Promise.resolve(Object.assign({ stored: true }, memoryState));
+  },
+  forgetMemory: (id) => {
+    forgetCalls.push(id);
+    memoryState = {
+      memories: memoryState.memories.filter((m) => m.id !== id),
+      superseded: memoryState.superseded,
+    };
+    return Promise.resolve(Object.assign({ removed: 1 }, memoryState));
   },
 };
 
@@ -322,6 +350,55 @@ async function emit(type, text) {
     await waitFor(() => lines().some((t) => t.includes('没有这个命令')), 1000, '未知命令提示');
     if (askCalls.length !== askBefore) throw new Error('未知命令被当成对话发给了模型');
     console.log('PASS 未知命令给出提示（不会悄悄当成聊天内容）');
+
+    /* Memories: the owner must be able to read and remove what she believes about them. */
+    await type('/memories');
+    await waitFor(() => lines().some((t) => t.indexOf('关于主人的记忆') === 0), 1000, '/memories 列表');
+    if (!lines().some((t) => t === '关于主人的记忆（2 条）：')) throw new Error('未报告条数');
+    if (!lines().some((t) => t.indexOf('主人住在杭州') >= 0 && t.indexOf('主人自己说的') >= 0)) {
+      throw new Error('未标出「主人自己说的」这条的来源');
+    }
+    if (!lines().some((t) => t.indexOf('主人在做 HDD 终端项目') >= 0 && t.indexOf('来自 2 条消息') >= 0)) {
+      throw new Error('推断出来的记忆未标出来源消息数');
+    }
+    if (!lines().some((t) => t.indexOf('另有 1 条已经被更新的说法取代') >= 0)) {
+      throw new Error('未说明有被取代的旧记忆');
+    }
+    if (askCalls.length !== askBefore) throw new Error('/memories 被当成了对话');
+    console.log('PASS /memories 列出记忆并标出来源与已取代的条数');
+
+    await type('/forget 1');
+    await waitFor(() => forgetCalls.length === 1, 1000, 'forgetMemory 调用');
+    if (forgetCalls[0] !== 'mem-1') throw new Error('按序号删除选错了记忆：' + forgetCalls[0]);
+    await waitFor(() => lines().some((t) => t.indexOf('已经忘掉') === 0), 1000, '忘记确认');
+    if (!lines().some((t) => t.indexOf('已经忘掉：「主人住在杭州」') === 0)) {
+      throw new Error('未说明忘掉了哪一条');
+    }
+    await waitFor(() => lines().some((t) => t === '关于主人的记忆（1 条）：'), 1000, '删除后重新列出');
+    console.log('PASS /forget 删除指定记忆，并重新列出剩下的');
+
+    await type('/remember 我对花生过敏');
+    await waitFor(() => rememberCalls.length === 1, 1000, 'rememberMemory 调用');
+    if (rememberCalls[0] !== '我对花生过敏') throw new Error('记忆文本未传给主进程：' + rememberCalls[0]);
+    await waitFor(() => lines().some((t) => t.indexOf('记住了：「我对花生过敏」') === 0), 1000, '记住确认');
+    if (!lines().some((t) => t === '关于主人的记忆（2 条）：')) throw new Error('未重新列出记忆');
+    console.log('PASS /remember 直接指定一条记忆（来源标为主人自己说的）');
+
+    await type('/forget 99');
+    await waitFor(() => lines().some((t) => t === '没有这个序号或 id，先看 /memories。'), 1000, '越界序号提示');
+    if (forgetCalls.length !== 1) throw new Error('越界序号不应触发删除');
+    console.log('PASS /forget 越界序号给出提示且什么都没删');
+
+    await type('/remember');
+    await waitFor(() => lines().some((t) => t === '用法：/remember <一句话>'), 1000, '缺参数提示');
+    if (rememberCalls.length !== 1) throw new Error('缺参数时不应写入记忆');
+    console.log('PASS /remember 缺参数时只给用法，不写入');
+
+    /* And the empty case, which is what a new user sees first. */
+    memoryState = { memories: [], superseded: 0 };
+    await type('/memories');
+    await waitFor(() => lines().some((t) => t === '还没有记住任何事。'), 1000, '空记忆列表');
+    console.log('PASS /memories 没有记忆时说明这一点');
 
     /* Commands must release the input: a command is not a turn. */
     await type('普通的一句话');
