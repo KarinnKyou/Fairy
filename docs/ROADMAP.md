@@ -283,17 +283,28 @@ Not blockers, but they should not be forgotten.
     person reads as one subject. One conversation is not enough to change a prompt on, so it is
     recorded in `docs/eval/topics-2026-09-14-run3.json` under `liveMeasurement` until there is
     more of it.
-17. **The extractor can return overlapping facts in one answer.** A live run on one turn produced
-    both 「主人在做 HDD 终端项目」 and 「主人的 HDD 终端项目使用内置的 node:sqlite 作为数据库」 —
-    the first contained in the second. The prompt forbids repeating an *existing* memory but says
-    nothing about two entries in one answer containing each other. Cosmetic rather than harmful
-    (both are true, and `/memories` shows both), but it is the kind of noise that grows.
-18. **Two cosmetic naming gaps, both observed live.** The first topic of a store keeps a truncated
-    sentence as its title, because the `first` path never asks the model and a substantive first
-    message locks the derived title immediately — so the v0.2 naming fix only helps a topic that
-    later receives a proposal. And the model can carry the previous subject into a new name:
-    「今天天气不错」 became 「杭州天气闲聊」, because the previous topic had been about where the
-    owner lives. `/rename` covers both; neither is worth a prompt change on this evidence.
+17. **Two facts about the same thing in one answer — the guard is in, the behaviour persists.** A
+    live run on one turn produced 「主人在做 HDD 终端项目」 *and* 「主人的 HDD 终端项目使用内置的
+    node:sqlite 作为数据库」. The prompt now forbids entries that contain each other, and a second
+    live run produced the same pair: not because the instruction was ignored, but because these two
+    are **not** containment — one states the project exists, the other states its database, and the
+    second only *implies* the first. Whether that is worth a stronger rule (one fact per entity per
+    answer, or one per turn) is a real question, and both cost recall, so it stays where the
+    evidence is: harmless and slightly repetitive, both true, both visible in `/memories`.
+18. **The confirmer over-splits short follow-ups, now seen twice.** Replaying the third real
+    conversation live gave the same three same→new disagreements both times — the three short
+    capability questions became three topics (「助手能力介绍」「表情识别请求」「对话保存为文件」)
+    where the recorded judgement keeps one. Two independent runs pointing the same way is stronger
+    evidence than one, but it is still one conversation, so the prompt is unchanged until there is
+    more of it.
+19. **Two cosmetic naming gaps, one now fixed.** The first topic of a store used to keep a truncated
+    sentence as its title, because a substantive first message locked the derived name — and the
+    model is only asked when a boundary is proposed, so it could never replace it. A derived title is
+    now always provisional: the same live run titled that topic 「HDD 终端项目数据库」. What remains
+    is a topic in which no boundary is ever proposed: it keeps the derived name, which is at least
+    on-topic because the conversation never left the subject. The other gap — a new topic's name
+    carrying the previous subject over (「今天天气不错」 became 「杭州天气闲聊」) — is fixed by an
+    explicit instruction and was verified gone in the next run.
 
 ---
 

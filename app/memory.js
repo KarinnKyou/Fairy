@@ -119,6 +119,21 @@ const MAX_PER_TURN = 5;
 const MAX_TEXT_CHARS = 200;
 
 /*
+ * A memory is a phrase, not a sentence, so a trailing full stop comes off.
+ *
+ * The model writes 「主人住在杭州。」 because the prompt asks for a sentence, and that period then
+ * sits inside a bullet in `/memories` and in the prompt: 「1. 主人住在杭州。  （从对话里推断的）」
+ * and 「- 主人住在杭州。」. Cosmetic, but it is the kind of thing that reads as sloppy in the one
+ * place the owner inspects what she believes. Applied at every entry point — extracted answers and
+ * `/remember` alike — so the two cannot disagree about what a stored memory looks like.
+ */
+const TRAILING_PUNCT_RE = /[\s。．.！!？?；;、，,]+$/;
+
+function normalizeText(text) {
+  return String(text == null ? '' : text).trim().replace(TRAILING_PUNCT_RE, '').trim();
+}
+
+/*
  * Read the extractor's answer.
  *
  * This lives here rather than in `main.js` on purpose. `main.js` cannot be loaded outside Electron,
@@ -149,7 +164,7 @@ function parseExtraction(raw) {
   for (const entry of parsed.memories) {
     if (out.length >= MAX_PER_TURN) break;
     if (!entry || typeof entry !== 'object') continue;
-    const text = String(entry.text == null ? '' : entry.text).trim();
+    const text = normalizeText(entry.text);
     if (!text || text.length > MAX_TEXT_CHARS) continue;
     const replaces = typeof entry.replaces === 'string' && entry.replaces.trim()
       ? entry.replaces.trim()
@@ -163,6 +178,7 @@ module.exports = {
   shouldExtract,
   isSelfReference,
   parseExtraction,
+  normalizeText,
   MIN_SELF_TERMS,
   MIN_CORRECTION_TERMS,
   COOLDOWN_TURNS,

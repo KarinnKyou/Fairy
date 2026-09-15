@@ -478,7 +478,11 @@ function stubConfirmer(newOn, options) {
   c.finishTurn(t1, '主人，我记住了。');
   const first = c.activeTopic();
   check(first && /终端项目/.test(first.title), '话题标题取自开头的消息：' + (first && first.title));
-  check(first.titleLocked === true, '开头消息够长时标题直接定稿');
+  /* Not locked: a title derived from a message is a placeholder even when the message behind it was
+   * substantial, so that the model can replace it. Locking it here is what left the first topic of
+   * every store named after a truncated sentence — the model is only asked when a boundary is
+   * proposed, and a locked title cannot be replaced by its answer. */
+  check(first.titleLocked === false, '开头消息够长时标题仍是暂定的（等模型来命名）：' + first.titleLocked);
 
   clock += 60000;
   const t2 = await c.beginTurn('那个终端项目的数据库部分做得怎么样了');
@@ -961,6 +965,16 @@ function stubConfirmer(newOn, options) {
   check(fenced && fenced.length === 1 && fenced[0].text === '主人住在杭州',
     '模型把 JSON 包在散文和代码块里也能读出来');
 
+  /* A memory is a phrase, not a sentence. The model writes a full stop because the prompt asks for
+   * one, and it then sits inside a bullet in /memories and in the prompt. */
+  const stopped = parse('{"memories":[{"text":"主人住在杭州。"},{"text":"主人在学 Rust！"}]}');
+  check(stopped[0].text === '主人住在杭州' && stopped[1].text === '主人在学 Rust',
+    '去掉结尾的句号/叹号：' + JSON.stringify(stopped.map((m) => m.text)));
+  check(memory.normalizeText('  主人住在杭州； ') === '主人住在杭州', 'normalizeText 同时去掉空白与结尾标点');
+  check(memory.normalizeText('。') === '' && memory.normalizeText(null) === '', '只有标点或没有内容时得到空串');
+  check(memory.normalizeText('主人从 2023 年开始学 Rust') === '主人从 2023 年开始学 Rust',
+    '句中标点不动（只处理结尾）');
+
   const withReplaces = parse('{"memories":[{"text":"主人住在上海","replaces":"mem-1"}]}');
   check(withReplaces && withReplaces[0].replaces === 'mem-1', '读得出它要取代哪一条记忆');
 
@@ -1257,6 +1271,10 @@ function stubConfirmer(newOn, options) {
     assistantText: '好的',
   });
   check(ep.user.indexOf('mem-1 :: 主人住在杭州') >= 0, '把已相信的记忆连同 id 一起给出，好让它认出「这是更新」');
+  check(/不要互相包含/.test(ep.system) && /只给更具体的那一条/.test(ep.system),
+    '禁止同一轮里给出互相包含的条目（实测曾同时给出「主人在做 HDD 终端项目」和它的更具体版本）');
+  check(/不要把之前话题里的人、地点或事情混进名字里/.test(bp.system),
+    '要求新话题的名字只来自新消息（实测「今天天气不错」被命名成「杭州天气闲聊」，因为上一话题在聊住处）');
   check(ep.user.indexOf('主人：我搬到上海了') >= 0 && ep.user.indexOf('你：好的') >= 0,
     '抽取问题里带着这一轮的两条消息');
   /* The rule that came from watching the first memory the app ever stored. */
@@ -1318,6 +1336,35 @@ function stubConfirmer(newOn, options) {
     '依赖图确实走到了 Phase 2/3 新加的模块（否则这个检查是空的）：' + seen.size + ' 个模块');
   check(listed.has('preload.cjs') && listed.has('config.json'),
     'build.files 仍然带着 Electron 直接加载、不在 require 图里的那两个文件');
+}
+
+/* ---------------------------------------------------------------- 11c. the first topic of a store
+ * A topic opened by a substantive message used to lock its own derived title on creation, so the
+ * model could never replace it — and the first topic of every store was therefore titled after a
+ * truncated sentence. It must now be replaceable by a model name, and must not churn afterwards. */
+{
+  let clock = 1_700_000_000_000;
+  const confirmer = stubConfirmer([], { keptTitle: 'HDD 终端项目' });
+  const c = open('first-topic-naming', { now: () => clock, confirmBoundary: confirmer });
+
+  const t1 = await c.beginTurn('我在做 HDD 这个终端项目，数据库用的是内置的 node:sqlite');
+  c.finishTurn(t1, '主人，我记住了。');
+  check(c.activeTopic().titleLocked === false, '开题消息很长，但标题仍是暂定的');
+  check(/^我在做 HDD/.test(c.activeTopic().title), '暂定名暂时取自那句话：' + c.activeTopic().title);
+
+  clock += 60000;
+  const t2 = await c.beginTurn('这个项目我还想加个搜索');
+  c.finishTurn(t2, '好。');
+  check(confirmer.calls.length === 1, '第二条提议了一次：' + confirmer.calls.length);
+  check(c.activeTopic().title === 'HDD 终端项目',
+    '模型在一次确认里把它命名成名词短语：' + c.activeTopic().title);
+  check(c.activeTopic().titleLocked === true, '命名之后定稿');
+
+  clock += 60000;
+  const t3 = await c.beginTurn('再随便聊两句这个项目别的方面，看看标题会不会被改');
+  c.finishTurn(t3, '好。');
+  check(c.activeTopic().title === 'HDD 终端项目', '之后的消息不再改名：' + c.activeTopic().title);
+  c.close();
 }
 
 /* ---------------------------------------------------------------- cleanup */

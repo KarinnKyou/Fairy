@@ -447,21 +447,48 @@ function retitleTopic(db, id, title) {
 }
 
 /*
+ * Does the owner ever say anything substantial in this topic?
+ *
+ * Only messages from the owner count. Her replies are full sentences even when the message they
+ * answer is a greeting — the reply to 「你好」 is 「主人好。有什么事？」, four content terms — so
+ * counting them made every greeting topic look like a real conversation and stopped the greeting
+ * from being absorbed. What raises a subject is what the owner says, not what she answers.
+ *
+ * This is a different question from whether the title is final, and conflating the two caused a
+ * bug: the title's state was being used to decide whether a topic could be absorbed, so a topic
+ * that merely held a real conversation would have become absorbable the moment its derived title
+ * stopped being locked.
+ *
+ * The scan is bounded to the newest few messages: a topic whose last ten are all content-free is
+ * not a case worth paying an unbounded query for on every turn.
+ */
+function topicHasSubstance(db, topicId, options) {
+  const opts = options || {};
+  const limit = clamp(opts.scan == null ? 10 : Number(opts.scan), 1, 1000);
+  const rows = db.prepare(
+    "SELECT content FROM messages WHERE topic_id = ? AND role = 'user' " +
+    'ORDER BY created_at DESC, id DESC LIMIT ?'
+  ).all(String(topicId), limit);
+  return rows.some((r) => topics.contentTerms(r.content).length >= topics.MIN_PROPOSAL_TERMS);
+}
+
+/*
  * Move every message from one topic into another and delete the emptied one.
  *
- * Used when a confirmation opens a new topic and the topic being left behind is still
- * provisional — typically it holds nothing but a greeting ("你好", "在吗") that was never
- * enough to name a subject. Absorbing it keeps the greeting with the conversation it opened,
- * instead of accumulating one nameless topic per sitting.
+ * Used when a confirmation opens a new topic and the topic being left behind never held a subject —
+ * typically nothing but a greeting ("你好", "在吗"). Absorbing it keeps the greeting with the
+ * conversation it opened, instead of accumulating one nameless topic per sitting.
  *
- * Refuses to absorb a locked topic: that is a subject the user has seen named, and silently
- * merging it would be the kind of data change this project does not do behind anyone's back.
+ * Two refusals, for two different reasons: a locked title is a name the user has seen and may have
+ * chosen, and a topic with substance held a real conversation. Silently merging either would be the
+ * kind of data change this project does not do behind anyone's back.
  */
 function absorbTopic(db, fromId, intoId) {
   const from = getTopic(db, fromId);
   const into = getTopic(db, intoId);
   if (!from || !into || from.id === into.id) return null;
   if (from.titleLocked) return null;
+  if (topicHasSubstance(db, from.id)) return null;
 
   db.exec('BEGIN');
   try {
@@ -941,6 +968,7 @@ module.exports = {
   renameTopic,
   retitleTopic,
   absorbTopic,
+  topicHasSubstance,
   touchTopic,
   countTopics,
   getCurrentTopic,

@@ -230,6 +230,9 @@ function openConversation(options) {
     const created = store.createTopic(s.db, {
       title: clean || topics.FALLBACK_TITLE,
       createdAt: now(),
+      /* An explicit title is the owner's own words, so it is final from the start; the fallback is
+       * a placeholder waiting to be replaced by the first message in the topic. */
+      titleLocked: Boolean(clean),
     });
     store.setCurrentTopic(s.db, created.id);
     return created;
@@ -263,13 +266,27 @@ function openConversation(options) {
     return topics.contentTerms(clean).length ? clean : null;
   }
 
-  /* Whether a message carries enough content to name a subject. Used both when a topic is
-   * created and when a provisional title is replaced, so the two rules cannot drift: a message
-   * that could not have named the topic in the first place must not rename it later either.
-   * Without this a two-term laugh ("哈哈哈") became the permanent name of a topic, and because
-   * naming locks the title it also blocked the greeting from being absorbed afterwards. */
+  /* Whether a message carries enough content to name a subject. A message that could not have named
+   * the topic in the first place must not rename it later either: without this a two-term laugh
+   * ("哈哈哈") became the permanent name of a topic. */
   function couldNameTopic(text) {
     return topics.contentTerms(text).length >= topics.MIN_PROPOSAL_TERMS;
+  }
+
+  /*
+   * Name a topic that is still carrying a name derived from a message rather than from the model.
+   *
+   * Only for a topic that has not yet held anything substantive — in practice one opened by a
+   * greeting, where the next real message is the first thing worth naming it after. A topic whose
+   * opening message was already substantive keeps the name it has: renaming it on every later
+   * message would make the title churn, which is worse than a truncated one, and the model renames
+   * it on the first boundary proposal anyway (see the `kept` path below).
+   */
+  function nameIfNameless(topic, text) {
+    if (topic.titleLocked) return;
+    if (store.topicHasSubstance(s.db, topic.id)) return;
+    if (!couldNameTopic(text)) return;
+    store.retitleTopic(s.db, topic.id, topics.titleFromText(text));
   }
 
   /*
@@ -292,9 +309,11 @@ function openConversation(options) {
       const created = store.createTopic(s.db, {
         title: topics.titleFromText(text),
         createdAt: now(),
-        /* A message too thin to name a subject leaves the title open, so the greeting a session
-         * opens with does not become its permanent name. */
-        titleLocked: couldNameTopic(text),
+        /* Never locked here. A title derived from a message is a placeholder, even when the message
+         * behind it was substantial: locking it is what left the first topic of every store named
+         * after a truncated sentence, since the model is only ever asked when a boundary is
+         * proposed and a locked title cannot be replaced by its answer. */
+        titleLocked: false,
       });
       store.setCurrentTopic(s.db, created.id);
       return { topic: created, reason: 'first', confirmed: null };
@@ -348,9 +367,7 @@ function openConversation(options) {
       };
     }
 
-    if (!current.titleLocked && couldNameTopic(text)) {
-      store.retitleTopic(s.db, current.id, topics.titleFromText(text));
-    }
+    nameIfNameless(current, text);
     return {
       topic: store.getTopic(s.db, current.id) || current,
       reason: proposal.reason,
@@ -417,10 +434,12 @@ function openConversation(options) {
   }
 
   /* The owner stating a fact about themselves. Deliberately sourceless: it was not inferred from
-   * any message, and attaching one would make the provenance say something untrue. */
+   * any message, and attaching one would make the provenance say something untrue.
+   * Normalised through the same rules as an extracted memory, so typing a full stop does not make a
+   * stored memory look different from one she inferred. */
   function remember(text) {
     if (!available) return null;
-    const clean = String(text == null ? '' : text).trim();
+    const clean = memory.normalizeText(text);
     if (!clean) return null;
     return store.createMemory(s.db, { text: clean, origin: 'owner', createdAt: now() });
   }

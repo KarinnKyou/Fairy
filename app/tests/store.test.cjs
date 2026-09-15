@@ -390,10 +390,25 @@ function fresh(name) {
   check(store.getTopic(s.db, greeting.id) === null, '空掉的暂定话题已删除');
   check(store.countMessages(s.db, { topicId: subject.id }) === 3, '消息全部归入目标话题');
   check(store.countMessages(s.db) === 3, '总条数不变（只是换了个话题）');
-  check(store.absorbTopic(s.db, subject.id, subject.id) === null, '拒绝把话题并进自己');
-  check(store.absorbTopic(s.db, final.id, subject.id) === null,
-    '拒绝吞并一个已定稿的话题（那是用户看得见的名字）');
-  check(store.getTopic(s.db, final.id) !== null, '被拒绝后原话题仍在');
+  check(store.absorbTopic(s.db, subject.id, subject.id) === null, '拒绝把话题并进自己');  /* "Substance" means the owner said something with content — not that she replied at length.
+   * Counting her replies made every greeting topic look like a real conversation, because the reply
+   * to 「你好」 is 「主人好。有什么事？」, which carries four content terms. */
+  const greetingOnly = store.createTopic(s.db, { title: '你好' });
+  store.appendMessage(s.db, { role: 'user', content: '你好', topicId: greetingOnly.id, createdAt: 5000 });
+  store.appendMessage(s.db, { role: 'assistant', content: '主人好。有什么事？', topicId: greetingOnly.id, createdAt: 5001 });
+  check(store.topicHasSubstance(s.db, greetingOnly.id) === false,
+    '只有一个招呼（哪怕她回了整整一句）时不算有主题内容');
+  store.appendMessage(s.db, { role: 'user', content: '我在做 HDD 这个终端项目', topicId: greetingOnly.id, createdAt: 5002 });
+  check(store.topicHasSubstance(s.db, greetingOnly.id) === true, '主人自己说了有内容的话才算有');
+  check(store.topicHasSubstance(s.db, 'no-such-topic') === false, '不存在的话题返回 false 而不是抛错');
+
+  /* And substance — not the title's state — is what forbids absorbing a topic. */
+  const substantial = store.createTopic(s.db, { title: '真实话题' });
+  store.appendMessage(s.db, { role: 'user', content: '我在做 HDD 这个终端项目', topicId: substantial.id, createdAt: 6000 });
+  check(substantial.titleLocked === false, '这个测试用的话题标题还没定稿（否则拒绝的理由就不是内容了）');
+  check(store.absorbTopic(s.db, substantial.id, subject.id) === null,
+    '拒绝吞并一个主人真的聊过的话题，即使它的标题还没定稿');
+  check(store.getTopic(s.db, substantial.id) !== null, '被拒绝后那个话题还在');
   store.close(s);
 }
 
