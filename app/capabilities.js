@@ -31,10 +31,17 @@
  *
  * A capability that exists in the code must appear here, and one that appears here must
  * exist in the code; the cross-checks in tests/conversation.test.cjs compare this list
- * against main.js and the page CSP, so the two cannot drift apart silently. */
+ * against main.js, the assembled prompt and the page CSP, so the two cannot drift apart
+ * silently. That is the check that fails if the memory declaration and the memory
+ * machinery ever stop agreeing (ADR-013). */
 const CAN_DO = [
   { id: 'chat', text: '和主人进行文字对话' },
   { id: 'time', text: '知道当前的日期与时间' },
+  /* Phase 3. Declared because the code really does it: memories are stored, superseded and
+   * injected every turn (ADR-013). The wording describes the ability rather than its quality —
+   * "some of what you said", not "everything" — because a memory can be wrong, and the persona's
+   * honesty rule is what stops her asserting a doubtful one as fact. */
+  { id: 'memory', text: '记得主人以前说过的一些事，并在之后的对话里用上' },
 ];
 
 /* The absences, recorded but deliberately NOT rendered — see the header. They are kept for

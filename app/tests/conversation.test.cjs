@@ -300,6 +300,25 @@ function open(name, extra) {
   check(!caps.ids(caps.CAN_DO).includes('network'),
     '未把联网声明为能力（她不能替主人上网查东西）');
 
+  /* Phase 3's cross-check (ADR-013). The declaration and the machinery have to agree in both
+   * directions: declaring a memory she does not have is a false claim, and having one that is not
+   * declared is exactly the silent drift ADR-009 exists to prevent.
+   *
+   * The code side is checked by asking the prompt builder to assemble one, not by grepping for a
+   * function name — a source-text match would keep passing after the injection stopped being
+   * called. */
+  const memoryDeclared = caps.ids(caps.CAN_DO).includes('memory');
+  const withMemory = conv.buildSystemPrompt(real.PERSONA, null, Date.now(), [{ text: '主人住在杭州' }]);
+  const promptCarriesMemory = /# 关于主人的长期记忆/.test(withMemory) && /主人住在杭州/.test(withMemory);
+  check(memoryDeclared === promptCarriesMemory,
+    '「记得以前的事」的声明与实际 prompt 一致（声明=' + memoryDeclared +
+    '，prompt 能带上记忆=' + promptCarriesMemory + '）');
+
+  const wiredExtractor = /(^|[^.\w])extractMemories\s*[:,]/.test(mainSrc);
+  check(memoryDeclared === wiredExtractor,
+    '声明的记忆能力与 main.js 的抽取接线一致（声明=' + memoryDeclared +
+    '，接上抽取器=' + wiredExtractor + '）');
+
   /* Claims of imaginary powers must not appear as assertions. The phrasing below is used
    * in the persona only as a PROHIBITION ("do not fabricate ..."), so a naive substring
    * check would fire on the rule itself — test the sentence it sits in. */
