@@ -1266,6 +1266,16 @@ function stubConfirmer(newOn, options) {
   check(/replaces/.test(ep.system), '说明了取代（而不是新增重复）的方法');
   check(/没有值得长期记住的内容时/.test(ep.system), '说明了「没有」该怎么回答');
 
+  /* The output budget has to leave room for the answer *after* the model has thought. This is a
+   * regression guard for a silent failure found by the first real run of the headless probe: at
+   * 80 tokens the boundary call's whole budget was consumed by reasoning (`finish=length`,
+   * `reasoning_tokens: 80`, empty content) eight times out of thirteen, and because a null verdict
+   * reads as "stay in the current topic", topic splitting appeared to work while hardly ever
+   * happening. */
+  check(api.BOUNDARY_MAX_TOKENS >= 300 && api.EXTRACT_MAX_TOKENS >= 300,
+    '两个请求的输出预算都留出了推理空间（边界 ' + api.BOUNDARY_MAX_TOKENS +
+    '，抽取 ' + api.EXTRACT_MAX_TOKENS + '；实测 80 会被推理吃光）');
+
   /* With no key, both requests answer null without touching the network. */
   const noKey = api.createApi({ apiKey: '', model: 'test', baseUrl: 'https://invalid.example' });
   const noKeyBoundary = await noKey.confirmBoundary({ topic: { title: 'x' }, recent: [], text: 'y' });

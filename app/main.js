@@ -21,6 +21,9 @@ function loadConfig() {
   } catch (_) { /* ignore malformed config */ }
   config.apiKey = process.env.DEEPSEEK_API_KEY || config.apiKey || '';
   config.model = process.env.DEEPSEEK_MODEL || config.model || 'deepseek-v4-flash';
+  /* The side questions (topic boundary, memory extraction) go to a non-reasoning model by default;
+   * see api.js for the measurement behind that. Empty means "use the default". */
+  config.classifierModel = process.env.DEEPSEEK_CLASSIFIER_MODEL || config.classifierModel || '';
 }
 loadConfig();
 

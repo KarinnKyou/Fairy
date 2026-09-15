@@ -59,5 +59,22 @@
     { "title": "助手能做什么", "turns": [12, 13, 14] }
   ],
   "expectedProposals": [1, 3, 4, 5, 6, 10, 11, 12, 13, 14],
-  "expectedProposalsNote": "Ten of fifteen turns are asked about, which is the measured cost of the current recall settings on a conversation that changes subject often. Turn 2 (全文搜索) is the cheap path doing its job: shared vocabulary, no request."
+  "expectedProposalsNote": "Ten of fifteen turns are asked about, which is the measured cost of the current recall settings on a conversation that changes subject often. Turn 2 (全文搜索) is the cheap path doing its job: shared vocabulary, no request.",
+  "liveMeasurement": {
+    "when": "2026-09-15",
+    "how": "`npm run probe -- --corpus docs/eval/topics-2026-09-14-run3.json` — the real confirmer was asked every turn the local rule proposed, and its answers were compared with the `expect` values recorded above. This is the measurement no offline test can make: the tests replay the judgement as the model's answer, so they verify everything about the pipeline and nothing about the model.",
+    "model": "deepseek-chat (the classifier model; see api.js for why it is not the reasoning model)",
+    "agreement": "7 of 10",
+    "failures": 0,
+    "latencyMs": { "median": 1185, "max": 1508 },
+    "disagreements": [
+      { "turn": 2, "expect": "same", "said": "new",
+        "reading": "The greeting and the first real statement. This `expect` was recorded because the observed run required it, not as a judgement of what is right — the model's answer is defensible and produces the better title, since a new topic gets a model-generated name where a greeting topic can only be named after the message that follows it." },
+      { "turn": 14, "expect": "same", "said": "new",
+        "reading": "「帮我看看我现在的表情」 against the capability topic. All three disagreements point the same way — the model splits where a person would keep things together — and this one is part of a run of three short capability questions that a person reads as one subject." },
+      { "turn": 15, "expect": "same", "said": "new",
+        "reading": "「把这个对话存成文件吧」, the third of those three. Splitting them yields three small topics where one would do, so on this evidence the confirmer over-splits short follow-up requests in the same vein." }
+    ],
+    "disagreementsNote": "Every disagreement is same→new and none is new→same: a one-directional bias worth watching, and the first evidence that the boundary prompt may need to say that a short follow-up request in the same vein is still the same subject. It is recorded rather than acted on, because three disagreements at one turn of one conversation is not enough to change a prompt."
+  }
 }

@@ -60,6 +60,7 @@ function loadConfig() {
   } catch (_) { /* ignore malformed config */ }
   config.apiKey = process.env.DEEPSEEK_API_KEY || config.apiKey || '';
   config.model = process.env.DEEPSEEK_MODEL || config.model || 'deepseek-v4-flash';
+  config.classifierModel = process.env.DEEPSEEK_CLASSIFIER_MODEL || config.classifierModel || '';
   return config;
 }
 
@@ -141,6 +142,8 @@ async function main() {
   say('  when      : ' + new Date().toISOString());
   say('  mode      : ' + (args.dryRun ? 'DRY RUN (no API calls)' : 'live'));
   say('  model     : ' + config.model + '  @ ' + config.baseUrl);
+  say('  侧问模型  : ' + (config.classifierModel || api.DEFAULT_CLASSIFIER_MODEL) +
+    '（边界与抽取；非推理模型，见 api.js）');
   say('  key       : ' + (config.apiKey ? 'present (' + config.apiKey.length + ' chars, not printed)' : 'MISSING'));
   say('  corpus    : ' + (args.corpus || '(built-in scenario)'));
   say('  store     : ' + (c.available ? c.file : 'UNAVAILABLE: ' + (c.openError && c.openError.message)));
@@ -179,9 +182,10 @@ async function main() {
       (mem.error ? '  [失败：' + mem.error.message + ']' : ''));
 
     for (const call of calls.slice(before)) {
-      say('         ── ' + call.kind + ' 调用 (' + call.ms + 'ms) ──');
+      say('         ── ' + call.kind + ' 调用 (' + call.ms + 'ms)' + (call.dry ? ' [干跑]' : '') + ' ──');
       say('           system: ' + call.prompt.system.replace(/\n/g, '\n                   '));
       say('           user  : ' + call.prompt.user.replace(/\n/g, '\n                   '));
+      if (call.error) say('           失败原因: ' + call.error);
       say('           raw   : ' + (call.raw == null ? '(没有回答)' : JSON.stringify(call.raw)));
       say('           →     : ' + JSON.stringify(call.verdict));
     }
@@ -236,6 +240,7 @@ async function main() {
     (args.dryRun ? '  ← 干跑，一个请求都没发' : ''));
   if (args.dryRun) say('  干跑记录   : ' + (calls.length - real.length) + ' 次「本会发出」的调用（只打印 prompt）');
   say('  失败       : ' + failed.length + (failed.length ? '  ← 失败等于「什么都没做」' : ''));
+  for (const f of failed) say('               ' + f.kind + ': ' + (f.error || '(未记录原因)'));
   if (ms.length) {
     say('  耗时       : 中位 ' + ms[Math.floor(ms.length / 2)] + 'ms，最长 ' + ms[ms.length - 1] + 'ms');
   }

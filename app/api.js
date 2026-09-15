@@ -21,6 +21,37 @@
 const CONFIRM_TIMEOUT_MS = 8000;
 const EXTRACT_TIMEOUT_MS = 15000;
 
+/*
+ * Which model answers the side questions, and why it is not the one that writes the reply.
+ *
+ * `deepseek-v4-flash` is a reasoning model. Asked whether a subject changed, it spends hundreds to
+ * over a thousand tokens thinking first — measured: 1460 and 1808 characters of `reasoning_content`
+ * on two ordinary turns. That has two costs, and the first is the serious one:
+ *
+ *   1. with a small output budget the whole allowance goes to the reasoning and the answer never
+ *      gets written (`finish=length`, empty content). A null verdict reads as "stay in the current
+ *      topic", so topic splitting appears to work while almost never happening. Eight of thirteen
+ *      calls failed this way on the first real run.
+ *   2. the boundary request is on the turn's critical path — the reply waits for it — so seconds of
+ *      thinking are seconds the owner spends waiting.
+ *
+ * A non-reasoning model answers the same question with the same verdicts in about half the time:
+ * measured on the two turns the reasoning model could not answer, 1572ms and 987ms against 3217ms
+ * and 2010ms. The judgement is a classification, not a derivation, and it does not need thinking.
+ *
+ * Overridable, because the trade-off is a judgement about cost and speed rather than a fact:
+ * `classifierModel` in config.json, or DEEPSEEK_CLASSIFIER_MODEL in the environment.
+ */
+const DEFAULT_CLASSIFIER_MODEL = 'deepseek-chat';
+
+/*
+ * Output budgets. Generous on purpose, because they cost nothing unless the model uses the room,
+ * and because a cap that bites produces an unreadable answer rather than a short one — the failure
+ * that made the boundary request return nothing eight times out of thirteen.
+ */
+const BOUNDARY_MAX_TOKENS = 800;
+const EXTRACT_MAX_TOKENS = 1200;
+
 /* ------------------------------------------------------------------ topic boundary */
 
 /*
@@ -116,11 +147,15 @@ function extractionPrompt(input) {
 
 /*
  * A single non-streaming request. Returns the message content, or null for every failure — a
- * missing key, a bad status, a timeout, a network error. The caller decides what null means; for
- * both of these it means "no answer", which is never the same as "no" and never a default.
+ * missing key, a bad status, a timeout, a network error.
+ *
+ * `onFail` receives *why*, because null alone is not diagnosable: a 429, a timeout and an answer
+ * that arrived with its text in `reasoning_content` all look identical from here, and the first
+ * run of the headless probe returned null eight times out of thirteen with no way to tell which.
  */
-async function askOnce(config, prompt, maxTokens, timeoutMs) {
-  if (!config || !config.apiKey) return null;
+async function askOnce(config, prompt, maxTokens, timeoutMs, onFail) {
+  const fail = (why) => { if (typeof onFail === 'function') onFail(why); return null; };
+  if (!config || !config.apiKey) return fail('no API key configured');
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -141,12 +176,25 @@ async function askOnce(config, prompt, maxTokens, timeoutMs) {
       }),
       signal: controller.signal,
     });
-    if (!res || !res.ok) return null;
+    if (!res || !res.ok) {
+      const detail = res ? await res.text().catch(() => '') : '';
+      return fail('HTTP ' + (res ? res.status : '?') + ' ' + String(detail).slice(0, 120));
+    }
     const data = await res.json();
-    return (data.choices && data.choices[0] && data.choices[0].message &&
-      data.choices[0].message.content) || null;
-  } catch (_) {
-    return null;
+    const choice = (data.choices && data.choices[0]) || {};
+    const message = choice.message || {};
+    const content = message.content || '';
+    if (!content) {
+      /* Diagnosed rather than guessed: an answer that exists but is not in `content` is a
+       * different problem from an answer that never arrived, and only the finish reason and the
+       * reasoning length can tell them apart. */
+      return fail('empty content (finish=' + (choice.finish_reason || '?') +
+        ', reasoning=' + String(message.reasoning_content || '').length + ' chars' +
+        ', usage=' + JSON.stringify(data.usage || {}) + ')');
+    }
+    return content;
+  } catch (err) {
+    return fail(((err && err.name) || 'error') + ': ' + ((err && err.message) || String(err)));
   } finally {
     clearTimeout(timer);
   }
@@ -165,23 +213,30 @@ async function askOnce(config, prompt, maxTokens, timeoutMs) {
 function createApi(config, options) {
   const opts = options || {};
   const report = typeof opts.report === 'function' ? opts.report : null;
+  /* The side questions go to the classifier model; the reply itself is written by `model` in
+   * main.js. Falling back to the configured model keeps a single-model setup working. */
+  const side = Object.assign({}, config, {
+    model: (config && config.classifierModel) || DEFAULT_CLASSIFIER_MODEL,
+  });
 
   async function confirmBoundary(input) {
     const prompt = boundaryPrompt(input);
+    let why = null;
     const started = Date.now();
-    const raw = await askOnce(config, prompt, 80, CONFIRM_TIMEOUT_MS);
+    const raw = await askOnce(side, prompt, BOUNDARY_MAX_TOKENS, CONFIRM_TIMEOUT_MS, (w) => { why = w; });
     const verdict = parseBoundaryVerdict(raw);
     /* `ms` is reported because the latency of this request is a cost the user feels: the reply
      * waits for it. The extractor's does not, which is why the two are told apart. */
-    if (report) report({ kind: 'boundary', prompt, raw, verdict, ms: Date.now() - started });
+    if (report) report({ kind: 'boundary', prompt, raw, verdict, ms: Date.now() - started, error: why });
     return verdict;
   }
 
   async function extractMemories(input) {
     const prompt = extractionPrompt(input);
+    let why = null;
     const started = Date.now();
-    const raw = await askOnce(config, prompt, 500, EXTRACT_TIMEOUT_MS);
-    if (report) report({ kind: 'memory', prompt, raw, verdict: raw, ms: Date.now() - started });
+    const raw = await askOnce(side, prompt, EXTRACT_MAX_TOKENS, EXTRACT_TIMEOUT_MS, (w) => { why = w; });
+    if (report) report({ kind: 'memory', prompt, raw, verdict: raw, ms: Date.now() - started, error: why });
     return raw;
   }
 
@@ -196,4 +251,7 @@ module.exports = {
   askOnce,
   CONFIRM_TIMEOUT_MS,
   EXTRACT_TIMEOUT_MS,
+  BOUNDARY_MAX_TOKENS,
+  EXTRACT_MAX_TOKENS,
+  DEFAULT_CLASSIFIER_MODEL,
 };

@@ -275,6 +275,25 @@ Not blockers, but they should not be forgotten.
     repository cannot be verified against the build, and will surface as a surprise after a
     release rather than as a failing test before one. Anything the project is expected to satisfy
     belongs in `docs/`.
+16. **The confirmer over-splits, measured once.** With the classifier model, replaying the third
+    real conversation gave 7 of 10 agreement with the recorded judgement, 0 failures, ~1.2s
+    median — and **every** disagreement was same→new, never the other way. The three were a
+    greeting followed by the first real statement (where the model's answer is arguably better,
+    since a new topic gets a model-generated name) and two short capability questions that a
+    person reads as one subject. One conversation is not enough to change a prompt on, so it is
+    recorded in `docs/eval/topics-2026-09-14-run3.json` under `liveMeasurement` until there is
+    more of it.
+17. **The extractor can return overlapping facts in one answer.** A live run on one turn produced
+    both 「主人在做 HDD 终端项目」 and 「主人的 HDD 终端项目使用内置的 node:sqlite 作为数据库」 —
+    the first contained in the second. The prompt forbids repeating an *existing* memory but says
+    nothing about two entries in one answer containing each other. Cosmetic rather than harmful
+    (both are true, and `/memories` shows both), but it is the kind of noise that grows.
+18. **Two cosmetic naming gaps, both observed live.** The first topic of a store keeps a truncated
+    sentence as its title, because the `first` path never asks the model and a substantive first
+    message locks the derived title immediately — so the v0.2 naming fix only helps a topic that
+    later receives a proposal. And the model can carry the previous subject into a new name:
+    「今天天气不错」 became 「杭州天气闲聊」, because the previous topic had been about where the
+    owner lives. `/rename` covers both; neither is worth a prompt change on this evidence.
 
 ---
 
