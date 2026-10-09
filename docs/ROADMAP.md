@@ -326,7 +326,7 @@ Not blockers, but they should not be forgotten.
 ## Verifying the current state
 
 ```powershell
-cd D:\Coding\HDD
+cd D:\DSH_Workspace\01_Code\HDD
 npm test                                   # the gate: bake + all four suites
 npm run app:start                          # in the running app: /topics, /search, /help
 .\release.ps1 -Version 0.3.0 -DryRun       # what the next release would do
@@ -335,7 +335,7 @@ npm run app:start                          # in the running app: /topics, /searc
 Re-verifying a published artifact without rebuilding it:
 
 ```powershell
-cd D:\Coding\HDD
+cd D:\DSH_Workspace\01_Code\HDD
 .\release.ps1 -Version 0.2.0 -VerifyOnly   # re-runs the asar checks on app\dist
 ```
 

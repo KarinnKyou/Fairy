@@ -6,7 +6,7 @@ is the most common way to waste five minutes here:
 
 | Directory | Offers |
 | --- | --- |
-| repository root (`D:\Coding\HDD`) | `test`, `assets:bake`, `app:prep`, `app:test`, `app:start`, `app:dist` |
+| repository root (`D:\DSH_Workspace\01_Code\HDD`) | `test`, `assets:bake`, `app:prep`, `app:test`, `app:start`, `app:dist` |
 | `app/` | `start`, `dev`, `dev:fresh`, `inspect`, `inspect:dev`, `prep`, `icon`, `dist`, `test:store`, `test:conversation`, `test:ui` |
 
 Running a script that belongs to the other one fails with `Missing script` — nothing is
@@ -17,7 +17,7 @@ broken, you are just in the wrong directory.
 ## 1. Talk to her for real
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 npm start                 # prep, then open the window; data goes to app/data/hdd.db
 ```
 
@@ -97,7 +97,7 @@ so these launch with `HDD_DATA_DIR` pointed at a scratch directory
 (`%TEMP%\hdd-dev-data`, kept between runs):
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 npm run dev                          # scratch store, kept between runs
 npm run dev:fresh                    # wipe the scratch store first — clean slate
 npm run dev -- --dir D:\scratch      # or point it at a directory of your choosing
@@ -109,7 +109,7 @@ From the repository root the same thing exists as `npm run app:start`, but **not
 ## 3. Tests
 
 ```powershell
-cd D:\Coding\HDD
+cd D:\DSH_Workspace\01_Code\HDD
 npm test                  # asset bake + all four suites (this is the real gate)
 npm run app:test          # the four suites only, no bake
 npm run assets:bake       # only re-bake assets/svg, assets/css, assets/tokens, MANIFEST.json
@@ -118,7 +118,7 @@ npm run assets:bake       # only re-bake assets/svg, assets/css, assets/tokens, 
 Individually, from `app/`:
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 npm run test:store        # SQLite: schema, migrations, ID ordering, CJK full-text search
 npm run test:conversation # prompt assembly, persona scope, turn bookkeeping
 npm run test:ui           # prep + renderer and scroll-pin (jsdom, no window opens)
@@ -137,7 +137,7 @@ The database is binary, so this is the way to read it — and, more usefully, to
 what was sent to the model. **Run this before theorising about a bad reply.**
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 npm run inspect                      # the real store (app/data)
 npm run inspect:dev                  # the scratch store used by npm run dev
 npm run inspect:dev -- --prompt      # also print the full system prompt
@@ -173,7 +173,7 @@ actually assemble; printing the global window there would describe a prompt that
 ## 5. Resetting data
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 node -e "console.log(require('./store.js').resetDataDir('data',{force:true})+' files removed')"
 ```
 
@@ -184,7 +184,7 @@ and is not touched by any of the above.
 ## 6. Packaging and releasing
 
 ```powershell
-cd D:\Coding\HDD
+cd D:\DSH_Workspace\01_Code\HDD
 .\release.ps1 -Version 0.2.0 -DryRun      # show the plan, change nothing
 .\release.ps1 -Version 0.2.0 -NoPush      # bump, test, build, verify, commit — stop before push
 .\release.ps1 -Version 0.2.0              # the full ritual, then push and publish
@@ -194,7 +194,7 @@ cd D:\Coding\HDD
 A local build **with your font** (for your own use — this is not what gets published):
 
 ```powershell
-cd D:\Coding\HDD\app
+cd D:\DSH_Workspace\01_Code\HDD\app
 npm run dist              # -> app/dist/HDD-<version>.exe
 ```
 

@@ -38,6 +38,16 @@ left to rot. Everything below was true at the moment it was written.
 
 ## Environment
 
+- **The checkout moved on 2026-10-09**: the project is now at `D:\DSH_Workspace\01_Code\HDD`, and was
+  at `D:\Coding\HDD` before that. `docs/COMMANDS.md` and `docs/ROADMAP.md` were updated to the new
+  path; the `.hdd-font/` diagnostics now resolve the font directory from their own location instead
+  of carrying a hard-coded one.
+- **Under the default `workspace-write` policy nothing inside `HDD/` can be written.** The tree was
+  copied into this workspace without the low-integrity label that the workspace root and `_work/`
+  carry, so the sandbox's low-integrity process cannot write into it: `npm test` dies with `EPERM`
+  while baking assets, and repairing permissions does not help, because what is missing is the
+  label, not a right. Run with full access, or re-label the tree once:
+  `icacls "D:\DSH_Workspace\01_Code\HDD" /setintegritylevel (OI)(CI)Low /T`.
 - `npm run dev`, `npm run inspect`, `npm run probe` live in `app/`; `npm test` lives at the root.
   The two `package.json` files do not offer the same scripts.
 - `electron-builder` builds, `git push` and `gh` are denied in the sandbox (`spawn EPERM`,
