@@ -39,15 +39,18 @@ left to rot. Everything below was true at the moment it was written.
 ## Environment
 
 - **The checkout moved on 2026-10-09**: the project is now at `D:\DSH_Workspace\01_Code\HDD`, and was
-  at `D:\Coding\HDD` before that. `docs/COMMANDS.md` and `docs/ROADMAP.md` were updated to the new
-  path; the `.hdd-font/` diagnostics now resolve the font directory from their own location instead
-  of carrying a hard-coded one.
-- **Under the default `workspace-write` policy nothing inside `HDD/` can be written.** The tree was
-  copied into this workspace without the low-integrity label that the workspace root and `_work/`
-  carry, so the sandbox's low-integrity process cannot write into it: `npm test` dies with `EPERM`
-  while baking assets, and repairing permissions does not help, because what is missing is the
-  label, not a right. Run with full access, or re-label the tree once:
-  `icacls "D:\DSH_Workspace\01_Code\HDD" /setintegritylevel (OI)(CI)Low /T`.
+  at `D:\Coding\HDD` before that. Everything the project needs lives under `HDD\` — the workspace root
+  holds no other folder — including the font diagnostics in `.hdd-font/`, a small npm project of its
+  own that git ignores. `docs/COMMANDS.md`, `docs/ROADMAP.md` and those scripts were updated to the
+  new paths, and the scripts now resolve the font directory from their own location rather than from
+  a hard-coded one.
+- **A tree copied in from outside this workspace cannot be written under `workspace-write`.** The
+  copied files keep the integrity label they had at the old location, so the sandbox's low-integrity
+  process is refused by the operating system while the permissions look perfectly correct: `npm test`
+  dies with `EPERM` in the asset bake, and none of the usual permission repairs help. This cost `HDD/`
+  the days between 2026-10-09 and 2026-10-12; the fix was write-owner rights plus one
+  `icacls "…\HDD" /setintegritylevel "(OI)(CI)Low" /T`, applied to the diagnostics folder too.
+  Suspect it whenever a denial contradicts what the active policy promises.
 - `npm run dev`, `npm run inspect`, `npm run probe` live in `app/`; `npm test` lives at the root.
   The two `package.json` files do not offer the same scripts.
 - `electron-builder` builds, `git push` and `gh` are denied in the sandbox (`spawn EPERM`,

@@ -7,6 +7,10 @@ app/dist/
 app/build-res/
 app/package-lock.json
 
+# Font diagnostics tooling: its own small npm project, kept with the project it
+# measures but never shipped or committed.
+.hdd-font/
+
 # Private config (contains the API key) - never commit
 app/config.json
 
