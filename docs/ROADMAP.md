@@ -14,8 +14,8 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Released | 2026-09-15 |
 | Artifact | `HDD-0.3.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B0DFE344…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.3 |
-| Phase in progress | **Phase 4 — projects and context assembly**, decided in ADR-014; implementation starting |
-| Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
+| Phase in progress | **Phase 4 — projects and context assembly**, implemented in ADR-014; not yet released — it has not been through a real window or a release ritual |
+| Automated tests | 4 suites, **606 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
 per-turn prompt, an accumulating profile) but held one undifferentiated transcript. `v0.01` (the
@@ -124,7 +124,7 @@ order is the plan.
 | --- | --- | --- | --- | --- |
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
-| 4 | v0.4 | **in progress — ADR-014 accepted** | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
+| 4 | v0.4 | **implemented, not yet released** (ADR-014) | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
@@ -160,7 +160,7 @@ phase had to take are recorded in **ADR-013**.
 
 | Item | Evidence |
 | --- | --- |
-| `memories` and `memory_sources` — migration **5**, additive | `store.test.cjs` §14; a fresh database reports schema v5 |
+| `memories` and `memory_sources` — migration **5**, additive | `store.test.cjs` §14; a fresh database reported schema v5 when this phase shipped (v6 since Phase 4) |
 | No "active" column: a memory is active exactly while nothing superseded it | `superseded_by IS NULL` is the status, with a partial index for the query the prompt runs |
 | A correction supersedes rather than overwrites, and the old row stays readable | §14: the superseded row keeps its text and gains a `superseded_by`/`superseded_at` pair, which a `CHECK` forces to agree |
 | `/forget` removes the whole chain, oldest first, so nothing is resurrected | §14 covers the middle-row case too; the self-reference makes the database refuse a half-deletion rather than leave a predecessor reading as active |
@@ -194,6 +194,45 @@ silent improvement behind.
 
 ---
 
+## Phase 4 — projects and context assembly (implemented, not yet released)
+
+**Goal:** the conversation stops being one topic at a time. A project is a named container the
+owner puts topics into, and the prompt is assembled from the current topic **plus** the project it
+belongs to — without inventing a project status the app cannot verify.
+
+The decisions are ADR-014. Earlier ADRs fixed the shape: the main process owns the state
+(ADR-001), migration 6 is appended (ADR-004), ids are stable and timestamps UTC with the link
+enforced as a foreign key (ADR-005), `topics.project_id` is nullable and never backfilled (ADR-006's
+rule), and there is still no retrieval layer (ADR-007) — so the project block is recent rows, not a
+semantic search.
+
+| Item | Evidence |
+| --- | --- |
+| `projects` and nullable `topics.project_id` — migration **6**, additive, no backfill | `store.test.cjs` §15; a fresh database reports schema v6 with no project rows, and existing topics keep `project_id = NULL` |
+| A topic belongs to at most one project, and only an explicit command changes that | §15, and `conversation.test.cjs` §16b: a new topic does not inherit the previous one's project |
+| `/projects`, `/project`, `/project new`, `/project <序号\|id>`, `/project off` | `renderer.test.cjs`; the command-surface test still compares the `.line.*` classes before and after |
+| The project block is **derived at assembly time**, never stored | `conversation.js` `messagesFor`; migration 6 adds only the table and the nullable link — there is no context table |
+| It is reference, not history: a labelled system-prompt section, never chat turns, and the current topic is excluded | §16b: the current message does not appear in the block, and every non-system message is free of it |
+| Three ceilings: 8 topics, 6 messages, 1000 characters (plus 200 per excerpt) | §16b, with twelve sibling topics |
+| Order in the prompt: persona → capabilities → profile → memories → project → time | §16b |
+| Membership follows the messages when a provisional topic is absorbed | §15 |
+| No extra request and no new capability | the block is built from stored rows; the side-request section of `conversation.test.cjs` is untouched, and `capabilities.js` is unchanged |
+| The IPC surface grew by four channels and is cross-checked statically | `renderer.test.cjs`: every preload channel exists in `main.js`, and every `api.*` call exists in the preload |
+
+What Phase 4 deliberately does **not** do: infer or inherit membership (ADR-014's deferred table),
+store or generate a project brief, rename or delete a project, or add a panel. A destructive command
+needs a confirmation design, and this phase did not invent one.
+
+**What a real conversation has to settle** — none of this can be asserted offline:
+
+- Does the block help? A project's topics are only worth joining if she actually uses them.
+- Does she read a sibling topic's excerpt as something said in the current exchange? That is the
+  new failure mode the labelling and the excerpt ceiling are meant to prevent.
+- Is one command per topic acceptable? If the curation cost is what stops projects being used, the
+  deferred auto-assignment question comes back with evidence.
+
+---
+
 ## Open decisions and known debts
 
 Not blockers, but they should not be forgotten.
@@ -223,7 +262,8 @@ Not blockers, but they should not be forgotten.
    and `topics` present. The store file itself dates from 2026-09-10 (the v0.1 era), so that launch
    also carried a real upgrade from an older schema. It was then killed rather than closed, which is
    the second useful thing it shows: an abrupt exit leaves the store readable at v5, since the WAL
-   sidecars were still present afterwards.
+   sidecars were still present afterwards. (That launch predates migration 6; a v0.4 build must
+   re-verify the same branch at schema v6.)
 4. **`NOTICE` is a verbatim copy of the upstream file** and references a `TRADEMARKS.md`
    that this repository does not contain. Left verbatim deliberately — it is the upstream
    project's notice — but the dangling reference should be resolved when the licensing
@@ -271,19 +311,21 @@ Not blockers, but they should not be forgotten.
     `COOLDOWN_TURNS` 4. Three transcripts in `docs/eval` are the whole of the evidence behind them.
 13. **The commands have never been typed by hand, and cannot be by an agent.** Electron cannot start
     in the development environment, so `/topics`, `/switch`, `/new`, `/rename`, `/search`,
-    `/memories`, `/forget`, `/remember` and `/help` are covered by jsdom and by a static cross-check
-    that every IPC channel the preload uses exists in the main process — not by a person clicking.
-    `/memories` has been run by hand once; **`/forget` and `/remember` never have.** The app itself
-    starting is no longer in doubt (see debt 3), but typing into it needs a human at the keyboard,
-    and that is the whole of what remains. Closing it permanently means an Electron end-to-end
-    harness that drives its own window — worth doing when there is a reason to touch this area
-    again, since it is the only layer no test reaches.
+    `/memories`, `/forget`, `/remember`, `/help` and the five project commands are covered by jsdom
+    and by a static cross-check that every IPC channel the preload uses exists in the main process —
+    not by a person clicking. `/memories` has been run by hand once; **`/forget`, `/remember`,
+    `/projects` and `/project` never have.** The app itself starting is no longer in doubt (see
+    debt 3), but typing into it needs a human at the keyboard, and that is the whole of what remains.
+    Closing it permanently means an Electron end-to-end harness that drives its own window — worth
+    doing when there is a reason to touch this area again, since it is the only layer no test reaches.
 14. **`inspect.cjs` reports the packaged data-directory branch the same way it always did**, but
     the two new flags (`--topic`) are untested by automation: like the packaged path in debt 3,
     they are verified by running them once. `--topic` was checked against a two-topic scratch
-    store, including that `--prompt` then describes only the topic in progress. **It also does not
-    show memories yet**, which is now the audit gap it exists to close: `--prompt` prints what the
-    next turn would send, and that includes the memory section, but nothing prints what is stored.
+    store, including that `--prompt` then describes only the topic in progress. **It also has no
+    listing for memories or projects**, which is the audit gap it exists to close: `--prompt` now
+    goes through the real assembly, so the injected memory and project sections appear with their
+    caps applied — but there is no way to see a memory that lost the cap, or a project that no
+    current topic points at.
 15. **Phase scope lives in this repository, or it cannot be checked.** Every phase's scope is
     defined by the ADRs here, and the code is cross-checked against them — which works only for
     requirements that are written down here. A requirement that exists only outside this
@@ -320,6 +362,19 @@ Not blockers, but they should not be forgotten.
     on-topic because the conversation never left the subject. The other gap — a new topic's name
     carrying the previous subject over (「今天天气不错」 became 「杭州天气闲聊」) — is fixed by an
     explicit instruction and was verified gone in the next run.
+20. **Nothing can rename or delete a project.** `projects.name` is unique and set once; `/project off`
+    takes a topic out but the project row stays. A typo therefore lives in `/projects` forever,
+    which is visible and harmless, but it is a real gap: deletion needs a confirmation design, and
+    the command surface has never had one. Recorded rather than shipped.
+21. **Automatic project assignment is deferred, with a trigger.** It would cost no extra request —
+    the boundary confirmation already runs — but it adds a silent wrong-assignment failure mode for
+    a decision one command can make. Revisit when a real workload shows that curation is what stops
+    projects from being used (ADR-014, deferred table).
+22. **The project block has never been through a real conversation.** The machine side is asserted;
+    its effect is not. The next real run should check that she uses the project's other topics
+    instead of ignoring them, that she does not read an excerpt as something said just now, and that
+    one `/project` per topic is not too much typing. Until then this is the phase's main risk, and
+    the reason v0.4 is recorded as "implemented" rather than "done".
 
 ---
 
@@ -328,7 +383,7 @@ Not blockers, but they should not be forgotten.
 ```powershell
 cd D:\DSH_Workspace\01_Code\HDD
 npm test                                   # the gate: bake + all four suites
-npm run app:start                          # in the running app: /topics, /search, /help
+npm run app:start                          # in the running app: /topics, /projects, /search, /help
 .\release.ps1 -Version 0.3.0 -DryRun       # what the next release would do
 ```
 

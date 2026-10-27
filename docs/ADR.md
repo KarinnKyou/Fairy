@@ -1000,8 +1000,9 @@ project is context the app stores, not something she can do. The `memory` entry 
   judgements). `/projects` is covered by store, conversation and renderer tests instead.
 - **Nothing can delete or rename a project in v0.4.** An empty project is harmless and visible; a
   destructive command with no confirmation is not. Recorded as a debt rather than shipped.
-- `inspect.cjs` does not print projects yet; like memories before it, that is the audit tool's next
-  blind spot.
+- `inspect.cjs` has no project view of its own. `--prompt` shows the project block because it now
+  goes through the same assembly path, but a project that no current topic points at is invisible
+  there; like memories before it, that is the audit tool's next blind spot.
 
 **Alternatives rejected**
 

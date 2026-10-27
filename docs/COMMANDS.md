@@ -35,6 +35,11 @@ to the model. Anything else is a message for her.
 | `/switch <序号\|id>` | Switch to that topic and repaint the transcript from it. The number is the one `/topics` printed |
 | `/new [标题]` | Start a new topic and switch to it. Without a title, it takes the name from the next message |
 | `/rename <标题>` | Rename the current topic (`/topic` is an alias) |
+| `/projects` | Every project, newest activity first, with how many topics and messages it holds; `*` marks the current topic's project |
+| `/project` | Which project the current topic belongs to, or that it belongs to none |
+| `/project new <名字>` | Create a project and put the current topic in it |
+| `/project <序号\|id>` | Put the current topic into an existing project. The number is the one `/projects` printed |
+| `/project off` | Take the current topic out of its project |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
 | `/memories` | What she currently believes about the owner, where each belief came from, and how many older ones have been superseded |
 | `/remember <一句话>` | State a fact about yourself directly. It is recorded as coming from you rather than inferred |
@@ -54,6 +59,10 @@ Things worth knowing, because they are deliberate rather than missing:
 - **Memories are text about you, not a search index.** She does not query them; the active ones
   are placed in front of her each turn, newest first, up to a fixed size. `/memories` is the only
   way to see which ones those are.
+- **A project is a container you fill, not one the app guesses.** Belonging changes only when you
+  say so, and a new topic never inherits the previous one's project (ADR-014). What a project adds
+  to the prompt is its name, its other topics, and a bounded excerpt of their latest exchanges —
+  as reference, not as part of the current conversation.
 
 ### 1.2 Reading what the boundary logic did
 

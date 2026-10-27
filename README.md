@@ -45,6 +45,10 @@ page itself is fully local (CSP blocks network access).
   turn is *worth asking about*, the model decides what is in it, and every memory is linked to the
   messages it came from. `/memories` shows what she believes and where each belief came from,
   `/forget` removes one for good, `/remember` states one yourself
+- **Projects**: a named container you put topics into (`/projects`, `/project new`, `/project`,
+  `/project off`). When the current topic belongs to one, she is also told the project's name, its
+  other topics, and a bounded excerpt of their latest exchanges — as reference, never as something
+  said just now, and never as a generated summary
 - Font size, weight and column width are CSS variables, all easy to tune
 
 ## 2. Requirements
@@ -320,6 +324,30 @@ correcting itself.
 about — a preference stated inside a request, and "上学好烦啊", which states a fact without ever
 saying 我 — and one turn spent a request on nothing. Those are recorded as assertions in the
 evaluation set rather than accepted quietly, so tightening or loosening the cue has to face them.
+
+## 4.0.2 Projects
+
+A project is a container you fill, not one the app infers:
+
+| Command | What it does |
+| --- | --- |
+| `/projects` | Every project, with its topic and message counts; `*` marks the current topic's project |
+| `/project` | Which project the current topic belongs to |
+| `/project new <名字>` | Create a project and put the current topic in it |
+| `/project <序号\|id>` | Put the current topic into an existing project |
+| `/project off` | Take the current topic out of its project |
+
+**Nothing is assigned for you.** A new topic — including one opened by an automatic boundary — does
+not inherit the previous topic's project, and no keyword rule or model call guesses one. A wrong
+assignment would silently change what she is told every turn, and you can state the right one in a
+single command. The cost is that each new topic in a project needs that command.
+
+**What a project adds to the prompt is read from the database, not summarised.** When the current
+topic is in a project, she is told its name, its other topics with their message counts, and the
+newest exchanges from those topics — capped at 8 topics, 6 messages and 1000 characters. The block
+is labelled as other topics' content and is not part of the current conversation's history. There is
+no generated project brief: she must not assert progress the app cannot verify. The decisions behind
+this are ADR-014.
 
 ## 4.1 Fairy's personality
 

@@ -1,7 +1,7 @@
 # Starting the next session
 
-A handover note, written after `v0.3` was released on 2026-09-15. It exists so a new session can
-start from the truth instead of from the previous session's narration.
+A handover note, rewritten after Phase 4 was implemented on 2026-10-27. It exists so a new session
+can start from the truth instead of from the previous session's narration.
 
 **`docs/ROADMAP.md` is the authority on progress; this file is the briefing.** When the two
 disagree, the roadmap (and the code) win — and this file should be updated or deleted rather than
@@ -12,13 +12,11 @@ left to rot. Everything below was true at the moment it was written.
 ## Where the project is
 
 - **v0.3 shipped** (`0.3.0`, pre-release, tag `v0.3`) — Phase 3, long-term memory.
-- **Next: Phase 4** — "Context assembly and projects; topics linked to projects", new tables
-  `projects` and context tables (migration 6).
-- **Phase 4 has no ADR yet.** Phase 3 had ADR-013. So the first real step is to read what
-  ADR-001/004/006/007/008 already commit to, then write the ADR that settles the rest — before any
-  code depends on it.
-- Schema is at **v5**; `npm test` (root) reports **548 assertions across four suites**.
-- The tree may be one commit ahead of `origin/main` (the roadmap's release bookkeeping).
+- **Phase 4 is implemented, not released.** ADR-014 decided it, migration 6 is in, and the store,
+  prompt, command and renderer layers are covered by tests — but it has never been through a real
+  window, a release build, or a real conversation. That gap is the whole of what is left.
+- Schema is at **v6**; `npm test` (root) reports **606 assertions across four suites**.
+- The tree is ahead of `origin/main` by the Phase 4 commits; nothing has been pushed.
 
 ## How to work here
 
@@ -99,13 +97,27 @@ left to rot. Everything below was true at the moment it was written.
 - **`build.files` is hand-maintained and has been forgotten three times.** A test now walks the
   require graph in seconds; if you add a module, that test tells you.
 - `docs/eval/` entries are data: adding a case is appending a turn and its judgement.
+- **A project is a container the owner fills, never one the app infers.** No inheritance on a
+  boundary, no keyword rule, no model guess. The cost — one `/project <n>` per new topic — is
+  stated in ADR-014, and a real workload is the only thing that can judge it.
+- **The project block is reference, not history, and it is derived.** Its rows are read at assembly
+  time; there is no context table and no generated project summary. The current topic is excluded,
+  and the section is labelled so it cannot be read as something said in the current exchange.
 
 ## Debts waiting, measured rather than suspected
 
 The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter next:
 
-- **`inspect.cjs` still cannot show stored memories**, even though it prints a prompt that contains
-  them. This is the audit tool's one remaining blind spot.
+- **`inspect.cjs` still has no listing for stored memories or projects.** `--prompt` now uses the
+  real assembler, so both sections appear with their caps applied; what is missing is a way to see a
+  memory that lost the cap, or a project no current topic points at.
+- **The project block's effect is unmeasured.** The machine side is asserted; whether she uses the
+  project's other topics, or misreads an excerpt as something said just now, needs a real
+  conversation. It is the phase's main risk.
+- **The project curation cost is unmeasured.** One `/project <n>` per new topic, and no inheritance.
+  If that is what stops projects being used, automatic assignment comes back with evidence.
+- **Nothing can rename or delete a project.** A typo stays in `/projects`; deletion needs a
+  confirmation design the command surface does not have.
 - **The topic confirmer over-splits short follow-ups** — seen twice, always in the same direction
   (same→new). Three short capability questions became three topics where a person would keep one.
 - **The extraction cue misses some real facts** — a preference stated inside a request, and an
@@ -114,5 +126,5 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 - **The thresholds in `topics.js` and `memory.js` are still estimates**, with three conversations as
   the whole of the evidence.
 - **The packaged data-directory branch and the command surface are not covered by automation.** One
-  launch of the built exe closes both: it should create `%APPDATA%\HDD\data\hdd.db` at schema v5,
+  launch of the built exe closes both: it should create `%APPDATA%\HDD\data\hdd.db` at schema v6,
   and the commands can be typed there (`/memories` is the only one ever driven by hand).
