@@ -485,6 +485,8 @@
           if (!state || !state.created) {
             if (state && state.reason === 'invalid') {
               sysLine('项目名太长，没有新建（名字要短到能当标签用）。');
+            } else if (state && state.reason === 'unavailable') {
+              sysLine('现在没有可用的存储，项目无法保存。');
             } else {
               sysLine('已经有同名项目「' + name + '」，当前话题没有改动（用 /project <序号> 归入它）。');
             }

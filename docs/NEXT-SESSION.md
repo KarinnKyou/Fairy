@@ -15,7 +15,7 @@ left to rot. Everything below was true at the moment it was written.
 - **Phase 4 is implemented, not released.** ADR-014 decided it, migration 6 is in, and the store,
   prompt, command and renderer layers are covered by tests — but it has never been through a real
   window, a release build, or a real conversation. That gap is the whole of what is left.
-- Schema is at **v6**; `npm test` (root) reports **611 assertions across four suites**.
+- Schema is at **v6**; `npm test` (root) reports **614 assertions across four suites**.
 - The tree is ahead of `origin/main` by the Phase 4 commits; nothing has been pushed.
 
 ## How to work here

@@ -15,7 +15,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Artifact | `HDD-0.3.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B0DFE344…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.3 |
 | Phase in progress | **Phase 4 — projects and context assembly**, implemented in ADR-014; not yet released — it has not been through a real window or a release ritual |
-| Automated tests | 4 suites, **611 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
+| Automated tests | 4 suites, **614 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
 per-turn prompt, an accumulating profile) but held one undifferentiated transcript. `v0.01` (the

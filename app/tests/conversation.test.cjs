@@ -77,6 +77,11 @@ function open(name, extra) {
   check(c.remember('随便一句') === null && c.forgetMemory('anything') === 0,
     '存储不可用时记忆的写入与删除都是安全空操作');
   check(c.memories().length === 0 && c.activeMemoryList(5).length === 0, '存储不可用时记忆列表为空');
+
+  /* Projects degrade the same way: no writes, and a reason the renderer can report. */
+  check(c.listProjects().length === 0 && c.currentProject() === null, '存储不可用时项目列表为空');
+  check(c.newProject('HDD').reason === 'unavailable', '存储不可用时新建项目返回 unavailable');
+  check(c.assignProject('x') === null && c.detachProject() === null, '存储不可用时归属操作是安全空操作');
   c.close();
 }
 
