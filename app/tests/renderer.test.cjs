@@ -47,6 +47,19 @@ const newTopicCalls = [];
 const searchCalls = [];
 const forgetCalls = [];
 const rememberCalls = [];
+const newProjectCalls = [];
+const assignProjectCalls = [];
+let detachCalls = 0;
+
+/* Project state the main process would report (ADR-014). */
+let projectState = {
+  currentId: 'proj-1',
+  currentName: 'HDD',
+  projects: [
+    { id: 'proj-1', name: 'HDD', topicCount: 2, messageCount: 9 },
+    { id: 'proj-2', name: '读书', topicCount: 1, messageCount: 3 },
+  ],
+};
 
 /* Memory state the main process would report: two active beliefs, one already superseded. */
 let memoryState = {
@@ -92,6 +105,29 @@ const fakeApi = {
     ]);
   },
   listMemories: () => Promise.resolve(memoryState),
+  listProjects: () => Promise.resolve(projectState),
+  newProject: (name) => {
+    newProjectCalls.push(name);
+    const exists = projectState.projects.some((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (exists) return Promise.resolve(Object.assign({}, projectState, { created: false, reason: 'duplicate' }));
+    projectState = {
+      currentId: 'proj-3',
+      currentName: name,
+      projects: [{ id: 'proj-3', name, topicCount: 1, messageCount: 0 }].concat(projectState.projects),
+    };
+    return Promise.resolve(Object.assign({}, projectState, { created: true, reason: null }));
+  },
+  assignProject: (id) => {
+    assignProjectCalls.push(id);
+    const target = projectState.projects.filter((p) => p.id === id)[0];
+    if (target) projectState = Object.assign({}, projectState, { currentId: id, currentName: target.name });
+    return Promise.resolve(projectState);
+  },
+  detachProject: () => {
+    detachCalls += 1;
+    projectState = Object.assign({}, projectState, { currentId: null, currentName: null });
+    return Promise.resolve(projectState);
+  },
   rememberMemory: (text) => {
     rememberCalls.push(text);
     memoryState = {
@@ -345,6 +381,55 @@ async function emit(type, text) {
     await waitFor(() => lines().some((t) => t.includes('新话题已开始')), 1500, '新话题提示');
     if (newTopicCalls[0] !== '手动话题') throw new Error('标题未传给主进程：' + newTopicCalls[0]);
     console.log('PASS /new 新开话题并清空重绘');
+
+    /* Projects: a container the owner fills, and the only thing that changes membership. */
+    await type('/projects');
+    await waitFor(() => lines().some((t) => t.indexOf('项目（2 个）') === 0), 1000, '/projects 列表');
+    if (!lines().some((t) => t === '* 1. HDD  (2 个话题, 9 条消息)')) {
+      throw new Error('未标出当前项目与统计：' + lines().join(' / '));
+    }
+    if (!lines().some((t) => t === '  2. 读书  (1 个话题, 3 条消息)')) throw new Error('未列出其他项目');
+    console.log('PASS /projects 列出项目，标出当前话题所在的那个');
+
+    await type('/project');
+    await waitFor(() => lines().some((t) => t === '当前话题在项目「HDD」下（/project off 移出）。'),
+      1000, '/project 状态');
+    console.log('PASS /project 显示当前话题属于哪个项目');
+
+    await type('/project 2');
+    await waitFor(() => assignProjectCalls.length === 1, 1000, 'assignProject 调用');
+    if (assignProjectCalls[0] !== 'proj-2') throw new Error('按序号归入选错了项目：' + assignProjectCalls[0]);
+    await waitFor(() => lines().some((t) => t.indexOf('已把当前话题归入「读书」') === 0), 1000, '归入确认');
+    console.log('PASS /project <序号> 把当前话题归入已有项目');
+
+    await type('/project new 笔记');
+    await waitFor(() => newProjectCalls.length === 1, 1000, 'newProject 调用');
+    if (newProjectCalls[0] !== '笔记') throw new Error('项目名未传给主进程：' + newProjectCalls[0]);
+    await waitFor(() => lines().some((t) => t.indexOf('已新建项目「笔记」') === 0), 1000, '新建确认');
+    console.log('PASS /project new 新建项目并归入当前话题');
+
+    await type('/project new HDD');
+    await waitFor(() => newProjectCalls.length === 2, 1000, '重复新建调用');
+    await waitFor(() => lines().some((t) => t.indexOf('已经有同名项目「HDD」') === 0), 1000, '重复提示');
+    if (assignProjectCalls.length !== 1) throw new Error('重复新建不应改动任何归属');
+    console.log('PASS /project new 同名时说明情况，且不偷偷改归属');
+
+    await type('/project off');
+    await waitFor(() => detachCalls === 1, 1000, 'detachProject 调用');
+    await waitFor(() => lines().some((t) => t === '当前话题已经不在任何项目里。'), 1000, '移出确认');
+    await type('/project');
+    await waitFor(() => lines().some((t) => t === '当前话题没有归入项目（/project new <名字> 新建并归入）。'),
+      1000, '无项目状态');
+    console.log('PASS /project off 移出，之后状态如实说明');
+
+    /* The empty case, which is what a new user sees first. */
+    projectState = { currentId: null, currentName: null, projects: [] };
+    await type('/projects');
+    await waitFor(() => lines().some((t) => t === '还没有任何项目（/project new <名字> 建一个）。'),
+      1000, '空项目列表');
+    console.log('PASS /projects 没有项目时说明这一点');
+
+    if (askCalls.length !== askBefore) throw new Error('项目命令被当成了对话');
 
     await type('/nope');
     await waitFor(() => lines().some((t) => t.includes('没有这个命令')), 1000, '未知命令提示');

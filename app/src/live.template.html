@@ -307,6 +307,11 @@
     '/switch <序号|id>  切到某个话题，并重绘该话题的记录',
     '/new [标题]        新开一个话题并切过去',
     '/rename <标题>     给当前话题改名',
+    '/projects          列出所有项目（* 是当前话题所在的项目）',
+    '/project           显示当前话题属于哪个项目',
+    '/project new <名字> 新建项目，并把当前话题归入',
+    '/project <序号|id> 把当前话题归入已有项目',
+    '/project off       把当前话题移出项目',
     '/search <关键词>   在所有话题里搜索原文',
     '/memories          列出她记得的关于主人的事',
     '/remember <一句话> 让主人直接指定一条记忆',
@@ -365,6 +370,21 @@
     if (state && state.superseded) {
       sysLine('另有 ' + state.superseded + ' 条已经被更新的说法取代，不再使用。');
     }
+  }
+
+  function printProjects(state) {
+    var list = (state && state.projects) || [];
+    if (!list.length) {
+      sysLine('还没有任何项目（/project new <名字> 建一个）。');
+      return;
+    }
+    sysLine('项目（' + list.length + ' 个）：');
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      sysLine((p.id === state.currentId ? '* ' : '  ') + (i + 1) + '. ' + p.name +
+        '  (' + p.topicCount + ' 个话题, ' + p.messageCount + ' 条消息)');
+    }
+    if (!state.currentId) sysLine('（当前话题还没有归入项目，用 /project <序号> 归入）');
   }
 
   function runCommand(cmd, raw) {
@@ -427,6 +447,58 @@
         if (!state || !state.currentTitle) { sysLine('还没有话题可以改名。'); return done(); }
         sysLine('当前话题改名为「' + state.currentTitle + '」。');
         done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'projects') {
+      return api.listProjects().then(function (state) {
+        if (state && state.currentName) sysLine('当前话题在项目「' + state.currentName + '」下。');
+        printProjects(state);
+        done();
+      }).catch(fail);
+    }
+
+    /* Projects are a container the owner fills, never one the app infers (ADR-014). Bare
+       /project answers "where am I", the rest are the three explicit changes. */
+    if (cmd.name === 'project') {
+      var parg = cmd.arg || '';
+      if (!parg) {
+        return api.listProjects().then(function (state) {
+          if (state && state.currentName) {
+            sysLine('当前话题在项目「' + state.currentName + '」下（/project off 移出）。');
+          } else {
+            sysLine('当前话题没有归入项目（/project new <名字> 新建并归入）。');
+          }
+          done();
+        }).catch(fail);
+      }
+      if (parg === 'off') {
+        return api.detachProject().then(function () {
+          sysLine('当前话题已经不在任何项目里。');
+          done();
+        }).catch(fail);
+      }
+      if (parg === 'new' || parg.indexOf('new ') === 0) {
+        var name = parg.slice(3).trim();
+        if (!name) { sysLine('用法：/project new <名字>'); return done(); }
+        return api.newProject(name).then(function (state) {
+          if (!state || !state.created) {
+            sysLine('已经有同名项目「' + name + '」，当前话题没有改动（用 /project <序号> 归入它）。');
+          } else {
+            sysLine('已新建项目「' + name + '」，当前话题归入其中。');
+            printProjects(state);
+          }
+          done();
+        }).catch(fail);
+      }
+      return api.listProjects().then(function (state) {
+        var target = pickNumberOrId(state && state.projects, parg);
+        if (!target) { sysLine('没有这个序号或 id，先看 /projects。'); return done(); }
+        return api.assignProject(target.id).then(function (next) {
+          sysLine('已把当前话题归入「' + target.name + '」。');
+          printProjects(next);
+          done();
+        });
       }).catch(fail);
     }
 

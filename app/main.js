@@ -166,6 +166,41 @@ ipcMain.handle('fairy:topic-rename', (_event, payload) => {
   return topicState();
 });
 
+/* Projects (Phase 4, ADR-014). A topic belongs to at most one project, and only an explicit
+ * command changes that. Like the topic handlers, every mutation returns the same state shape so
+ * the renderer never has to guess what changed. */
+function projectState() {
+  const current = conv ? conv.currentProject() : null;
+  return {
+    currentId: current ? current.id : null,
+    currentName: current ? current.name : null,
+    projects: conv ? conv.listProjects() : [],
+  };
+}
+
+ipcMain.handle('fairy:projects', () => projectState());
+
+/* `created` is reported because a repeated /project new is not an error: it means "you already
+ * have this one", and the renderer says so instead of silently reassigning the topic. */
+ipcMain.handle('fairy:project-new', (_event, payload) => {
+  const result = conv ? conv.newProject(payload && payload.name) : { created: false, reason: 'unavailable' };
+  return Object.assign(projectState(), {
+    created: Boolean(result && result.created),
+    reason: (result && result.reason) || null,
+  });
+});
+
+ipcMain.handle('fairy:project-assign', (_event, payload) => {
+  const id = payload && payload.id;
+  if (conv && id) conv.assignProject(id);
+  return projectState();
+});
+
+ipcMain.handle('fairy:project-off', () => {
+  if (conv) conv.detachProject();
+  return projectState();
+});
+
 /* Full-text search across every topic by default (ADR-002: this is FTS5, not the semantic
  * retrieval that ADR-007 defers to Phase 5). */
 ipcMain.handle('fairy:search', (_event, payload) => {

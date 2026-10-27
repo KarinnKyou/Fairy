@@ -4,6 +4,7 @@
  * Conversation: getConfig / listHistory / ask / onStream (with unsubscribe).
  * Topics: listTopics / newTopic / switchTopic / renameTopic / search.
  * Memories: listMemories / rememberMemory / forgetMemory.
+ * Projects: listProjects / newProject / assignProject / detachProject.
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -24,6 +25,11 @@ contextBridge.exposeInMainWorld('fairyApp', {
   switchTopic: (id) => ipcRenderer.invoke('fairy:topic-switch', { id }),
   renameTopic: (id, title) => ipcRenderer.invoke('fairy:topic-rename', { id, title }),
   search: (query, options) => ipcRenderer.invoke('fairy:search', Object.assign({ query }, options || {})),
+  /* Projects are a container the owner fills, never one the app infers (ADR-014). */
+  listProjects: () => ipcRenderer.invoke('fairy:projects'),
+  newProject: (name) => ipcRenderer.invoke('fairy:project-new', { name }),
+  assignProject: (id) => ipcRenderer.invoke('fairy:project-assign', { id }),
+  detachProject: () => ipcRenderer.invoke('fairy:project-off'),
   /* Memories belong to the owner and are theirs to read and remove (ADR-013). */
   listMemories: () => ipcRenderer.invoke('fairy:memories'),
   rememberMemory: (text) => ipcRenderer.invoke('fairy:memory-remember', { text }),
