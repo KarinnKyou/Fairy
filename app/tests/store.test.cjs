@@ -615,6 +615,13 @@ function fresh(name) {
   check(store.setTopicProject(s.db, t2.id, null) !== null, '清空归属成功');
   check(store.getProject(s.db, p.id).topicCount === 2,
     '清空后项目里剩下 2 个话题（t1 与吸收后的 target）');
+
+  /* A name is a label, not a paragraph: it is reprinted in the prompt header on every turn. */
+  check(store.createProject(s.db, { name: '长'.repeat(store.PROJECT_NAME_MAX_CHARS + 1) }) === null,
+    '过长的项目名拒绝创建（它每一轮都会进 prompt）');
+  const spaced = store.createProject(s.db, { name: '  读书 \n 笔记  ', createdAt: 10_000 });
+  check(spaced && spaced.name === '读书 笔记',
+    '名字压成一行并去掉首尾空白：' + (spaced && spaced.name));
   store.close(s);
 }
 

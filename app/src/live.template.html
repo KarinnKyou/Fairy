@@ -483,7 +483,11 @@
         if (!name) { sysLine('用法：/project new <名字>'); return done(); }
         return api.newProject(name).then(function (state) {
           if (!state || !state.created) {
-            sysLine('已经有同名项目「' + name + '」，当前话题没有改动（用 /project <序号> 归入它）。');
+            if (state && state.reason === 'invalid') {
+              sysLine('项目名太长，没有新建（名字要短到能当标签用）。');
+            } else {
+              sysLine('已经有同名项目「' + name + '」，当前话题没有改动（用 /project <序号> 归入它）。');
+            }
           } else {
             sysLine('已新建项目「' + name + '」，当前话题归入其中。');
             printProjects(state);

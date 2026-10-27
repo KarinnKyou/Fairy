@@ -1288,6 +1288,10 @@ function stubConfirmer(newOn, options) {
     '同名项目不新建（created=false），也不偷偷改归属');
   check(c.currentProject() && c.currentProject().name === 'HDD', '当前归属没有被改掉');
 
+  const tooLong = c.newProject('长'.repeat(store.PROJECT_NAME_MAX_CHARS + 1));
+  check(tooLong.created === false && tooLong.reason === 'invalid', '过长的项目名被拒绝');
+  check(c.listProjects().length === 1, '拒绝之后没有留下半个项目');
+
   c.detachProject();
   const t4 = await c.beginTurn('现在没有项目了');
   check(!/当前项目/.test(c.messagesFor(t4)[0].content), '移出项目后 prompt 里不再有项目段');

@@ -385,11 +385,16 @@ function openConversation(options) {
    */
   function newProject(name) {
     if (!available) return { project: null, created: false, reason: 'unavailable' };
-    const clean = String(name == null ? '' : name).trim();
+    const clean = String(name == null ? '' : name).replace(/\s+/g, ' ').trim();
     if (!clean) return { project: null, created: false, reason: 'empty' };
+    /* Too long is refused here, before the duplicate check, so the answer says why. */
+    if (clean.length > store.PROJECT_NAME_MAX_CHARS) {
+      return { project: null, created: false, reason: 'invalid' };
+    }
     const existing = store.getProjectByName(s.db, clean);
     if (existing) return { project: existing, created: false, reason: 'duplicate' };
     const project = store.createProject(s.db, { name: clean, createdAt: now() });
+    if (!project) return { project: null, created: false, reason: 'invalid' };
     const topic = store.getCurrentTopic(s.db);
     if (topic) store.setTopicProject(s.db, topic.id, project.id);
     return { project, created: true, reason: null };

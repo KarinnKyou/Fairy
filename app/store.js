@@ -622,6 +622,9 @@ const PROJECT_COUNTS_SQL =
   '(SELECT COUNT(*) FROM messages m JOIN topics t ON t.id = m.topic_id ' +
   ' WHERE t.project_id = p.id) AS message_count';
 
+/* A label, not a paragraph: it is reprinted in the prompt header every turn (ADR-014). */
+const PROJECT_NAME_MAX_CHARS = 40;
+
 function toProject(row) {
   return {
     id: row.id,
@@ -634,9 +637,11 @@ function toProject(row) {
 }
 
 /*
- * Create a project. Returns null for an empty name rather than storing one: a project with no
- * name cannot be recognised in the list, and '' is what an accidental empty argument looks
- * like — the same rule renameTopic applies to topics.
+ * Create a project. Returns null for a name that cannot be stored rather than storing it: empty,
+ * or longer than the label limit. A project name sits in the prompt header on every turn of every
+ * topic in it, so an unbounded one is a prompt-budget problem dressed as data (ADR-008); and
+ * because v0.4 has no rename, a pasted paragraph would be permanent. Refusing is the only safe
+ * answer that does not silently rewrite what the owner typed.
  *
  * A duplicate name is refused by the UNIQUE index, loudly. The conversation layer checks for
  * it first so the common case ("I already made this one") gets a readable answer instead of a
@@ -644,8 +649,8 @@ function toProject(row) {
  */
 function createProject(db, project) {
   const opts = project || {};
-  const name = String(opts.name == null ? '' : opts.name).trim();
-  if (!name) return null;
+  const name = String(opts.name == null ? '' : opts.name).replace(/\s+/g, ' ').trim();
+  if (!name || name.length > PROJECT_NAME_MAX_CHARS) return null;
   const createdAt = opts.createdAt == null ? nowMs() : opts.createdAt;
   const updatedAt = opts.updatedAt == null ? createdAt : opts.updatedAt;
   const id = opts.id || newId(createdAt);
@@ -1179,6 +1184,7 @@ module.exports = {
   projectTopics,
   projectRecentMessages,
   setTopicProject,
+  PROJECT_NAME_MAX_CHARS,
   appendMessage,
   updateMessage,
   recentMessages,

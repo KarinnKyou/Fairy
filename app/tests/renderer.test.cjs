@@ -108,6 +108,10 @@ const fakeApi = {
   listProjects: () => Promise.resolve(projectState),
   newProject: (name) => {
     newProjectCalls.push(name);
+    /* Mirrors main.js: one line, up to 40 characters (store.PROJECT_NAME_MAX_CHARS). */
+    if (name.length > 40) {
+      return Promise.resolve(Object.assign({}, projectState, { created: false, reason: 'invalid' }));
+    }
     const exists = projectState.projects.some((p) => p.name.toLowerCase() === name.toLowerCase());
     if (exists) return Promise.resolve(Object.assign({}, projectState, { created: false, reason: 'duplicate' }));
     projectState = {
@@ -413,6 +417,12 @@ async function emit(type, text) {
     await waitFor(() => lines().some((t) => t.indexOf('已经有同名项目「HDD」') === 0), 1000, '重复提示');
     if (assignProjectCalls.length !== 1) throw new Error('重复新建不应改动任何归属');
     console.log('PASS /project new 同名时说明情况，且不偷偷改归属');
+
+    await type('/project new ' + '长'.repeat(41));
+    await waitFor(() => lines().some((t) => t === '项目名太长，没有新建（名字要短到能当标签用）。'),
+      1000, '过长项目名提示');
+    if (projectState.projects.length !== 3) throw new Error('过长的名字不应新建项目');
+    console.log('PASS /project new 名字过长时拒绝，而不是存成一个永久标签');
 
     await type('/project off');
     await waitFor(() => detachCalls === 1, 1000, 'detachProject 调用');
