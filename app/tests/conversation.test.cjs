@@ -1232,6 +1232,118 @@ function stubConfirmer(newOn, options) {
   check(conv.memorySection([]) === '' && conv.memorySection(null) === '', '没有记忆时返回空字符串');
 }
 
+/* ---------------------------------------------------------------- 16b. the project block (ADR-014)
+ * Phase 4's context assembly: a topic in a project is told the project's name, its sibling
+ * topics, and a bounded excerpt of their latest exchanges. Three things are load-bearing and
+ * asserted here — the topic's own history is still the conversation, the block is reference
+ * rather than chat turns, and nothing is stored as a summary.
+ */
+{
+  let clock = 1_700_100_000_000;
+  const c = open('project-prompt', { now: () => clock });
+  c.remember('主人住在杭州');
+
+  const t1 = await c.beginTurn('你好');
+  const made = c.newProject('HDD');
+  check(made.created === true && made.project.name === 'HDD',
+    '新建项目，并把当前话题归入：' + (made.project && made.project.name));
+  check(c.currentProject() && c.currentProject().name === 'HDD', '当前项目读得回来');
+  c.finishTurn(t1, '主人好。');
+
+  clock += 60000;
+  const t2 = await c.beginTurn('数据库用的是内置的 node:sqlite');
+  c.finishTurn(t2, '好。');
+
+  /* A second topic, assigned by hand — membership is never inherited. */
+  clock += 60000;
+  c.newTopic('发布打包');
+  check(c.currentProject() === null, '新话题不会自动继承上一个话题的项目');
+  const projects = c.listProjects();
+  check(projects.length === 1 && projects[0].topicCount === 1,
+    '项目列表带着话题数：' + (projects[0] && projects[0].topicCount));
+  check(c.assignProject(projects[0].id) !== null, '可以把当前话题归入已有项目');
+
+  clock += 60000;
+  const t3 = await c.beginTurn('这次发布准备打 portable exe');
+  const sent = c.messagesFor(t3);
+  const sys = sent[0].content;
+
+  check(/# 当前项目：HDD/.test(sys), '项目里的当前话题会带上项目段');
+  check(/项目里的其他话题/.test(sys), '列出项目里的其他话题');
+  check(/数据库用的是内置的 node:sqlite/.test(sys), '其他话题带着名字与条数');
+  const excerptBody = sys.slice(sys.indexOf('项目里最近的其他对话'));
+  check(/【[^】]*·主人】你好/.test(sys), '带出其他话题里最近说过的话');
+  check(excerptBody.indexOf('】你好') < excerptBody.indexOf('】数据库用的是内置的 node:sqlite'),
+    '摘录按时间正序（先「你好」，后数据库那句）');
+  check(!/这次发布准备打 portable exe/.test(sys),
+    '当前话题自己的话没有被当成「其他对话」重复进来');
+  check(sent.slice(1).every((m) => m.content.indexOf('【') < 0),
+    '项目内容只进 system prompt，不冒充对话回合');
+  check(sys.indexOf('# 关于主人的长期记忆') < sys.indexOf('# 当前项目') &&
+    sys.indexOf('# 当前项目') < sys.indexOf('# 当前时间'),
+    '项目段夹在记忆与当前时间之间');
+
+  const again = c.newProject('HDD');
+  check(again.created === false && again.reason === 'duplicate',
+    '同名项目不新建（created=false），也不偷偷改归属');
+  check(c.currentProject() && c.currentProject().name === 'HDD', '当前归属没有被改掉');
+
+  c.detachProject();
+  const t4 = await c.beginTurn('现在没有项目了');
+  check(!/当前项目/.test(c.messagesFor(t4)[0].content), '移出项目后 prompt 里不再有项目段');
+  c.finishTurn(t4, '好。');
+  c.close();
+}
+
+/* The ceilings: the block is bounded by topic count, message count and characters, and the
+ * character ceiling is applied by the renderer because it is the only place that knows the
+ * rendered length. A project with twelve topics must not push the prompt past the budget. */
+{
+  const clock = 1_700_200_000_000;
+  const c = open('project-bounds', { now: () => clock });
+  const first = await c.beginTurn('开始');
+  const project = c.newProject('大项目').project;
+  c.finishTurn(first, '好。');
+
+  for (let i = 0; i < 12; i++) {
+    c.newTopic('话题' + i);
+    c.assignProject(project.id);
+    const turn = await c.beginTurn('聊点' + i);
+    c.finishTurn(turn, '好。');
+  }
+  c.newTopic('当前话题');
+  c.assignProject(project.id);
+  const current = await c.beginTurn('现在聊当前这个话题');
+  const system = c.messagesFor(current)[0].content;
+
+  const start = system.indexOf('# 当前项目：大项目');
+  const end = system.indexOf('# 当前时间');
+  check(start >= 0 && end > start, '项目段存在，可以单独取出来度量');
+  const section = system.slice(start, end);
+  const topicLines = section.split('\n').filter((l) => l.startsWith('- '));
+  const excerptLines = section.split('\n').filter((l) => l.startsWith('【'));
+  check(topicLines.length === conv.PROJECT_TOPIC_LIMIT,
+    '按话题数封顶：' + topicLines.length + '（上限 ' + conv.PROJECT_TOPIC_LIMIT + '）');
+  check(excerptLines.length === conv.PROJECT_MESSAGE_LIMIT,
+    '按消息数封顶：' + excerptLines.length + '（上限 ' + conv.PROJECT_MESSAGE_LIMIT + '）');
+  check(section.length <= conv.PROJECT_SECTION_MAX_CHARS,
+    '按字符封顶：' + section.length + ' <= ' + conv.PROJECT_SECTION_MAX_CHARS);
+  c.close();
+
+  /* The renderer alone cannot know how long the excerpt is, so the per-message ceiling keeps one
+   * long reply from consuming the section. It is deliberately shorter than the section. */
+  const long = conv.projectSection({
+    project: { name: 'P' },
+    topics: [],
+    messages: [{ role: 'assistant', topicTitle: 'T', content: 'x'.repeat(500) }],
+  });
+  check(long.indexOf('x'.repeat(conv.PROJECT_EXCERPT_MAX_CHARS)) >= 0 &&
+    long.indexOf('x'.repeat(conv.PROJECT_EXCERPT_MAX_CHARS + 1)) < 0,
+    '单条摘录按字符截断');
+  check(conv.projectSection(null) === '' && conv.projectSection({}) === '',
+    '没有项目时返回空字符串');
+}
+
 /* ---------------------------------------------------------------- 17. the side requests
  * api.js holds the two requests that are not the reply. They moved out of main.js because a module
  * that cannot be loaded outside Electron can never be tested — which is how ADR-012's boundary

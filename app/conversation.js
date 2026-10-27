@@ -62,6 +62,77 @@ function profileLine(identity) {
 const MEMORY_INJECT_LIMIT = 20;
 const MEMORY_SECTION_MAX_CHARS = 1200;
 
+/*
+ * Phase 4 (ADR-014): the project block is REFERENCE, not history.
+ *
+ * When the active topic belongs to a project, the prompt is told the project's name, its other
+ * topics, and the newest exchanges from those topics. Three ceilings keep that inside the prompt
+ * budget ADR-008 warns about, and keep one busy topic from crowding out the rest of the project.
+ * The section is additive: it never replaces the current topic's history, and it is rendered as
+ * labelled reference rather than as chat turns so it cannot be read as something said just now.
+ */
+const PROJECT_TOPIC_LIMIT = 8;
+const PROJECT_MESSAGE_LIMIT = 6;
+const PROJECT_SECTION_MAX_CHARS = 1000;
+const PROJECT_EXCERPT_MAX_CHARS = 200;
+
+/*
+ * The project section. Every line comes from the store — the name, the sibling topics with their
+ * message counts, and excerpts of what was actually said. There is deliberately no summary here:
+ * a generated one would assert project status the app cannot verify (ADR-014), and a stored copy
+ * would drift from the rows it was derived from.
+ *
+ * `context` is { project, topics, messages } or null. The caller applies the count ceilings (they
+ * are part of the query); this function applies the character ceiling, because it is the only
+ * place that knows how long the rendered text really is.
+ */
+function projectSection(context) {
+  if (!context || !context.project) return '';
+  const name = String(context.project.name == null ? '' : context.project.name).trim();
+  if (!name) return '';
+
+  const otherTopics = context.topics || [];
+  const messages = context.messages || [];
+  const lines = [
+    '\n\n# 当前项目：' + name,
+    '当前话题属于主人建的项目「' + name + '」。',
+  ];
+  let used = lines.join('\n').length;
+
+  const push = (line) => {
+    if (used + line.length + 1 > PROJECT_SECTION_MAX_CHARS) return false;
+    lines.push(line);
+    used += line.length + 1;
+    return true;
+  };
+
+  const named = otherTopics.filter((t) => t && String(t.title == null ? '' : t.title).trim());
+  if (named.length) {
+    push('项目里的其他话题（新到旧）：');
+    for (const t of named) {
+      const title = String(t.title).trim();
+      const count = t.messageCount == null ? null : Number(t.messageCount);
+      if (!push('- ' + title + (count == null ? '' : '（' + count + ' 条）'))) break;
+    }
+  } else {
+    push('项目里目前只有当前这个话题。');
+  }
+
+  if (messages.length && push('项目里最近的其他对话（供参考，不是当前话题的内容）：')) {
+    for (const m of messages) {
+      const who = m.role === 'assistant' ? '你' : (m.role === 'user' ? '主人' : null);
+      if (!who) continue;
+      const title = String(m.topicTitle == null ? '' : m.topicTitle).trim() || topics.FALLBACK_TITLE;
+      let text = String(m.content == null ? '' : m.content).replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      if (text.length > PROJECT_EXCERPT_MAX_CHARS) text = text.slice(0, PROJECT_EXCERPT_MAX_CHARS) + '…';
+      if (!push('【' + title + '·' + who + '】' + text)) break;
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function memorySection(memories) {
   const list = (memories || []).slice(0, MEMORY_INJECT_LIMIT);
   if (!list.length) return '';
@@ -84,16 +155,16 @@ function memorySection(memories) {
 
 /*
  * Build the full system prompt: persona, then what the program can actually do, then the
- * observed profile, then what she remembers about the owner, then the current time. Rebuilt
- * every turn so "now" is always accurate.
+ * observed profile, then what she remembers about the owner, then the project the current topic
+ * belongs to, then the current time. Rebuilt every turn so "now" is always accurate.
  *
  * Order matters at the top: the capability facts sit immediately after the persona because
  * they constrain what she may claim, and they must not be buried under flavour. See
  * capabilities.js for why they are not part of the persona.
  */
-function buildSystemPrompt(persona, identity, now, memories) {
+function buildSystemPrompt(persona, identity, now, memories, project) {
   return String(persona) + capabilities.capabilitySection() + profileLine(identity) +
-    memorySection(memories) + '\n\n# 当前时间\n' + nowLine(now);
+    memorySection(memories) + projectSection(project) + '\n\n# 当前时间\n' + nowLine(now);
 }
 
 /*
@@ -130,7 +201,7 @@ function buildMessages(options) {
   const identity = options.identity;
   const now = options.now;
 
-  let system = buildSystemPrompt(persona, identity, now, options.memories);
+  let system = buildSystemPrompt(persona, identity, now, options.memories, options.project);
   if (history.length <= EXAMPLE_HISTORY_LIMIT) {
     system += styleReferenceSection(examples, options.pickExample);
   }
@@ -250,6 +321,82 @@ function openConversation(options) {
     const o = options || {};
     if (!available) return [];
     return store.searchMessages(s.db, query, o.limit, o.topicId ? { topicId: o.topicId } : {});
+  }
+
+  /* ---------------------------------------------------------------- projects */
+
+  /*
+   * What the prompt is told about the current topic's project.
+   *
+   * Derived on every call rather than cached or stored (ADR-014): the block is a view of rows
+   * that already exist, and a copy would be a second source of truth. The current topic is
+   * excluded from both lists — its own history is already the conversation, so repeating it as
+   * "other context" would say the same thing twice.
+   */
+  function projectContext(topicId) {
+    if (!available || !topicId) return null;
+    const topic = store.getTopic(s.db, topicId);
+    if (!topic || !topic.projectId) return null;
+    const project = store.getProject(s.db, topic.projectId);
+    if (!project) return null;
+    return {
+      project,
+      topics: store.projectTopics(s.db, project.id, {
+        excludeTopicId: topic.id, limit: PROJECT_TOPIC_LIMIT,
+      }),
+      messages: store.projectRecentMessages(s.db, project.id, {
+        excludeTopicId: topic.id, limit: PROJECT_MESSAGE_LIMIT,
+      }),
+    };
+  }
+
+  function listProjects() {
+    if (!available) return [];
+    return store.listProjects(s.db);
+  }
+
+  /* The project the active topic belongs to, or null. Read from the topic rather than kept as
+   * separate "current project" state: switching topics must switch the project with it. */
+  function currentProject() {
+    if (!available) return null;
+    const topic = store.getCurrentTopic(s.db);
+    if (!topic || !topic.projectId) return null;
+    return store.getProject(s.db, topic.projectId);
+  }
+
+  /*
+   * Create a project and put the current topic in it.
+   *
+   * A name that already exists is not an error the owner should have to decode: it returns the
+   * existing project with created=false, and the caller reports it. Nothing is reassigned in that
+   * case, so a repeated command cannot move a topic behind the owner's back.
+   */
+  function newProject(name) {
+    if (!available) return { project: null, created: false, reason: 'unavailable' };
+    const clean = String(name == null ? '' : name).trim();
+    if (!clean) return { project: null, created: false, reason: 'empty' };
+    const existing = store.getProjectByName(s.db, clean);
+    if (existing) return { project: existing, created: false, reason: 'duplicate' };
+    const project = store.createProject(s.db, { name: clean, createdAt: now() });
+    const topic = store.getCurrentTopic(s.db);
+    if (topic) store.setTopicProject(s.db, topic.id, project.id);
+    return { project, created: true, reason: null };
+  }
+
+  /* Put the active topic into an existing project. Returns the updated topic, or null. */
+  function assignProject(id) {
+    if (!available) return null;
+    const topic = store.getCurrentTopic(s.db);
+    if (!topic) return null;
+    return store.setTopicProject(s.db, topic.id, id);
+  }
+
+  /* Take the active topic out of whatever project it is in. */
+  function detachProject() {
+    if (!available) return null;
+    const topic = store.getCurrentTopic(s.db);
+    if (!topic) return null;
+    return store.setTopicProject(s.db, topic.id, null);
   }
 
   /*
@@ -569,6 +716,9 @@ function openConversation(options) {
       /* Read at assembly time rather than captured earlier, so a memory stored by the previous
        * turn is already part of what this turn is told. */
       memories: activeMemoryList(),
+      /* Read at assembly time, like the memories: a project assigned between turns is part of
+       * what the next turn is told. */
+      project: turn && turn.topicId ? projectContext(turn.topicId) : null,
       now: Date.now(),
     });
     if (turn && turn.userText) {
@@ -655,6 +805,11 @@ function openConversation(options) {
     newTopic,
     renameTopic,
     search,
+    listProjects,
+    currentProject,
+    newProject,
+    assignProject,
+    detachProject,
     beginTurn,
     messagesFor,
     recordAssistantDelta,
@@ -683,4 +838,9 @@ module.exports = {
   MEMORY_INJECT_LIMIT,
   MEMORY_SECTION_MAX_CHARS,
   memorySection,
+  PROJECT_TOPIC_LIMIT,
+  PROJECT_MESSAGE_LIMIT,
+  PROJECT_SECTION_MAX_CHARS,
+  PROJECT_EXCERPT_MAX_CHARS,
+  projectSection,
 };
