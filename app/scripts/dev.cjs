@@ -83,5 +83,11 @@ if (result.status !== 0) {
   console.error('dev: Electron exited with code ' + result.status +
     (result.signal ? ' (signal ' + result.signal + ')' : '') +
     ' — the window never started.');
+  /* 0x80000003 in both its signed and unsigned forms: what a process that is not allowed to
+   * create a window gets. Naming the cause turns a silent return into an instruction. */
+  if (result.status === 2147483651 || result.status === -2147483645) {
+    console.error('dev: that is the code a sandboxed terminal gets when it cannot create a window.');
+    console.error('dev: start from a normal Windows Terminal, or double-click start-dev.cmd.');
+  }
 }
 process.exit(result.status == null ? 0 : result.status);

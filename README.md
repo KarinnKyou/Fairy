@@ -133,6 +133,13 @@ npm run dev -- --dir D:\scratch    # or point it somewhere specific
 `npm run dev` never touches `app/data`. Use `npm start` when you want to talk to her for
 real.
 
+**If no window opens**, read the last line. `Electron exited with code 2147483651` means the
+terminal could not create a window — a shell started inside the DSH sandbox does exactly that.
+Double-click `start-dev.cmd` in the repository root (Explorer launches it outside the sandbox), or
+run it from a plain Windows Terminal; it is this same scratch launcher with its arguments passed
+through. Separately, `ELECTRON_RUN_AS_NODE=1` makes `electron.exe` behave as plain Node and the app
+cannot start; `scripts/dev.cjs` clears it for its child, and `main.js` names it if it is still set.
+
 To clear the real store deliberately:
 
 ```sh
