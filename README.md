@@ -333,7 +333,7 @@ A project is a container you fill, not one the app infers:
 | --- | --- |
 | `/projects` | Every project, with its topic and message counts; `*` marks the current topic's project |
 | `/project` | Which project the current topic belongs to |
-| `/project new <名字>` | Create a project and put the current topic in it |
+| `/project new <名字>` | Create a project and put the current topic in it (one line, up to 40 characters) |
 | `/project <序号\|id>` | Put the current topic into an existing project |
 | `/project off` | Take the current topic out of its project |
 

@@ -37,7 +37,7 @@ to the model. Anything else is a message for her.
 | `/rename <标题>` | Rename the current topic (`/topic` is an alias) |
 | `/projects` | Every project, newest activity first, with how many topics and messages it holds; `*` marks the current topic's project |
 | `/project` | Which project the current topic belongs to, or that it belongs to none |
-| `/project new <名字>` | Create a project and put the current topic in it |
+| `/project new <名字>` | Create a project and put the current topic in it (one line, up to 40 characters) |
 | `/project <序号\|id>` | Put the current topic into an existing project. The number is the one `/projects` printed |
 | `/project off` | Take the current topic out of its project |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |

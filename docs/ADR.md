@@ -934,6 +934,9 @@ panel): `/projects`, `/project` (status), `/project new <name>`, `/project <numb
 `/project off`. `/project new` assigns the current topic as well, because creating a project and
 then putting nothing in it is not a use case.
 
+A name is whitespace-collapsed and capped at 40 characters; a longer one is refused rather than
+truncated, because v0.4 has no rename and the name is reprinted in the prompt header on every turn.
+
 No inference, no model call, no keyword rule. ADR-012 is this repository's evidence that a lexical
 rule cannot answer a semantic question, and the model is not asked either: a wrong assignment is
 **silent** — it changes what she is told on every turn — and there is no ground truth to score it
