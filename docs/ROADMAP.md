@@ -10,16 +10,17 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 
 | | |
 | --- | --- |
-| Current release | **v0.3** (`0.3.0`), pre-release, tag `v0.3` |
-| Released | 2026-09-15 |
-| Artifact | `HDD-0.3.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B0DFE344…` |
-| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.3 |
-| Phase in progress | **Phase 4 — projects and context assembly**, implemented in ADR-014; not yet released — it has not been through a real window or a release ritual |
+| Current release | **v0.4** (`0.4.0`), pre-release, tag `v0.4` |
+| Released | 2026-10-27 |
+| Artifact | `HDD-0.4.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B3E8ACB5…` |
+| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.4 |
+| Phase in progress | **Phase 5 — files, chunks and semantic retrieval**, no ADR yet, not started; the vector-store decision is due at the start (ADR-007) |
 | Automated tests | 4 suites, **614 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
 
-The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
-per-turn prompt, an accumulating profile) but held one undifferentiated transcript. `v0.01` (the
-"demo") showed the look, before the app had any persistence at all.
+Earlier releases are kept as history: `v0.1` made the conversation real (persistence, a per-turn
+prompt, an accumulating profile) but held one undifferentiated transcript; `v0.2` split it into
+topics; `v0.3` gave her long-term memory; `v0.4` put topics into projects. `v0.01` (the "demo")
+showed the look, before the app had any persistence at all.
 
 ---
 
@@ -124,7 +125,7 @@ order is the plan.
 | --- | --- | --- | --- | --- |
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
-| 4 | v0.4 | **implemented, not yet released** (ADR-014) | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
+| 4 | v0.4 | **shipped** 2026-10-27 | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
@@ -194,7 +195,7 @@ silent improvement behind.
 
 ---
 
-## Phase 4 — projects and context assembly (implemented, not yet released)
+## Phase 4 — projects and context assembly (shipped as v0.4)
 
 **Goal:** the conversation stops being one topic at a time. A project is a named container the
 owner puts topics into, and the prompt is assembled from the current topic **plus** the project it
@@ -231,6 +232,12 @@ needs a confirmation design, and this phase did not invent one.
 - Is one command per topic acceptable? If the curation cost is what stops projects being used, the
   deferred auto-assignment question comes back with evidence.
 
+**Released as `v0.4` on 2026-10-27.** The artifact passed every packaging check — no real API key
+inside, every module the app `require`s present in the asar, no font bytes, and the three interface
+rules still present. The source window was smoke-started before the build (it opens and creates the
+store), but the five project commands have still only been driven by the page tests, not typed by
+hand in that window, and the project block has not been through a real conversation.
+
 ---
 
 ## Open decisions and known debts
@@ -262,8 +269,8 @@ Not blockers, but they should not be forgotten.
    and `topics` present. The store file itself dates from 2026-09-10 (the v0.1 era), so that launch
    also carried a real upgrade from an older schema. It was then killed rather than closed, which is
    the second useful thing it shows: an abrupt exit leaves the store readable at v5, since the WAL
-   sidecars were still present afterwards. (That launch predates migration 6; a v0.4 build must
-   re-verify the same branch at schema v6.)
+   sidecars were still present afterwards. (That launch predates migration 6; `HDD-0.4.0.exe` exists
+   but has not been launched, so the same branch still needs one run at schema v6.)
 4. **`NOTICE` is a verbatim copy of the upstream file** and references a `TRADEMARKS.md`
    that this repository does not contain. Left verbatim deliberately — it is the upstream
    project's notice — but the dangling reference should be resolved when the licensing
@@ -373,8 +380,8 @@ Not blockers, but they should not be forgotten.
 22. **The project block has never been through a real conversation.** The machine side is asserted;
     its effect is not. The next real run should check that she uses the project's other topics
     instead of ignoring them, that she does not read an excerpt as something said just now, and that
-    one `/project` per topic is not too much typing. Until then this is the phase's main risk, and
-    the reason v0.4 is recorded as "implemented" rather than "done".
+    one `/project` per topic is not too much typing. Until then this is the phase's main risk: v0.4
+    shipped with it unmeasured.
 
 ---
 
@@ -384,14 +391,14 @@ Not blockers, but they should not be forgotten.
 cd D:\DSH_Workspace\01_Code\HDD
 npm test                                   # the gate: bake + all four suites
 npm run app:start                          # in the running app: /topics, /projects, /search, /help
-.\release.ps1 -Version 0.3.0 -DryRun       # what the next release would do
+.\release.ps1 -Version 0.4.0 -DryRun       # what the next release would do
 ```
 
 Re-verifying a published artifact without rebuilding it:
 
 ```powershell
 cd D:\DSH_Workspace\01_Code\HDD
-.\release.ps1 -Version 0.2.0 -VerifyOnly   # re-runs the asar checks on app\dist
+.\release.ps1 -Version 0.4.0 -VerifyOnly   # re-runs the asar checks on app\dist
 ```
 
 `docs/COMMANDS.md` lists every command with the directory it must run from.
