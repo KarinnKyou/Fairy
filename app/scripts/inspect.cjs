@@ -126,6 +126,10 @@ if (args.prompt) {
     examples: personality.EXAMPLES,
     identity,
     history,
+    /* Same inputs the app uses, or this prints a prompt that never goes out. The memory and
+     * project sections are capped here exactly as they are in the reply path. */
+    memories: store.activeMemories(opened.db, conversation.MEMORY_CONTEXT_LIMIT),
+    project: current ? conversation.projectContextFor(opened.db, current.id) : null,
     pickExample: (pool) => pool[0],
     now: Date.now(),
   });

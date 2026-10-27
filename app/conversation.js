@@ -133,6 +133,30 @@ function projectSection(context) {
   return lines.join('\n');
 }
 
+/*
+ * The rows the project section is built from.
+ *
+ * Module level rather than a closure, because `inspect.cjs --prompt` must assemble the same prompt
+ * the app would; a second copy of this query there would be a version that drifts. The current
+ * topic is excluded from both lists: its history is already the conversation.
+ */
+function projectContextFor(db, topicId) {
+  if (!db || !topicId) return null;
+  const topic = store.getTopic(db, topicId);
+  if (!topic || !topic.projectId) return null;
+  const project = store.getProject(db, topic.projectId);
+  if (!project) return null;
+  return {
+    project,
+    topics: store.projectTopics(db, project.id, {
+      excludeTopicId: topic.id, limit: PROJECT_TOPIC_LIMIT,
+    }),
+    messages: store.projectRecentMessages(db, project.id, {
+      excludeTopicId: topic.id, limit: PROJECT_MESSAGE_LIMIT,
+    }),
+  };
+}
+
 function memorySection(memories) {
   const list = (memories || []).slice(0, MEMORY_INJECT_LIMIT);
   if (!list.length) return '';
@@ -334,20 +358,8 @@ function openConversation(options) {
    * "other context" would say the same thing twice.
    */
   function projectContext(topicId) {
-    if (!available || !topicId) return null;
-    const topic = store.getTopic(s.db, topicId);
-    if (!topic || !topic.projectId) return null;
-    const project = store.getProject(s.db, topic.projectId);
-    if (!project) return null;
-    return {
-      project,
-      topics: store.projectTopics(s.db, project.id, {
-        excludeTopicId: topic.id, limit: PROJECT_TOPIC_LIMIT,
-      }),
-      messages: store.projectRecentMessages(s.db, project.id, {
-        excludeTopicId: topic.id, limit: PROJECT_MESSAGE_LIMIT,
-      }),
-    };
+    if (!available) return null;
+    return projectContextFor(s.db, topicId);
   }
 
   function listProjects() {
@@ -843,4 +855,5 @@ module.exports = {
   PROJECT_SECTION_MAX_CHARS,
   PROJECT_EXCERPT_MAX_CHARS,
   projectSection,
+  projectContextFor,
 };
