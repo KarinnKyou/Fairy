@@ -909,8 +909,8 @@ record that row was the whole of the specification. The surroundings are already
 What exists today is one topic at a time: persona → capabilities → profile → memories → time, then
 the active topic's last 30 messages, and switching topics swaps that history. Nothing spans topics.
 The cost is recorded in the evaluation corpus: asked 「那个终端项目的全文搜索做到哪一步了」 she
-answered 「我这边没有你项目的记录」, in a conversation where the same project had already been the
-subject of several topics (`docs/eval/topics-2026-09-14-run3.json`). Each topic was right in
+answered 「主人，我这边没有你项目的进度记录」, in a conversation where the same project had already
+been the subject of several topics (`docs/eval/topics-2026-09-14-run3.json`). Each topic was right in
 isolation; the conversation had no unit above it.
 
 Four questions were open:
