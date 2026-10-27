@@ -1,5 +1,52 @@
 # HDD — version record
 
+## 0.4.0 (release name: HDD-0.4.0)
+
+Phase 4: projects. Topics can be put into a named container, and the prompt is assembled from the
+current topic **plus** the project it belongs to — its other topics, and a bounded excerpt of what
+was said in them. The decisions are ADR-014.
+
+### What is new
+
+- **Projects, created and filled by you.** `/project new HDD` creates a project and puts the current
+  topic in it; `/project <序号|id>` moves the current topic into an existing one; `/project off`
+  takes it out; `/projects` lists them with topic and message counts; bare `/project` says where you
+  are. A topic belongs to at most one project.
+- **Nothing is assigned for you.** No inference, no keyword rule, no model call — and a topic opened
+  by an automatic boundary does not inherit the previous topic's project. A wrong assignment would
+  silently change what she is told every turn; one command states the right one.
+- **The project is context, not a summary.** When the current topic is in a project, the system
+  prompt gains a labelled block: the project's name, its other topics with their message counts, and
+  the newest exchanges from those topics. It is reference material — not chat turns, and not a
+  replacement for the current topic's history. Bounded at 8 topics, 6 messages and 1000 characters
+  (200 per excerpt), so it cannot crowd out the prompt budget.
+- **No extra request, no new capability.** v0.4 adds no API call; membership and context are local.
+  The capability list is unchanged.
+- **Schema v6, additive.** Migration 6 adds `projects` and a nullable `topics.project_id`. Existing
+  topics stay unassigned — no store is given a project it never asked for.
+- **`inspect --prompt` now prints what the app really sends**, memory and project sections included;
+  before this it silently omitted the memory section.
+- **A silent startup failure is now a sentence.** `npm run dev` reports Electron's exit code, and a
+  checkout labeled Low integrity — which Electron refuses to start from — is named with its repair.
+
+### Known limitations
+
+- Windows x64 only, one portable exe, always full-screen, `Esc` to quit, no cancel for a reply in
+  progress; the published exe contains no font and renders in the system sans-serif.
+- **Projects are curated by hand.** Every new topic inside a project needs one `/project <n>`, and
+  membership is never inherited. If that friction proves too high, automatic assignment is the
+  deferred question in ADR-014.
+- **Nothing can rename or delete a project.** A typo stays visible in `/projects`; deletion needs a
+  confirmation design the command surface does not have.
+- **The project block has not been through a real conversation.** That she uses it, and that she does
+  not read a sibling excerpt as something said just now, is unmeasured; the next real conversation is
+  the test.
+- **The project commands were exercised in the simulated page, not typed by hand in a real window.**
+  The window itself was smoke-started — it opens, and the store is created.
+- Unchanged limits: the memory cue misses some facts, the topic confirmer over-splits short
+  follow-ups, and a boundary costs one request.
+- `npm test` reports **614 passing assertions** across four suites.
+
 ## 0.3.0 (release name: HDD-0.3.0)
 
 Phase 3: she remembers. Stable facts about the owner — where they live, what they work on, what
