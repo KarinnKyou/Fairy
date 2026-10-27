@@ -42,19 +42,23 @@ left to rot. Everything below was true at the moment it was written.
   own that git ignores. `docs/COMMANDS.md`, `docs/ROADMAP.md` and those scripts were updated to the
   new paths, and the scripts now resolve the font directory from their own location rather than from
   a hard-coded one.
-- **A tree copied in from outside this workspace cannot be written under `workspace-write`.** The
-  copied files keep the integrity label they had at the old location, so the sandbox's low-integrity
-  process is refused by the operating system while the permissions look perfectly correct: `npm test`
-  dies with `EPERM` in the asset bake, and none of the usual permission repairs help. This cost `HDD/`
-  the days between 2026-10-09 and 2026-10-12; the fix was write-owner rights plus one
-  `icacls "…\HDD" /setintegritylevel "(OI)(CI)Low" /T`, applied to the diagnostics folder too.
-  Suspect it whenever a denial contradicts what the active policy promises.
+- **The checkout must stay at medium integrity, and that cost a day to learn.** A tree copied from
+  another location keeps the integrity label it had there; under a low-integrity sandbox that showed
+  up as `EPERM` in the asset bake on 2026-10-09. The 2026-10-12 workaround was to relabel the whole
+  tree Low — and on 2026-10-27 that turned out to make **Electron unstartable**: every launch died
+  with exit code `2147483651` (`0x80000003`) before a window or the store existed, because Chromium
+  refuses to start from a low-labeled executable. The tree is Medium again
+  (`icacls "…\HDD" /setintegritylevel "(OI)(CI)Medium" /T /C /Q`), and both the window and
+  `npm test` work. **Do not relabel it Low again**; if a write is denied, fix the ACL (write owner),
+  not the label.
 - `npm run dev`, `npm run inspect`, `npm run probe` live in `app/`; `npm test` lives at the root.
   The two `package.json` files do not offer the same scripts.
 - `electron-builder` builds, `git push` and `gh` are denied in the sandbox (`spawn EPERM`,
   `schannel`) and need escalation.
-- **Electron cannot start in the sandbox**, so anything requiring a real window — or a packaged
-  build — has to be run by the owner. Say so plainly instead of implying it was verified.
+- **Electron starts here again** (smoke-launched 2026-10-27 with `HDD_DATA_DIR` pointed at a scratch
+  directory: window titled `HDD`, four processes, `hdd.db` created). The automated tests still never
+  open a window, and a packaged build is still the owner's step — do not imply either was verified
+  by them.
 - In `pwsh`, .NET file APIs (`[System.IO.File]::…`) need **absolute** paths: a relative one resolves
   against the process working directory, not against `cd`. This has cost real time here.
 - Do not truncate a long-running command's output with `Select-Object -First N` — it kills the

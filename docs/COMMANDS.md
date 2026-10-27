@@ -23,11 +23,13 @@ npm start                 # prep, then open the window; data goes to app/data/hd
 
 Use this when you want a conversation you intend to keep. `Esc` quits.
 
-**If no window appears**, the launcher prints why. `Electron exited with code 2147483651` means the
-terminal cannot create a window (a shell inside the DSH sandbox does this): double-click
-`start-dev.cmd` in the repository root, or run it from a plain Windows Terminal. `ELECTRON_RUN_AS_NODE=1`
-turns `electron.exe` into plain Node; `scripts/dev.cjs` clears it for its child, and `main.js` says so
-by name if it is still set.
+**If no window appears**, the launcher prints why. `Electron exited with code 2147483651` is
+`0x80000003`: Chromium aborted before the window existed. In this repository that was caused by the
+checkout being labeled **Low integrity** — Electron will not start from a low-labeled executable.
+Check with `icacls "D:\DSH_Workspace\01_Code\HDD" | findstr Mandatory` and repair with
+`icacls "D:\DSH_Workspace\01_Code\HDD" /setintegritylevel "(OI)(CI)Medium" /T /C /Q`.
+`ELECTRON_RUN_AS_NODE=1` is a different failure: it turns `electron.exe` into plain Node;
+`scripts/dev.cjs` clears it for its child, and `main.js` says so by name if it is still set.
 
 ### 1.1 Commands you type to her
 
@@ -243,7 +245,7 @@ pointed at a deliberately broken build and shown to fail — do that if you chan
 | `Cannot find module 'node:sqlite'` | Node is older than 22.5; use 24.x |
 | The window never appears after `npm run dev` | read the last line: it prints Electron's exit code. If it is non-zero, the app died before creating a window |
 | ...and `echo %ELECTRON_RUN_AS_NODE%` (cmd) prints `1` | that variable makes `electron.exe` behave as plain Node, so the app dies before the window. `scripts/dev.cjs` clears it for its child; for `npm start` unset it first (`set ELECTRON_RUN_AS_NODE=` or `Remove-Item Env:\ELECTRON_RUN_AS_NODE`) |
-| ...and the exit code is large/negative (e.g. `2147483651`) | the terminal could not create a GUI — typically one running inside the DSH sandbox. Double-click `start-dev.cmd` in the repository root (or run it from a normal Windows Terminal) instead |
+| ...and the exit code is `2147483651` (`0x80000003`) | Chromium aborted before the window. The cause seen here was the checkout labeled **Low integrity** — Electron will not start from a low-labeled executable. `icacls "D:\DSH_Workspace\01_Code\HDD" | findstr Mandatory`, then relabel Medium (README 3.2) |
 | `conversation.test.cjs` fails about persona wording | the persona changed. Those assertions encode ADR-008 — decide whether the persona or the assertion is wrong before editing either |
 | `conversation.test.cjs` fails about a capability (`工具调用`, `联网`, …) | the declaration in `app/capabilities.js` and the code disagree. The test says which: declare the capability there, or restore the code |
 | `conversation.test.cjs` fails with `prompt 未罗列做不到的项` | something started rendering the absences as a list again. Don't — sharpen the positive statement or the manner rules in the persona instead (ADR-009) |

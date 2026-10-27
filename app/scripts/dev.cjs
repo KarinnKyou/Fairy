@@ -83,11 +83,16 @@ if (result.status !== 0) {
   console.error('dev: Electron exited with code ' + result.status +
     (result.signal ? ' (signal ' + result.signal + ')' : '') +
     ' — the window never started.');
-  /* 0x80000003 in both its signed and unsigned forms: what a process that is not allowed to
-   * create a window gets. Naming the cause turns a silent return into an instruction. */
+  /* 0x80000003 in both its signed and unsigned forms: Chromium aborted before the window
+   * existed. The cause seen in this repository was the checkout being labeled Low integrity —
+   * Electron will not start from a low-labeled executable. Name it, with the repair. */
   if (result.status === 2147483651 || result.status === -2147483645) {
-    console.error('dev: that is the code a sandboxed terminal gets when it cannot create a window.');
-    console.error('dev: start from a normal Windows Terminal, or double-click start-dev.cmd.');
+    const repo = path.resolve(APP, '..');
+    console.error('dev: 0x80000003 means Chromium aborted before the window existed.');
+    console.error('dev: a checkout labeled Low integrity does this. Check with:');
+    console.error('dev:   icacls "' + repo + '" | findstr Mandatory');
+    console.error('dev: repair with:');
+    console.error('dev:   icacls "' + repo + '" /setintegritylevel "(OI)(CI)Medium" /T /C /Q');
   }
 }
 process.exit(result.status == null ? 0 : result.status);
