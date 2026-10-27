@@ -14,7 +14,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Released | 2026-09-15 |
 | Artifact | `HDD-0.3.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B0DFE344…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.3 |
-| Phase in progress | **Phase 4 — context assembly and projects**, no ADR yet, not started |
+| Phase in progress | **Phase 4 — projects and context assembly**, decided in ADR-014; implementation starting |
 | Automated tests | 4 suites; see `docs/COMMANDS.md` §3 |
 
 The previous release, `v0.1`, is kept as history: it made the conversation real (persistence, a
@@ -124,7 +124,7 @@ order is the plan.
 | --- | --- | --- | --- | --- |
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
-| 4 | v0.4 | **next — no ADR yet** | Context assembly and projects; topics linked to projects | `projects`, context tables |
+| 4 | v0.4 | **in progress — ADR-014 accepted** | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
 | 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |

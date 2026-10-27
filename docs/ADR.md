@@ -888,6 +888,145 @@ corpus.
 
 ---
 
+## ADR-014 — Projects: an owner-named container, and context assembled from it
+
+**Status:** Accepted
+
+**Context**
+
+Phase 4 is "context assembly and projects; topics linked to projects" (ROADMAP), and until this
+record that row was the whole of the specification. The surroundings are already fixed:
+
+- the main process owns the state and the renderer only draws it (ADR-001);
+- a schema change is **migration 6**, appended and never edited (ADR-004);
+- `projects` gets an application-generated id and UTC timestamps, and a topic's link to it is a
+  foreign key (ADR-005);
+- `topics.project_id` must be **nullable** so the migration stays additive, the same requirement
+  ADR-006 made for `topic_id`;
+- no embeddings, no retrieval layer — "recent-N plus a profile" is the context policy until Phase 5
+  decides otherwise (ADR-007) — and the prompt budget is a real constraint (ADR-008).
+
+What exists today is one topic at a time: persona → capabilities → profile → memories → time, then
+the active topic's last 30 messages, and switching topics swaps that history. Nothing spans topics.
+The cost is recorded in the evaluation corpus: asked 「那个终端项目的全文搜索做到哪一步了」 she
+answered 「我这边没有你项目的记录」, in a conversation where the same project had already been the
+subject of several topics (`docs/eval/topics-2026-09-14-run3.json`). Each topic was right in
+isolation; the conversation had no unit above it.
+
+Four questions were open:
+
+1. **What is a project** — a container the owner fills, or a classification the app infers?
+2. **What does it contribute to the prompt**, and does it replace the topic's history?
+3. **Where does that contribution live** — stored, or derived at assembly time?
+4. **How is it driven**, given one input line and no chrome? (ADR-012 answered that with commands.)
+
+**Decision**
+
+**1. A project is a container of topics that the owner names and fills. Membership is explicit.**
+
+Migration 6 adds `projects` (`id`, unique `name`, `created_at`, `updated_at`) and a nullable
+`topics.project_id` with an index. **Nothing is backfilled**: a project is an act, and inventing one
+for existing topics would repeat the mistake ADR-006 rejected for topics — a store that never used
+the feature would carry a fake row.
+
+Commands, on the existing input line and printing through the same `.line` elements (no CSS, no
+panel): `/projects`, `/project` (status), `/project new <name>`, `/project <number|id>`,
+`/project off`. `/project new` assigns the current topic as well, because creating a project and
+then putting nothing in it is not a use case.
+
+No inference, no model call, no keyword rule. ADR-012 is this repository's evidence that a lexical
+rule cannot answer a semantic question, and the model is not asked either: a wrong assignment is
+**silent** — it changes what she is told on every turn — and there is no ground truth to score it
+against. The owner already knows which project they are in; one command states it. **The cost is
+stated plainly:** every new topic inside a project needs that one command, and a boundary inside a
+project does not inherit membership. That cost is the first thing to measure against a real
+workload.
+
+**2. A project contributes facts, never a generated summary.**
+
+When the active topic belongs to a project, the system prompt gains one section between the memories
+and the time:
+
+```
+# 当前项目：HDD
+当前话题属于主人建的项目「HDD」。项目里的其他话题（新到旧）：
+- 数据库选型（12 条）
+- 发布打包（8 条）
+这个项目里最近的其他对话（供参考，不是当前话题的内容）：
+【数据库选型·主人】…
+【数据库选型·你】…
+```
+
+Every line is read out of the store: the name, the project's other topics with their message counts,
+and the most recent exchanges from those topics. The app does not summarise the project and the
+model does not write a brief. A generated summary is a claim about the owner's work that the app
+cannot verify — the failure ADR-009 forbids for capabilities and ADR-013 avoids for memories — and
+it would cost a request per update.
+
+**3. It is derived at assembly time; there is no context table.**
+
+The block is computed from `topics` and `messages` on each turn by `conversation.messagesFor`. A
+stored copy would be a second source of truth for the same rows and would drift the first time a
+topic was absorbed or a message edited. This amends the ROADMAP's "context tables" expectation:
+v0.4 adds no such table, and the reason is recorded here rather than left as an omission.
+
+**4. The topic remains the unit of history; the project block is additive and bounded.**
+
+The block does not replace the 30-message window and is not inserted as chat turns. The current
+exchange is still the current topic's history (ADR-012); the project block is *reference* — labelled
+as other topics' content so it cannot be read as something said in this one. Three ceilings keep it
+inside the prompt budget (ADR-008): `PROJECT_TOPIC_LIMIT` (8 topics), `PROJECT_MESSAGE_LIMIT`
+(6 messages) and `PROJECT_SECTION_MAX_CHARS` (1000 characters, plus 200 per excerpt). The section is
+omitted entirely when the active topic has no project.
+
+**5. It costs no request, and declares no new capability.**
+
+v0.4 adds no API call: membership and context are local. The capability list is unchanged — a
+project is context the app stores, not something she can do. The `memory` entry already covers
+"remembers some of what the owner said", and this phase does not make its wording more specific.
+
+**Consequences**
+
+- Migration 6 is additive and leaves every existing topic unassigned. A v0.3 store opens at v6 with
+  no project rows.
+- `absorbTopic` carries the project with the messages: when a provisional (greeting) topic is merged
+  into the topic that replaced it, its `project_id` moves to the surviving topic. Membership follows
+  the messages the owner assigned.
+- Existing prompt-order assertions still hold; the project section sits between memories and time.
+- **A new failure mode to measure:** she may read a sibling topic's excerpt as something said in the
+  current exchange. Explicit labelling and the excerpt ceiling are the mitigation; whether that
+  works is a question for the next real conversation, not for an assertion.
+- Project assignment is deterministic, so it adds nothing to `docs/eval` (ADR-010 covers model
+  judgements). `/projects` is covered by store, conversation and renderer tests instead.
+- **Nothing can delete or rename a project in v0.4.** An empty project is harmless and visible; a
+  destructive command with no confirmation is not. Recorded as a debt rather than shipped.
+- `inspect.cjs` does not print projects yet; like memories before it, that is the audit tool's next
+  blind spot.
+
+**Alternatives rejected**
+
+- *Let the model assign the project during the boundary confirmation*: it would cost no extra
+  request — the confirmation already runs and already names things — but it adds a silent
+  wrong-assignment failure mode for a decision the owner can make in one command. Revisit when a real
+  workload shows the curation cost is what stops the feature from being used.
+- *Inherit the current topic's project when a boundary opens a new topic*: convenient, and wrong in
+  the same way — the project would follow the subject wherever it went, including away from the
+  project. `/project <n>` states the intent instead.
+- *A local keyword rule for assignment*: ADR-012's measured failure, repeated on a new question.
+- *A model-written project brief or summary*: a request per update, and it asserts project status
+  the app cannot verify.
+- *Store the assembled context in a table*: a second source of truth for the same rows.
+- *Merge a project's topics into one history*: it would undo topics, whose subjects are deliberately
+  separate.
+- *A project panel or sidebar*: the same reasoning as every other panel here — a visual design for a
+  verified fullscreen layout, for a feature five commands cover.
+
+**Implementation order**, recorded because each step is verifiable on its own: migration 6 and the
+store layer with tests first; then prompt assembly with the three ceilings; then the commands and
+the IPC cross-checks; then the docs and the debts.
+
+---
+
 ## Deferred decisions (with revisit triggers)
 
 Recorded so they are not silently forgotten. None of these should be built early.
@@ -898,6 +1037,7 @@ Recorded so they are not silently forgotten. None of these should be built early
 | Tool-calling architecture and permission model | Phase 6 starts | Needs a real capability inventory first |
 | Multi-conversation UI | Not scheduled. Phase 2 shipped topics with a command surface (ADR-012) and the panel is still deferred | Six commands already switch topics; a panel is a visual design for a verified fullscreen layout |
 | Retrieval-based memory (vs recent-N + summary) | Memory volume makes summaries inadequate | Recent-N plus a profile covers Phase 1–3 |
+| Automatic project assignment | A real workload shows the one-command cost stops projects being used | A wrong assignment silently changes what she is told, and there is no ground truth to score it against (ADR-014) |
 | Automated behaviour judging | After the manual evaluation set exists | Needs the corpus first (ADR-010) |
 | The full character (humour, vanity, teasing, style examples) | v1.0, once the capabilities it describes exist | A persona written now would claim abilities the build lacks (ADR-008, ADR-009) |
 
@@ -924,3 +1064,6 @@ Short list, to be checked before any structural change:
 10. A memory is never overwritten. Corrections supersede and keep both rows; only an explicit
     `/forget` removes one, because the user asking is different from the app correcting itself
     (ADR-013).
+11. A topic belongs to at most one project, and membership changes only on an explicit command.
+    Project context is derived from the stored rows at assembly time; it is never a generated
+    summary and never a second copy of the data (ADR-014).
