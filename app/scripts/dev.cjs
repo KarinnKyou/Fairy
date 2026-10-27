@@ -59,14 +59,29 @@ console.log('dev: the real store in app/data is untouched');
 if (!args.fresh) console.log('dev: use --fresh for a clean slate');
 
 /* stdio is inherited rather than piped: piping a child\'s output is blocked in some
- * sandboxed environments, and the app window is interactive anyway. */
+ * sandboxed environments, and the app window is interactive anyway.
+ *
+ * ELECTRON_RUN_AS_NODE is cleared for the child. When it is set, electron.exe behaves as plain
+ * Node: main.js gets no `app` object, dies at `app.setName` with a TypeError, and the window
+ * never appears. The DSH harness sets it process-wide, so a run started from such a shell has
+ * to drop it — it is a debugging flag, never how HDD is meant to run. */
+const childEnv = Object.assign({}, process.env, { HDD_DATA_DIR: scratch });
+delete childEnv.ELECTRON_RUN_AS_NODE;
+
 const result = spawnSync(electron, [APP], {
   stdio: 'inherit',
-  env: Object.assign({}, process.env, { HDD_DATA_DIR: scratch }),
+  env: childEnv,
 });
 
 if (result.error) {
   console.error('dev: failed to start Electron: ' + result.error.message);
   process.exit(1);
+}
+/* Silence after the scratch-store lines is what a silent crash looks like. Say what happened:
+ * no window and a non-zero status is a startup failure, not a slow launch. */
+if (result.status !== 0) {
+  console.error('dev: Electron exited with code ' + result.status +
+    (result.signal ? ' (signal ' + result.signal + ')' : '') +
+    ' — the window never started.');
 }
 process.exit(result.status == null ? 0 : result.status);

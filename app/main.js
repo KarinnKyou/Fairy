@@ -12,6 +12,18 @@ const conversation = require('./conversation.js');
 const personality = require('./personality.js');
 const api = require('./api.js');
 
+/*
+ * ELECTRON_RUN_AS_NODE turns electron.exe into plain Node, so `require('electron')` returns a
+ * path instead of the runtime and `app` is undefined. The symptom used to be a TypeError at the
+ * first `app.*` call, which says nothing about the cause; `scripts/dev.cjs` clears the variable,
+ * and this guard covers the other launch paths (`npm start`, a packaged exe started from a shell
+ * that has it set).
+ */
+if (!app) {
+  console.error('HDD needs the real Electron runtime; ELECTRON_RUN_AS_NODE must not be set.');
+  process.exit(1);
+}
+
 /* Config: environment variables win over config.json. */
 const config = { apiKey: '', model: 'deepseek-v4-flash', baseUrl: 'https://api.deepseek.com' };
 function loadConfig() {

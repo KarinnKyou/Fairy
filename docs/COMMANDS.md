@@ -235,6 +235,9 @@ pointed at a deliberately broken build and shown to fail — do that if you chan
 | The UI font is the system font | no font in `app/fonts/`, or you are running `release.ps1`'s build, which excludes it on purpose |
 | `Missing script` | wrong directory — see the table at the top |
 | `Cannot find module 'node:sqlite'` | Node is older than 22.5; use 24.x |
+| The window never appears after `npm run dev` | read the last line: it prints Electron's exit code. If it is non-zero, the app died before creating a window |
+| ...and `echo %ELECTRON_RUN_AS_NODE%` (cmd) prints `1` | that variable makes `electron.exe` behave as plain Node, so the app dies before the window. `scripts/dev.cjs` clears it for its child; for `npm start` unset it first (`set ELECTRON_RUN_AS_NODE=` or `Remove-Item Env:\ELECTRON_RUN_AS_NODE`) |
+| ...and the exit code is large/negative (e.g. `2147483651`) | the terminal could not create a GUI — typically one running inside the DSH sandbox. Start the app from a normal Windows Terminal or Explorer instead |
 | `conversation.test.cjs` fails about persona wording | the persona changed. Those assertions encode ADR-008 — decide whether the persona or the assertion is wrong before editing either |
 | `conversation.test.cjs` fails about a capability (`工具调用`, `联网`, …) | the declaration in `app/capabilities.js` and the code disagree. The test says which: declare the capability there, or restore the code |
 | `conversation.test.cjs` fails with `prompt 未罗列做不到的项` | something started rendering the absences as a list again. Don't — sharpen the positive statement or the manner rules in the persona instead (ADR-009) |
