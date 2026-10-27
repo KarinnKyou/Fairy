@@ -221,6 +221,31 @@ const MIGRATIONS = [
     CREATE INDEX idx_memory_sources_message ON memory_sources(message_id);
     `,
   ],
+  [
+    6,
+    `
+    -- Projects (Phase 4, ADR-014): a container of topics that the owner names. Nothing is
+    -- inferred and nothing is backfilled: a project is an act, so a store that never used the
+    -- feature must not end up carrying a fake one (the same rule ADR-006 set for topics).
+    --
+    -- The name is unique and compared case-insensitively for ASCII, because /projects is read
+    -- as a list of names and two projects that differ only in case are the same project to a
+    -- person. The id stays the identity; the name is a label.
+    CREATE TABLE projects (
+      id         TEXT PRIMARY KEY,
+      name       TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX idx_projects_updated ON projects(updated_at, id);
+
+    -- Nullable and defaulting to NULL, which is what keeps this migration additive: SQLite
+    -- refuses a REFERENCES column with any other default, and ADR-006's rule is that the link
+    -- is added empty and filled by an explicit action, never by a rewrite of existing rows.
+    ALTER TABLE topics ADD COLUMN project_id TEXT REFERENCES projects(id);
+    CREATE INDEX idx_topics_project ON topics(project_id, updated_at, id);
+    `,
+  ],
 ];
 
 const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
@@ -493,6 +518,12 @@ function absorbTopic(db, fromId, intoId) {
   db.exec('BEGIN');
   try {
     const res = db.prepare('UPDATE messages SET topic_id = ? WHERE topic_id = ?').run(into.id, from.id);
+    /* Membership follows the messages: if the topic being absorbed was in a project and the
+     * surviving one is not, the project moves with the conversation the owner assigned. The
+     * surviving topic's own membership, when it has one, wins — it is the newer decision. */
+    if (from.projectId && !into.projectId) {
+      db.prepare('UPDATE topics SET project_id = ? WHERE id = ?').run(from.projectId, into.id);
+    }
     db.prepare('DELETE FROM topics WHERE id = ?').run(from.id);
     touchTopic(db, into.id);
     db.exec('COMMIT');
@@ -573,6 +604,167 @@ function backfillTopics(db) {
   }
 }
 
+/* ------------------------------------------------------------------ projects */
+
+/*
+ * Projects (Phase 4, ADR-014): a named container the owner puts topics into.
+ *
+ * The membership rule lives here and is deliberately narrow: only an explicit call to
+ * setTopicProject changes it. There is no "assign by similarity" path, because a wrong
+ * assignment is silent — it changes what she is told on every turn — and because the owner
+ * already knows which project they are in.
+ */
+
+/* Counts come along with the row: /projects and the prompt both need them, and a second query
+ * per project would be the same work done worse. */
+const PROJECT_COUNTS_SQL =
+  '(SELECT COUNT(*) FROM topics t WHERE t.project_id = p.id) AS topic_count, ' +
+  '(SELECT COUNT(*) FROM messages m JOIN topics t ON t.id = m.topic_id ' +
+  ' WHERE t.project_id = p.id) AS message_count';
+
+function toProject(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    topicCount: row.topic_count == null ? null : Number(row.topic_count),
+    messageCount: row.message_count == null ? null : Number(row.message_count),
+  };
+}
+
+/*
+ * Create a project. Returns null for an empty name rather than storing one: a project with no
+ * name cannot be recognised in the list, and '' is what an accidental empty argument looks
+ * like — the same rule renameTopic applies to topics.
+ *
+ * A duplicate name is refused by the UNIQUE index, loudly. The conversation layer checks for
+ * it first so the common case ("I already made this one") gets a readable answer instead of a
+ * constraint message; the index is what makes that check true rather than merely polite.
+ */
+function createProject(db, project) {
+  const opts = project || {};
+  const name = String(opts.name == null ? '' : opts.name).trim();
+  if (!name) return null;
+  const createdAt = opts.createdAt == null ? nowMs() : opts.createdAt;
+  const updatedAt = opts.updatedAt == null ? createdAt : opts.updatedAt;
+  const id = opts.id || newId(createdAt);
+  db.prepare('INSERT INTO projects (id, name, created_at, updated_at) VALUES (?,?,?,?)')
+    .run(id, name, createdAt, updatedAt);
+  return { id, name, createdAt, updatedAt };
+}
+
+function getProject(db, id) {
+  if (!id) return null;
+  const row = db.prepare('SELECT p.*, ' + PROJECT_COUNTS_SQL + ' FROM projects p WHERE p.id = ?')
+    .get(String(id));
+  return row ? toProject(row) : null;
+}
+
+/* Case-insensitive for ASCII, because the column's collation is: "HDD" and "hdd" are one
+ * project to a person, and letting both exist would split the owner's topics between them. */
+function getProjectByName(db, name) {
+  const clean = String(name == null ? '' : name).trim();
+  if (!clean) return null;
+  const row = db.prepare('SELECT p.*, ' + PROJECT_COUNTS_SQL + ' FROM projects p WHERE p.name = ?')
+    .get(clean);
+  return row ? toProject(row) : null;
+}
+
+/* Newest activity first, the same order topics are read in. updated_at follows both assignment
+ * and new messages, so a project with a conversation happening in it rises to the top. */
+function listProjects(db, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
+  const offset = Math.max(0, opts.offset == null ? 0 : Number(opts.offset));
+  const rows = db.prepare(
+    'SELECT p.*, ' + PROJECT_COUNTS_SQL + ' FROM projects p ' +
+    'ORDER BY p.updated_at DESC, p.id DESC LIMIT ? OFFSET ?'
+  ).all(limit, offset);
+  return rows.map(toProject);
+}
+
+function countProjects(db) {
+  return db.prepare('SELECT COUNT(*) AS n FROM projects').get().n;
+}
+
+/* The project's other topics, newest first. Excluding the current one is what the prompt wants:
+ * its own history is already in the conversation, and repeating its title as "other context"
+ * would tell her about a topic she is already in. */
+function projectTopics(db, projectId, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 20 : Number(opts.limit), 1, 1000);
+  const exclude = opts.excludeTopicId ? String(opts.excludeTopicId) : null;
+  const rows = db.prepare(
+    `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.topic_id = t.id) AS message_count
+       FROM topics t
+      WHERE t.project_id = ?` + (exclude ? ' AND t.id != ?' : '') + `
+      ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
+  ).all(...(exclude ? [String(projectId), exclude, limit] : [String(projectId), limit]));
+  return rows.map((r) => Object.assign(toTopic(r), { messageCount: Number(r.message_count) }));
+}
+
+/*
+ * The newest exchanges from the project's other topics, oldest first — reference material for the
+ * prompt, not history. Only the two roles that carry dialogue: an 'error' row is part of the
+ * transcript but was never said, and handing it to the model as context would misrepresent it.
+ *
+ * The window is selected newest-first and then reversed, so the ceiling keeps the most recent
+ * exchanges rather than the oldest ones.
+ */
+function projectRecentMessages(db, projectId, options) {
+  const opts = options || {};
+  const limit = Math.max(0, opts.limit == null ? 6 : Number(opts.limit));
+  if (!limit) return [];
+  const exclude = opts.excludeTopicId ? String(opts.excludeTopicId) : null;
+  const rows = db.prepare(
+    `SELECT m.id, m.role, m.content, m.created_at, m.topic_id, t.title AS topic_title
+       FROM messages m JOIN topics t ON t.id = m.topic_id
+      WHERE t.project_id = ? AND m.role IN ('user','assistant')` +
+      (exclude ? ' AND m.topic_id != ?' : '') + `
+      ORDER BY m.created_at DESC, m.id DESC LIMIT ?`
+  ).all(...(exclude ? [String(projectId), exclude, limit] : [String(projectId), limit]));
+  return rows.reverse().map((r) => ({
+    id: r.id,
+    role: r.role,
+    content: r.content,
+    createdAt: r.created_at,
+    topicId: r.topic_id,
+    topicTitle: r.topic_title,
+  }));
+}
+
+/*
+ * Put a topic into a project, or take it out with projectId = null.
+ *
+ * Returns the updated topic, or null when the topic does not exist or the project does not.
+ * Refusing an unknown project rather than writing an id that names nothing keeps the foreign key
+ * honest and gives the caller a real failure instead of a topic that points at a ghost.
+ */
+function setTopicProject(db, topicId, projectId) {
+  const topic = getTopic(db, topicId);
+  if (!topic) return null;
+  let target = null;
+  if (projectId != null) {
+    target = getProject(db, projectId);
+    if (!target) return null;
+  }
+  db.prepare('UPDATE topics SET project_id = ? WHERE id = ?')
+    .run(target ? target.id : null, topic.id);
+  if (target) {
+    db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(nowMs(), target.id);
+  }
+  return getTopic(db, topic.id);
+}
+
+/* A message is activity in its project too, so the project list follows the conversation
+ * instead of only following assignment commands. A topic with no project updates nothing. */
+function touchProjectOfTopic(db, topicId, at) {
+  db.prepare(
+    'UPDATE projects SET updated_at = ? WHERE id = (SELECT project_id FROM topics WHERE id = ?)'
+  ).run(at == null ? nowMs() : at, String(topicId));
+}
+
 /* ------------------------------------------------------------------ messages */
 
 /*
@@ -606,7 +798,10 @@ function appendMessage(db, msg) {
     db.prepare('INSERT INTO messages_fts (content, tok, message_id) VALUES (?, ?, ?)')
       .run(content, tokenizeForIndex(content), id);
   }
-  if (topicId) touchTopic(db, topicId, createdAt);
+  if (topicId) {
+    touchTopic(db, topicId, createdAt);
+    touchProjectOfTopic(db, topicId, createdAt);
+  }
   return { id, role: msg.role, content, createdAt, turnId: msg.turnId || null, topicId };
 }
 
@@ -727,6 +922,7 @@ function toTopic(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     titleLocked: Boolean(row.title_locked),
+    projectId: row.project_id == null ? null : row.project_id,
   };
 }
 
@@ -975,6 +1171,14 @@ module.exports = {
   setCurrentTopic,
   backfillTopics,
   META_CURRENT_TOPIC,
+  createProject,
+  getProject,
+  getProjectByName,
+  listProjects,
+  countProjects,
+  projectTopics,
+  projectRecentMessages,
+  setTopicProject,
   appendMessage,
   updateMessage,
   recentMessages,

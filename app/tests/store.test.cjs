@@ -3,7 +3,8 @@
  * store.test.cjs — data layer regression tests (plain Node, no Electron).
  *
  * Covers ids and ordering, migrations and the downgrade guard, the CJK full-text index,
- * topics and their backfill (migration 3), and data-directory resolution.
+ * topics and their backfill (migration 3), memories (migration 5), projects and their
+ * context queries (migration 6), and data-directory resolution.
  *
  * Everything runs against a scratch directory that is deleted afterwards, so the tests
  * never touch real data. Run: node tests/store.test.cjs
@@ -523,6 +524,97 @@ function fresh(name) {
   check(store.getMemory(s.db, f.id).active === true, '更新的那条仍然活跃，没有被牵连');
   check(store.getMemory(s.db, f.id).supersededBy === null, '它也没有留下指向已删除行的指针');
   check(store.memoryChain(s.db, f.id).length === 1, '取代链现在只剩它自己');
+  store.close(s);
+}
+
+/* ---------------------------------------------------------------- 15. projects (ADR-014)
+ * Phase 4 adds a container above topics. What is asserted here is the shape the ADR commits to:
+ * the table and the nullable link arrive as migration 6, nothing is backfilled, membership only
+ * changes when someone says so, and the context queries return the project's *other* topics only
+ * — the current topic's history is already in the conversation and must not be sent twice.
+ */
+{
+  const { s } = fresh('projects');
+  check(store.MIGRATIONS.some(([v]) => v === 6), 'migration 6 存在（projects 与 topics.project_id）');
+  const tables = s.db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+  ).all().map((r) => r.name);
+  check(tables.includes('projects'), '存在表 projects');
+  const cols = s.db.prepare('PRAGMA table_info(topics)').all().map((c) => c.name);
+  check(cols.includes('project_id'), 'topics 有了 project_id');
+  check(store.countProjects(s.db) === 0, '全新库没有项目（没有回填一个假的）');
+
+  const t1 = store.createTopic(s.db, { title: '数据库选型', createdAt: 1000 });
+  const t2 = store.createTopic(s.db, { title: '发布打包', createdAt: 2000 });
+  check(store.getTopic(s.db, t1.id).projectId === null,
+    '旧话题的归属是 NULL，而不是被塞进某个项目');
+
+  const p = store.createProject(s.db, { name: '  HDD  ', createdAt: 3000 });
+  check(p && p.name === 'HDD', '项目名去掉首尾空白：' + (p && p.name));
+  check(store.createProject(s.db, { name: '   ' }) === null, '空名字拒绝创建');
+  let duplicate = null;
+  try {
+    store.createProject(s.db, { name: 'hdd', createdAt: 3001 });
+  } catch (e) {
+    duplicate = e.message;
+  }
+  check(duplicate !== null, '同名（忽略大小写）拒绝创建：' + String(duplicate).slice(0, 45));
+  check(store.getProjectByName(s.db, 'hdd').id === p.id, '按名字查找忽略大小写');
+
+  check(store.setTopicProject(s.db, t1.id, p.id).projectId === p.id, '话题可以归入项目');
+  check(store.getTopic(s.db, t1.id).projectId === p.id, '归属读回来还在');
+  check(store.setTopicProject(s.db, t1.id, 'no-such-project') === null, '未知项目拒绝归属');
+  check(store.setTopicProject(s.db, 'no-such-topic', p.id) === null, '未知话题返回 null');
+  check(store.getTopic(s.db, t1.id).projectId === p.id, '拒绝时没有写坏原来的归属');
+
+  store.appendMessage(s.db, { role: 'user', content: '用 node:sqlite', topicId: t1.id, createdAt: 4000 });
+  store.appendMessage(s.db, { role: 'assistant', content: '好', topicId: t1.id, createdAt: 4001 });
+  store.appendMessage(s.db, { role: 'user', content: '打包成 exe', topicId: t2.id, createdAt: 5000 });
+  store.appendMessage(s.db, { role: 'error', content: 'HTTP 500', topicId: t2.id, createdAt: 5001 });
+  store.setTopicProject(s.db, t2.id, p.id);
+
+  const full = store.getProject(s.db, p.id);
+  check(full.topicCount === 2, '项目里有 2 个话题：' + full.topicCount);
+  check(full.messageCount === 4, '项目里有 4 条消息：' + full.messageCount);
+  const listed = store.listProjects(s.db);
+  check(listed.length === 1 && listed[0].id === p.id && listed[0].topicCount === 2,
+    '项目列表带着统计信息');
+
+  const others = store.projectTopics(s.db, p.id, { excludeTopicId: t1.id });
+  check(others.length === 1 && others[0].id === t2.id, '项目的其他话题排除了当前话题');
+  check(others[0].messageCount === 2, '其他话题带着条数：' + others[0].messageCount);
+
+  const recent = store.projectRecentMessages(s.db, p.id, { excludeTopicId: t1.id, limit: 10 });
+  check(recent.length === 1 && recent[0].content === '打包成 exe',
+    '只取其他话题的对话：不重复当前话题，也不把 error 行当成说过的话');
+  check(recent[0].topicTitle === '发布打包', '每条对话带着它来自哪个话题');
+  check(store.projectRecentMessages(s.db, p.id, { excludeTopicId: t1.id, limit: 1 }).length === 1,
+    '条数上限生效');
+
+  /* The window keeps the newest exchanges, then hands them back in chronological order. */
+  for (let i = 0; i < 8; i++) {
+    store.appendMessage(s.db, { role: 'user', content: '追加' + i, topicId: t2.id, createdAt: 6000 + i });
+  }
+  const win = store.projectRecentMessages(s.db, p.id, { excludeTopicId: t1.id, limit: 3 });
+  check(win.length === 3 && win[0].content === '追加5' && win[2].content === '追加7',
+    '取最近的 3 条并按时间正序：' + win.map((m) => m.content).join(','));
+
+  check(store.setTopicProject(s.db, t1.id, null).projectId === null, '可以移出项目');
+  check(store.setTopicProject(s.db, t1.id, p.id).projectId === p.id, '也可以重新归入');
+
+  /* A provisional (greeting) topic is absorbed into the topic that replaced it; membership
+   * follows the messages the owner assigned rather than being dropped with the empty topic. */
+  const greeting = store.createTopic(s.db, { title: '你好', createdAt: 8000, titleLocked: false });
+  store.appendMessage(s.db, { role: 'user', content: '你好', topicId: greeting.id, createdAt: 8001 });
+  store.setTopicProject(s.db, greeting.id, p.id);
+  const target = store.createTopic(s.db, { title: '新话题', createdAt: 9000, titleLocked: true });
+  check(store.absorbTopic(s.db, greeting.id, target.id) !== null, '吸收成功');
+  check(store.getTopic(s.db, target.id).projectId === p.id,
+    '被吸收话题的项目跟着消息一起过来');
+
+  check(store.setTopicProject(s.db, t2.id, null) !== null, '清空归属成功');
+  check(store.getProject(s.db, p.id).topicCount === 2,
+    '清空后项目里剩下 2 个话题（t1 与吸收后的 target）');
   store.close(s);
 }
 
