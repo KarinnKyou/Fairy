@@ -15,12 +15,12 @@ left to rot. Everything below was true at the moment it was written.
 - **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
 - **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
   and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
-  Accepted. **No Phase 5 code and no migration 7 exist yet.** The phase starts with a bilingual
-  evaluation set and a provider measurement, not with a schema.
+  Accepted. **No Phase 5 code and no migration 7 exist yet.** The phase starts with the Zotero
+  client and a full sync, then a schema; the provider is measured, and the evaluation set decides.
 - **Schema is v6; `npm test` (root) reports 614 assertions across four suites.**
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
   harness, not rebuilt here.
-- The tree was clean at `c45daf7`; the ADR-015/016 record is the next commit.
+- The decision record is committed locally (ADR-015/016 and the measurements); the tree is clean.
 
 ## The direction, in one paragraph
 
@@ -108,6 +108,25 @@ artifact, it belongs in the harness; if it is continuity and conversation, it be
   0.032 — rank, do not threshold on one number. The key lives in the user environment as
   `HDD_EMBEDDING_API_KEY` (with `HDD_EMBEDDING_BASE_URL`, `HDD_EMBEDDING_MODEL`), never in the repo.
 
+## Zotero, measured on 2026-10-28
+
+- **The local API works and needs no key.** Zotero 10.0.6 answers at
+  `http://127.0.0.1:23119/api/users/0` (200 OK, 620 items, library version 1001, schema 44, user
+  library id 20602426). The connector ping also answers, and the API needs no
+  `Zotero-Allowed-Request` header.
+- **The corpus:** 32 papers (19 journal articles, 4 conference papers, 9 preprints), 29 Chinese
+  notes of 11–14k characters, 521 highlights, 35 PDF attachments.
+- **The shapes:** a note has `data.note` (HTML with `h2`/`p`/`ul`/`div`) and `data.parentItem` = the
+  paper. A highlight has `data.annotationText` (an exact English sentence), `data.annotationComment`
+  (the Chinese comment), `data.annotationPageLabel` (`45:15`) and `data.parentItem` = the PDF
+  attachment; that attachment's `parentItem` is the paper. Papers carry title, creators, date, tags
+  and an ~800-character abstract.
+- **Implication:** the importer fetches attachments first to map highlight → attachment → paper;
+  notes map directly. The API is read-only and serves no PDF text, so full paper text still needs
+  PDF parsing.
+- **Privacy:** syncing is local, but embedding sends chunk text to SiliconFlow. Nothing is embedded
+  until the owner has explicitly accepted that.
+
 ## The testing tool built in v0.3
 
 - **The sandbox can reach `api.deepseek.com`** (measured: HTTP 401 in 159 ms). Requests that need
@@ -166,9 +185,11 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 - **The handoff's only evidence is a failure** (ROADMAP debt 23): headless runs tools without
   approval and its shell is broken under this configuration. Do not build L2 on "it works".
 - **The reply budget is a starting value** (debt 24): 2–5 sentences / ~240 characters, not measured.
-- **The first corpus is highlights, not the reading** (debt 25): PDF full text is the trigger.
+- **The first corpus is notes and highlights, not the full papers** (debt 25): PDF full text is the
+  trigger.
 - **The second key has no packaging check** (debt 26).
-- **Zotero's export shape is not stable** (debt 27).
+- **The Zotero local API is a version surface** (debt 27): pin the version, keep the export
+  fallback, and treat an unreachable Zotero as a sentence rather than an empty library.
 - **`inspect.cjs` still has no listing for stored memories or projects**, and will need one for
   files. `--prompt` now uses the real assembler, so injected sections appear with their caps.
 - **The project block's effect is still unmeasured.** The machine side is asserted; whether she uses
@@ -179,17 +200,19 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 ## What to do first next session
 
 1. Read ADR-015 and ADR-016; they are the authority on everything below.
-2. **The provider is chosen in principle: SiliconFlow `BAAI/bge-m3`**, measured on 2026-10-28 with
-   the key in the user environment. It is not proven: the 10-question bilingual set still decides
-   whether it separates the owner's real papers well enough — a conceptual query's margin was only
-   0.032. Keep the provider-agnostic client; DashScope `text-embedding-v3/v4` stays the fallback.
-3. **Write `docs/eval/retrieval-*.json` and `probe --retrieval`** before any threshold exists.
-4. **Then migration 7** (`files`, `chunks`) and the store layer, with tests.
-5. **L1 is independent of Phase 5** and can be done in parallel: the `/hand` brief file and its
+2. **Build the Zotero client and a full sync.** `http://127.0.0.1:23119/api/users/0`, no key:
+   papers, notes, annotations and attachments, grouped by paper. A fake transport in tests, one real
+   sync on this machine. This is the phase's first verifiable deliverable.
+3. **Migration 7** (`files`, `chunks`) with the Zotero columns and `chunks.kind`/`chunks.page`, then
+   the store layer and its tests.
+4. **The chunker for the three shapes**: note paragraphs, highlight + Chinese comment, abstract.
+5. **The embedding client** with a fake transport, then the privacy gate: nothing is embedded until
+   the owner explicitly accepts that chunk text goes to SiliconFlow.
+6. **The evaluation set and `probe --retrieval`** before any threshold exists. The provider is
+   chosen in principle (BGE-M3) but is not proven — a conceptual query's margin was only 0.032.
+7. **L1 is independent of Phase 5** and can be done in parallel: the `/hand` brief file and its
    contract need no provider, no schema and no network, and they test the part of ADR-015 that is
    cheapest to get wrong.
-6. **The owner's five real questions split three ways**: paper listing and existence (`/recall`),
+8. **The owner's five real questions split three ways**: paper listing and existence (`/recall`),
    reading a named document (`/read`), and **tasks and the schedule, which are Phase 7** — do not
-   stretch retrieval to answer them. The next input is the first Zotero export: a collection's notes
-   and highlights saved under `app/data/library/` (gitignored), inspected for format before any
-   parser is written.
+   stretch retrieval to answer them.

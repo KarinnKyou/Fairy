@@ -1167,21 +1167,27 @@ The roadmap row said "Files and chunks; chunking, embeddings, semantic retrieval
 `files`, `chunks`, and the vector-store decision due at the start (ADR-007). That was the whole of
 the specification.
 
-Two measurements changed the shape:
+Four measurements changed the shape:
 
 1. **DeepSeek has no embeddings endpoint.** On 2026-10-28, `GET /models` listed only
    `deepseek-flash` and `deepseek-v4-pro`; `POST /embeddings`, `/v1/embeddings` and
    `/beta/embeddings` all returned 404, while `/v1/chat/completions` returned 200 — so the `/v1`
    prefix is mounted and the route is genuinely absent. Embeddings require a second provider, or
    the mechanism changes to lexical retrieval plus reranking.
-2. **The owner's corpus is highlights and notes before it is papers.** The papers are English PDFs
-   with a text layer; the notes are Chinese summaries in Zotero; the Zotero entries also carry
-   child notes and PDF highlights/annotations. A highlight is already an exact English sentence,
-   a page number and the owner's Chinese comment — the highest-signal, zero-parsing corpus in the
-   whole library. A full PDF is lower signal and much more work: two columns, equations,
-   references, headers.
+2. **The owner's corpus lives in Zotero, and it is richer than the PDFs.** On 2026-10-28 the local
+   library reported 620 items: 32 papers (19 journal articles, 4 conference papers, 9 preprints),
+   29 Chinese notes of 11–14k characters each, 521 highlights, and 35 PDF attachments. A highlight
+   is already an exact English sentence, a page label (`45:15`) and the owner's Chinese comment; a
+   note is a long Chinese summary. That is the highest-signal, zero-parsing corpus in the library.
+   A full PDF is lower signal and much more work: two columns, equations, references, headers.
 
-3. **A provider candidate was measured, not selected.** On 2026-10-28, SiliconFlow's `BAAI/bge-m3`
+3. **Zotero exposes that library over a local, keyless API.** Zotero 10.0.6 answers at
+   `http://127.0.0.1:23119/api/users/0` (measured 2026-10-28: 200 OK, 620 items, library version
+   1001, schema 44, **no key**). It serves notes as HTML, annotations with `annotationText`,
+   `annotationComment` and `annotationPageLabel`, papers with title/authors/date/abstract, and
+   attachment metadata. That removes the export step entirely and keeps the data on this machine.
+
+4. **A provider candidate was measured, not selected.** On 2026-10-28, SiliconFlow's `BAAI/bge-m3`
    answered in 327 ms at 1024 dimensions (90 tokens for six short texts). A Chinese-query ×
    English-passage sanity matrix separated a direct match (0.804) from unrelated pairs (0.32–0.40),
    but a conceptual query's correct passage beat the wrong one by only 0.032 (0.584 vs 0.552). The
@@ -1194,12 +1200,15 @@ which it reached.
 
 **Decision**
 
-**1. Phase 5 starts with Zotero's exported notes, not with PDF parsing.**
+**1. Phase 5 reads the Zotero local API directly. Export is the fallback, not the path.**
 
-`/file add <path>` accepts a file or a directory of Zotero's export output — "Export Notes" HTML
-where the installed version offers it, otherwise Zotero RDF — plus plain text and Markdown. That corpus can prove the value of "ask in Chinese, answer
-from the English original" with no new parser and no OCR. **PDF full text is the second step**, gated
-on that proof.
+`/zotero sync` fetches papers, notes, highlights and attachment metadata from
+`http://127.0.0.1:23119/api/users/0`, groups them by parent item, and stores one row per paper.
+A highlight's parent is its PDF attachment, so attachment metadata is fetched first to map each
+annotation back to the paper. `/file add <path>` remains for plain text and Markdown, and for an
+export when Zotero is not running. This proves "ask in Chinese, answer from the English original"
+without a parser, OCR, or a third API key. **PDF full text is the second step**, gated on that
+proof.
 
 **2. PDFs are text-layer only in this phase, and bad extraction is visible.**
 
@@ -1210,11 +1219,15 @@ and removed, not silently indexed. This is the ADR-009 shape applied to extracti
 
 **3. The schema is migration 7, additive, and small.**
 
-`files` (id, name, kind `paper|note|other`, lang, source_path, bytes, sha256, content, created_at)
-and `chunks` (id, file_id → files, ordinal, text, start_offset, end_offset, embedding BLOB,
-embedding_model, created_at). Content is copied into the store; the path is provenance only. A
-chunk stores the model that embedded it, so vectors from different models are never compared. No
-`chunks_fts` in the first cut; the seam stays open for hybrid retrieval.
+`files` (id, name, kind `paper|note|other`, lang, source `zotero|file`, zotero_key UNIQUE, title,
+item_type, year, creators_json, tags_json, zotero_version, source_path, bytes, sha256, content,
+created_at) and `chunks` (id, file_id → files, ordinal, kind `abstract|note|highlight`, page, text,
+start_offset, end_offset, embedding BLOB, embedding_model, created_at). One `files` row per paper;
+its content is the assembled abstract + notes + highlights, and its chunks carry the kind and page
+so the prompt can label a quote as a highlight rather than a summary. Content is copied into the
+store; the path is provenance only. A chunk stores the model that embedded it, so vectors from
+different models are never compared. No `chunks_fts` in the first cut; the seam stays open for
+hybrid retrieval.
 
 **4. Embeddings come from a second provider behind a provider-agnostic client.**
 
@@ -1254,20 +1267,31 @@ change.
 **Consequences**
 
 - `files` and `chunks` exist at schema v7; nothing is backfilled.
-- Capabilities gain "读主人导入的文件" and "从文件里按意思找内容". "不能修改或删除主人电脑上的文件"
-  remains true; writing stays out until Phase 9's export.
-- A second API key enters the project. `config.example.json`, the environment variables and
-  `release.ps1`'s leak check must all learn about it, or a published build can carry a real second
-  key. This is ADR-011's rule applied to a new secret.
+- Capabilities gain "读主人 Zotero 文献库里的笔记和高亮" and "从这些内容里按意思找片段". "不能修改或删除
+  主人电脑上的文件" remains true; the Zotero API is read-only and writing stays out until Phase 9's
+  export.
+- **No third key.** The Zotero API is local and unauthenticated; only the embedding provider needs a
+  secret. Zotero must be running for a sync, and an unreachable Zotero is a sentence, not a silent
+  empty library.
+- The first sync is a **full** sync: 32 papers, 29 notes and 521 highlights are small enough to
+  refetch. `zotero_version` per paper makes an incremental pass possible later; it is not built
+  until the full sync is shown to be slow.
+- **The corpus is the owner's own reading and writing.** Embedding sends chunk text to a third
+  party; that must be said plainly before the first sync, and a local-embedding fallback stays
+  open. Nothing is sent before the owner has seen this.
 - Changing the embedding model invalidates stored vectors. `embedding_model` per chunk makes the
   mismatch visible; a re-index is required and is not automatic.
-- PDF parsing, OCR and Zotero live integration are **not** in this phase, and are listed as debts
-  with triggers rather than left as omissions.
+- PDF parsing and OCR are **not** in this phase; full paper text is the next gate. Zotero live
+  integration is in this phase, because it replaced the export path.
 - The reply budget from ADR-015 applies to retrieval answers too: a hit becomes a sentence and a
   pointer, not a pasted excerpt.
 
 **Alternatives rejected**
 
+- *Export first*: the local API is live, keyless and already structured; an export is a manual step
+  that goes stale the moment a note is edited.
+- *Read `zotero.sqlite` directly*: an internal schema that changes between versions, and a database
+  locked while Zotero runs; the local API is the supported surface.
 - *Full PDF parsing first*: the largest and least verifiable work, before the value is proven.
 - *Translate the papers into Chinese*: lossy, costly, and it removes the exact wording the owner
   asks for.
@@ -1279,11 +1303,11 @@ change.
 - *Auto-inject everything above a guessed threshold*: this project has twice paid for thresholds
   chosen by reasoning.
 
-**Implementation order**, each step verifiable on its own: the bilingual evaluation set and the
-provider measurement first; then migration 7 and the store layer with tests; then the chunker; then
-the embedding client with a fake transport in tests; then `/files` and the import pipeline; then
-`/recall`; then the measured threshold; then the prompt section; then the capability declaration,
-`inspect` listings and the release.
+**Implementation order**, each step verifiable on its own: the Zotero client and a full sync first
+(a fake transport in tests, a real sync on this machine); then migration 7 and the store layer;
+then the chunker for the three shapes (note paragraphs, highlight + comment, abstract); then the
+embedding client; then `/zotero`, `/files` and `/recall`; then the measured threshold; then the
+prompt section; then the capability declaration, `inspect` listings and the release.
 
 ---
 

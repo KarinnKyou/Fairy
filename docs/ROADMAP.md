@@ -126,7 +126,7 @@ order is the plan.
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
 | 4 | v0.4 | **shipped** 2026-10-27 | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
-| 5 | v0.5 | in progress | The owner's library: import Zotero notes/highlights, then text-layer PDFs; chunking, embeddings, semantic retrieval; the provider is measured on a bilingual eval set (ADR-016) | `files`, `chunks` |
+| 5 | v0.5 | in progress | The owner's library: sync Zotero notes/highlights, then text-layer PDFs; chunking, embeddings, semantic retrieval; the provider is measured on a bilingual eval set (ADR-016) | `files`, `chunks` |
 | 6 | v0.6 | not started | Tools, narrowed (ADR-015): a few safe local actions and the handoff audit; not a tool platform. Execution is delegated | `tool_invocations` only if a local action needs it |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
 | 8 | — | **removed** | Execution is delegated to the harness (ADR-015); HDD runs no agent of its own | — |
@@ -243,9 +243,13 @@ hand in that window, and the project block has not been through a real conversat
 ## Phase 5 — the owner's library (in progress; ADR-016)
 
 **Goal:** she can answer from the owner's reading — in Chinese, from the English original — and say
-which file and which passage it came from. The corpus is Zotero's exported notes and highlights
-first, because a highlight is already an exact English sentence with a page number and the owner's
-Chinese comment; PDF full text is the second step, gated on the first proving useful.
+which paper and which passage it came from. The corpus comes straight from Zotero's local API
+(measured 2026-10-28: 620 items, no key — 32 papers, 29 Chinese notes of 11–14k characters, 521
+highlights with page labels and Chinese comments, 35 PDF attachments). PDF full text is the second
+step, gated on the first proving useful.
+
+Privacy is a gate, not a footnote: embeddings send the owner's own notes and highlights to a third
+party, so the first sync stops before that until they say yes.
 
 Delivered so far: **nothing**. The phase starts with the bilingual evaluation set and the embedding
 provider measurement, not with code.
@@ -262,8 +266,10 @@ Gates, in order:
    FTS5 plus reranking, and this section changes with the reason recorded.
 2. **Schema v7.** `files` and `chunks`, additive, with the model that embedded each chunk stored
    beside the vector.
-3. **Import.** `/file add <file|dir>` for Zotero's exported notes, Markdown and text-layer PDFs;
-   `/files`, `/file show`, `/file rm`. Bad extraction is visible, not silently indexed.
+3. **Sync.** `/zotero sync` reads `http://127.0.0.1:23119/api/users/0`, groups notes and highlights
+   by paper, and stores one row per paper; `/files`, `/file show`, `/file rm` for inspection. A
+   highlight's parent is its PDF attachment, so attachment metadata maps it back to the paper. An
+   unreachable Zotero is a sentence, not an empty library.
 4. **Retrieval.** `/recall` first; automatic injection only after the threshold is measured on
    `docs/eval/retrieval-*.json`. `/read <title|n>` injects one named document whole, bounded, with
    no generated summary.
@@ -272,7 +278,7 @@ Gates, in order:
    module checks.
 
 What this phase deliberately does not do: OCR, PDF layout reconstruction beyond best effort,
-translating the papers, Zotero live sync, or writing the owner's files.
+translating the papers, incremental Zotero sync, or writing the owner's files.
 
 The owner's first five real questions are the evidence for this shape: two are about papers
 ("与某主题相关的论文有哪些", "有没有相关论文"), one is "帮我读一下某篇文献", and **two are about tasks and
