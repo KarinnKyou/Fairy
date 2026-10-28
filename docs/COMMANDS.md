@@ -48,6 +48,8 @@ to the model. Anything else is a message for her.
 | `/project new <名字>` | Create a project and put the current topic in it (one line, up to 40 characters) |
 | `/project <序号\|id>` | Put the current topic into an existing project. The number is the one `/projects` printed |
 | `/project off` | Take the current topic out of its project |
+| `/zotero` | Library status; `/zotero sync` reads this machine's Zotero library (papers, notes, highlights) |
+| `/files` | Papers and notes already synced, with their chunk counts |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
 | `/memories` | What she currently believes about the owner, where each belief came from, and how many older ones have been superseded |
 | `/remember <一句话>` | State a fact about yourself directly. It is recorded as coming from you rather than inferred |
@@ -127,8 +129,8 @@ From the repository root the same thing exists as `npm run app:start`, but **not
 
 ```powershell
 cd D:\DSH_Workspace\01_Code\HDD
-npm test                  # asset bake + all four suites (this is the real gate)
-npm run app:test          # the four suites only, no bake
+npm test                  # asset bake + all five suites (this is the real gate)
+npm run app:test          # the five suites only, no bake
 npm run assets:bake       # only re-bake assets/svg, assets/css, assets/tokens, MANIFEST.json
 ```
 

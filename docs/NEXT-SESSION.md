@@ -15,9 +15,11 @@ left to rot. Everything below was true at the moment it was written.
 - **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
 - **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
   and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
-  Accepted. **No Phase 5 code and no migration 7 exist yet.** The phase starts with the Zotero
-  client and a full sync, then a schema; the provider is measured, and the evaluation set decides.
-- **Schema is v6; `npm test` (root) reports 614 assertions across four suites.**
+  Accepted. **Phase 5 has started:** the Zotero sync and schema v7 are in the tree (35 papers, 29
+  notes, 521 highlights, 1386 chunks in a scratch sync); embeddings, `/recall` and the prompt
+  section do not exist yet.
+- **Schema is v7; `npm test` (root) runs five suites** (`store`, `zotero`, `conversation`,
+  `renderer`, `scroll-pin`).
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
   harness, not rebuilt here.
 - The decision record is committed locally (ADR-015/016 and the measurements); the tree is clean.
@@ -35,7 +37,7 @@ artifact, it belongs in the harness; if it is continuity and conversation, it be
 
 - Conversation in Chinese; **code comments in English**, and only where they earn their place.
 - Local commits freely. **Ask before pushing.** Same for anything that publishes.
-- `npm test` from the repository root is the gate: asset bake plus four suites, all green.
+- `npm test` from the repository root is the gate: asset bake plus five suites, all green.
 - **When docs and code disagree, the code is right** — then fix the docs. Any constant or number
   written into documentation must be read out of the code or measured first.
 - Do not change a verified visual effect without saying so first (the mask, `pinBottom()`, the
@@ -114,8 +116,8 @@ artifact, it belongs in the harness; if it is continuity and conversation, it be
   `http://127.0.0.1:23119/api/users/0` (200 OK, 620 items, library version 1001, schema 44, user
   library id 20602426). The connector ping also answers, and the API needs no
   `Zotero-Allowed-Request` header.
-- **The corpus:** 32 papers (19 journal articles, 4 conference papers, 9 preprints), 29 Chinese
-  notes of 11–14k characters, 521 highlights, 35 PDF attachments.
+- **The corpus:** 35 papers (journal articles, conference papers, preprints, reports/documents),
+  29 Chinese notes of 11–14k characters, 521 highlights, 35 PDF attachments.
 - **The shapes:** a note has `data.note` (HTML with `h2`/`p`/`ul`/`div`) and `data.parentItem` = the
   paper. A highlight has `data.annotationText` (an exact English sentence), `data.annotationComment`
   (the Chinese comment), `data.annotationPageLabel` (`45:15`) and `data.parentItem` = the PDF
@@ -200,19 +202,22 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 ## What to do first next session
 
 1. Read ADR-015 and ADR-016; they are the authority on everything below.
-2. **Build the Zotero client and a full sync.** `http://127.0.0.1:23119/api/users/0`, no key:
-   papers, notes, annotations and attachments, grouped by paper. A fake transport in tests, one real
-   sync on this machine. This is the phase's first verifiable deliverable.
-3. **Migration 7** (`files`, `chunks`) with the Zotero columns and `chunks.kind`/`chunks.page`, then
-   the store layer and its tests.
-4. **The chunker for the three shapes**: note paragraphs, highlight + Chinese comment, abstract.
-5. **The embedding client** with a fake transport, then the privacy gate: nothing is embedded until
-   the owner explicitly accepts that chunk text goes to SiliconFlow.
-6. **The evaluation set and `probe --retrieval`** before any threshold exists. The provider is
-   chosen in principle (BGE-M3) but is not proven — a conceptual query's margin was only 0.032.
-7. **L1 is independent of Phase 5** and can be done in parallel: the `/hand` brief file and its
-   contract need no provider, no schema and no network, and they test the part of ADR-015 that is
-   cheapest to get wrong.
+2. **Zotero client and full sync — done.** `zotero.js`, migration 7, `conversation.syncZotero`,
+   `/zotero sync`, `/files`; 35 papers, 29 notes, 521 highlights, 1386 chunks, 0 dropped, 410 ms.
+   `zotero.test.cjs` covers the grouping, chunk shapes, schema round-trip and the unreachable case.
+3. **The chunker — done** for the three shapes (note paragraphs, highlight + comment, abstract).
+4. **Next: the embedding client.** Provider BGE-M3; the owner accepted (option A) that chunk text
+   goes to SiliconFlow. Put the request where `main.js` cannot hide it, batch conservatively, and
+   test with a fake transport first. Then embed the 1386 chunks into a scratch store and record the
+   real call count and cost.
+5. **Then `/recall` and the retrieval module** — brute-force cosine, top-k, per-file cap, threshold
+   applied only after measurement.
+6. **The evaluation set and `probe --retrieval`** before any threshold exists. Use the real corpus:
+   7 Chinese questions answered in English papers/highlights, 2 in Chinese notes, 1–2 with English
+   terms. The provider is chosen in principle (BGE-M3) but is not proven — the conceptual margin was
+   only 0.032.
+7. **L1 is independent** and can be done in parallel: `/hand` writes a brief file, no provider, no
+   schema, no network.
 8. **The owner's five real questions split three ways**: paper listing and existence (`/recall`),
    reading a named document (`/read`), and **tasks and the schedule, which are Phase 7** — do not
    stretch retrieval to answer them.

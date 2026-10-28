@@ -614,8 +614,9 @@ npm run app:test
 npm test
 ```
 
-`app:test` runs four suites in order: `store.test.cjs` (schema, migrations, ID ordering,
-CJK full-text search, topics and the v0.1 → v0.2 upgrade), `conversation.test.cjs` (prompt
+`app:test` runs five suites in order: `store.test.cjs` (schema, migrations, ID ordering,
+CJK full-text search, topics and the v0.1 → v0.2 upgrade), `zotero.test.cjs` (library import,
+grouping, chunks, migration 7), `conversation.test.cjs` (prompt
 assembly, persona scope, turn bookkeeping, topic boundaries and topic-scoped context), then a
 `prep` rebuild, `renderer.test.cjs`, and `scroll-pin.test.cjs`.
 

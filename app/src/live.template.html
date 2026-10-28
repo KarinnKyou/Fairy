@@ -312,6 +312,8 @@
     '/project new <名字> 新建项目，并把当前话题归入',
     '/project <序号|id> 把当前话题归入已有项目',
     '/project off       把当前话题移出项目',
+    '/zotero            查看库状态；/zotero sync 从本机 Zotero 同步',
+    '/files             列出已同步的论文和笔记',
     '/search <关键词>   在所有话题里搜索原文',
     '/memories          列出她记得的关于主人的事',
     '/remember <一句话> 让主人直接指定一条记忆',
@@ -505,6 +507,45 @@
           printProjects(next);
           done();
         });
+      }).catch(fail);
+    }
+
+    /* The owner's library (Phase 5, ADR-016). Sync is explicit; a failure says why. */
+    if (cmd.name === 'zotero') {
+      if (cmd.arg !== 'sync') {
+        return api.listFiles().then(function (list) {
+          sysLine('库里共 ' + (list ? list.length : 0) + ' 项。用 /zotero sync 从本机 Zotero 同步。');
+          done();
+        }).catch(fail);
+      }
+      sysLine('正在从本机 Zotero 同步…');
+      return api.syncZotero().then(function (r) {
+        if (r && r.ok) {
+          sysLine('已同步 ' + r.papers + ' 篇、' + r.notes + ' 条笔记、' + r.highlights +
+            ' 条高亮，共 ' + r.chunks + ' 块。');
+          if (r.dropped) sysLine('（' + r.dropped + ' 条高亮找不到所属论文，已跳过）');
+        } else if (r && r.reason === 'unreachable') {
+          sysLine('连不上 Zotero：' + (r.error || '请确认 Zotero 正在运行。'));
+        } else {
+          sysLine('现在没法同步（' + ((r && r.reason) || 'unknown') + '）。');
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'files') {
+      return api.listFiles().then(function (list) {
+        if (!list || !list.length) {
+          sysLine('库里还没有内容。用 /zotero sync 同步。');
+          return done();
+        }
+        sysLine('库里 ' + list.length + ' 项：');
+        for (var fi = 0; fi < list.length; fi++) {
+          var f = list[fi];
+          sysLine((fi + 1) + '. ' + (f.title || f.name) + '  [' +
+            (f.kind === 'note' ? '笔记' : '论文') + '，' + f.chunkCount + ' 块]');
+        }
+        done();
       }).catch(fail);
     }
 

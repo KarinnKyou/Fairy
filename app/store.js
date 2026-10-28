@@ -246,6 +246,59 @@ const MIGRATIONS = [
     CREATE INDEX idx_topics_project ON topics(project_id, updated_at, id);
     `,
   ],
+  [
+    7,
+    `
+    -- The owner's library (Phase 5, ADR-016). One row per paper, one row per chunk. A paper's
+    -- content is derived from Zotero's rows (abstract + notes + highlights) and stored so the
+    -- library can be read without Zotero running; chunks are the retrieval unit.
+    --
+    -- zotero_key is unique when present: a sync updates the same row instead of duplicating the
+    -- paper. It is nullable because /file add imports a text file that has no Zotero key, and a
+    -- partial unique index keeps those rows out of the comparison entirely.
+    CREATE TABLE files (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      kind            TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('paper','note','other')),
+      lang            TEXT,
+      source          TEXT NOT NULL DEFAULT 'file' CHECK (source IN ('file','zotero')),
+      zotero_key      TEXT,
+      title           TEXT,
+      item_type       TEXT,
+      year            INTEGER,
+      creators_json   TEXT,
+      tags_json       TEXT,
+      zotero_version  INTEGER,
+      source_path     TEXT,
+      bytes           INTEGER,
+      sha256          TEXT,
+      content         TEXT NOT NULL DEFAULT '',
+      created_at      INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX idx_files_zotero_key ON files(zotero_key) WHERE zotero_key IS NOT NULL;
+    CREATE INDEX idx_files_created ON files(created_at, id);
+
+    -- kind and page are what let the prompt say "这是原文高亮第 45 页" instead of pretending a
+    -- highlighted sentence and the owner's summary are the same voice. embedding_model is stored
+    -- per chunk because comparing vectors from two models is silently wrong.
+    CREATE TABLE chunks (
+      id               TEXT PRIMARY KEY,
+      file_id          TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+      ordinal          INTEGER NOT NULL,
+      kind             TEXT NOT NULL DEFAULT 'text'
+                         CHECK (kind IN ('abstract','note','highlight','text')),
+      page             TEXT,
+      text             TEXT NOT NULL,
+      start_offset     INTEGER,
+      end_offset       INTEGER,
+      embedding        BLOB,
+      embedding_model  TEXT,
+      created_at       INTEGER NOT NULL,
+      UNIQUE (file_id, ordinal)
+    );
+    CREATE INDEX idx_chunks_file ON chunks(file_id, ordinal);
+    `,
+  ],
 ];
 
 const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
@@ -782,6 +835,134 @@ function touchProjectOfTopic(db, topicId, at) {
  * topic list is ordered by. Doing it here keeps that true for every write path instead of
  * relying on each caller to remember.
  */
+/* ------------------------------------------------------------- files and chunks */
+
+const CJK_RE_G = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
+
+function detectLang(text) {
+  const s = String(text == null ? '' : text);
+  if (!s) return null;
+  const cjk = (s.match(CJK_RE_G) || []).length;
+  return cjk > 0 && cjk / s.length > 0.15 ? 'zh' : 'en';
+}
+
+function toFile(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    lang: row.lang,
+    source: row.source,
+    zoteroKey: row.zotero_key,
+    title: row.title,
+    itemType: row.item_type,
+    year: row.year,
+    creators: row.creators_json ? JSON.parse(row.creators_json) : [],
+    tags: row.tags_json ? JSON.parse(row.tags_json) : [],
+    zoteroVersion: row.zotero_version,
+    content: row.content,
+    createdAt: row.created_at,
+    chunkCount: row.chunk_count == null ? undefined : Number(row.chunk_count),
+    embeddedCount: row.embedded_count == null ? undefined : Number(row.embedded_count),
+  };
+}
+
+/* Upsert one paper by its Zotero key. A sync updates the row it already has; the id is what
+ * chunks point at, so it must not change. */
+function upsertZoteroFile(db, paper) {
+  if (!paper || !paper.key) return null;
+  const now = nowMs();
+  const existing = db.prepare('SELECT id FROM files WHERE zotero_key = ?').get(String(paper.key));
+  const content = String(paper.content == null ? '' : paper.content);
+  const lang = detectLang(content);
+  const kind = paper.kind === 'note' ? 'note' : 'paper';
+  const creators = JSON.stringify(paper.creators || []);
+  const tags = JSON.stringify(paper.tags || []);
+  if (existing) {
+    db.prepare(
+      `UPDATE files SET name = ?, kind = ?, lang = ?, source = 'zotero', title = ?,
+         item_type = ?, year = ?, creators_json = ?, tags_json = ?, zotero_version = ?, content = ?
+       WHERE id = ?`
+    ).run(String(paper.title || paper.key), kind, lang, paper.title || null, paper.itemType || null,
+      paper.year == null ? null : Number(paper.year), creators, tags,
+      paper.version == null ? null : Number(paper.version), content, existing.id);
+    return existing.id;
+  }
+  const id = newId(now);
+  db.prepare(
+    `INSERT INTO files (id, name, kind, lang, source, zotero_key, title, item_type, year,
+       creators_json, tags_json, zotero_version, content, created_at)
+     VALUES (?, ?, ?, ?, 'zotero', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, String(paper.title || paper.key), kind, lang, String(paper.key), paper.title || null,
+    paper.itemType || null, paper.year == null ? null : Number(paper.year), creators, tags,
+    paper.version == null ? null : Number(paper.version), content, now);
+  return id;
+}
+
+/* Replace a file's chunks in one transaction. A sync is a re-derivation, not an append: leaving
+ * old chunks behind would let a deleted highlight stay retrievable forever. */
+function replaceChunks(db, fileId, chunks) {
+  const list = Array.isArray(chunks) ? chunks : [];
+  const now = nowMs();
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM chunks WHERE file_id = ?').run(String(fileId));
+    const insert = db.prepare(
+      `INSERT INTO chunks (id, file_id, ordinal, kind, page, text, start_offset, end_offset, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      insert.run(newId(now), String(fileId), i, c.kind || 'text', c.page == null ? null : String(c.page),
+        String(c.text == null ? '' : c.text), c.startOffset == null ? null : Number(c.startOffset),
+        c.endOffset == null ? null : Number(c.endOffset), now);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  return list.length;
+}
+
+function listFiles(db, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 100 : Number(opts.limit), 1, 1000);
+  const rows = db.prepare(
+    `SELECT f.*,
+       (SELECT COUNT(*) FROM chunks c WHERE c.file_id = f.id) AS chunk_count,
+       (SELECT COUNT(*) FROM chunks c WHERE c.file_id = f.id AND c.embedding IS NOT NULL) AS embedded_count
+     FROM files f
+     ORDER BY f.created_at DESC, f.id DESC LIMIT ?`
+  ).all(limit);
+  return rows.map(toFile);
+}
+
+function getFile(db, id) {
+  return toFile(db.prepare('SELECT * FROM files WHERE id = ?').get(String(id)));
+}
+
+function chunksForFile(db, fileId, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 200 : Number(opts.limit), 1, 5000);
+  return db.prepare(
+    'SELECT * FROM chunks WHERE file_id = ? ORDER BY ordinal LIMIT ?'
+  ).all(String(fileId), limit);
+}
+
+function countFiles(db, options) {
+  const opts = options || {};
+  const row = opts.source
+    ? db.prepare('SELECT COUNT(*) AS n FROM files WHERE source = ?').get(String(opts.source))
+    : db.prepare('SELECT COUNT(*) AS n FROM files').get();
+  return Number(row.n);
+}
+
+function deleteFile(db, id) {
+  return db.prepare('DELETE FROM files WHERE id = ?').run(String(id)).changes;
+}
+
 function appendMessage(db, msg) {
   const createdAt = msg.createdAt == null ? nowMs() : msg.createdAt;
   /* The id embeds the same timestamp as the row, so ordering by (created_at, id) stays
@@ -1185,6 +1366,14 @@ module.exports = {
   projectRecentMessages,
   setTopicProject,
   PROJECT_NAME_MAX_CHARS,
+  upsertZoteroFile,
+  replaceChunks,
+  listFiles,
+  getFile,
+  chunksForFile,
+  countFiles,
+  deleteFile,
+  detectLang,
   appendMessage,
   updateMessage,
   recentMessages,

@@ -15,7 +15,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Artifact | `HDD-0.4.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B3E8ACB5…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.4 |
 | Phase in progress | **Phase 5 — the owner's library** (ADR-016): Zotero notes and highlights first, text-layer PDFs later; the embedding provider is the open decision, and DeepSeek was measured to have none |
-| Automated tests | 4 suites, **614 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
+| Automated tests | 5 suites since Phase 5 (`store`, `zotero`, `conversation`, `renderer`, `scroll-pin`); the v0.4 release reported 614 assertions. See `docs/COMMANDS.md` §3 |
 
 Earlier releases are kept as history: `v0.1` made the conversation real (persistence, a per-turn
 prompt, an accumulating profile) but held one undifferentiated transcript; `v0.2` split it into
@@ -244,32 +244,33 @@ hand in that window, and the project block has not been through a real conversat
 
 **Goal:** she can answer from the owner's reading — in Chinese, from the English original — and say
 which paper and which passage it came from. The corpus comes straight from Zotero's local API
-(measured 2026-10-28: 620 items, no key — 32 papers, 29 Chinese notes of 11–14k characters, 521
+(measured 2026-10-28: 620 items, no key — 35 papers, 29 Chinese notes of 11–14k characters, 521
 highlights with page labels and Chinese comments, 35 PDF attachments). PDF full text is the second
 step, gated on the first proving useful.
 
 Privacy is a gate, not a footnote: embeddings send the owner's own notes and highlights to a third
 party, so the first sync stops before that until they say yes.
 
-Delivered so far: **nothing**. The phase starts with the bilingual evaluation set and the embedding
-provider measurement, not with code.
+Delivered so far: **the Zotero sync and schema v7**. A real sync read 35 papers, 29 notes and 521
+highlights into 1386 chunks in 410 ms, mapping every highlight through its PDF attachment and
+dropping none. Embeddings, `/recall` and the prompt section do not exist yet.
 
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).
 
 Gates, in order:
 
-1. **Provider measured.** DeepSeek has none: on 2026-10-28 `GET /models` listed no embedding model
+1. **Provider measured (done).** DeepSeek has none: on 2026-10-28 `GET /models` listed no embedding model
    and `/embeddings`, `/v1/embeddings`, `/beta/embeddings` all returned 404 while `/v1/chat`
    returned 200. A second provider is needed, and the model is chosen by a 10-question bilingual
    set, not by a specification sheet. If no provider is acceptable, the fallback is chunk-level
    FTS5 plus reranking, and this section changes with the reason recorded.
-2. **Schema v7.** `files` and `chunks`, additive, with the model that embedded each chunk stored
-   beside the vector.
-3. **Sync.** `/zotero sync` reads `http://127.0.0.1:23119/api/users/0`, groups notes and highlights
-   by paper, and stores one row per paper; `/files`, `/file show`, `/file rm` for inspection. A
-   highlight's parent is its PDF attachment, so attachment metadata maps it back to the paper. An
-   unreachable Zotero is a sentence, not an empty library.
+2. **Schema v7 (done).** `files` and `chunks`, additive, with the model that embedded each chunk
+   stored beside the vector.
+3. **Sync (done).** `/zotero sync` reads `http://127.0.0.1:23119/api/users/0`, groups notes and
+   highlights by paper, and stores one row per paper; `/files`, `/file show`, `/file rm` for
+   inspection. A highlight's parent is its PDF attachment, so attachment metadata maps it back to
+   the paper. An unreachable Zotero is a sentence, not an empty library.
 4. **Retrieval.** `/recall` first; automatic injection only after the threshold is measured on
    `docs/eval/retrieval-*.json`. `/read <title|n>` injects one named document whole, bounded, with
    no generated summary.
@@ -459,7 +460,7 @@ Not blockers, but they should not be forgotten.
 
 ```powershell
 cd D:\DSH_Workspace\01_Code\HDD
-npm test                                   # the gate: bake + all four suites
+npm test                                   # the gate: bake + all five suites
 npm run app:start                          # in the running app: /topics, /projects, /search, /help
 .\release.ps1 -Version 0.4.0 -DryRun       # what the next release would do
 ```

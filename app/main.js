@@ -11,6 +11,7 @@ const fs = require('fs');
 const conversation = require('./conversation.js');
 const personality = require('./personality.js');
 const api = require('./api.js');
+const zotero = require('./zotero.js');
 
 /*
  * ELECTRON_RUN_AS_NODE turns electron.exe into plain Node, so `require('electron')` returns a
@@ -46,6 +47,12 @@ loadConfig();
  */
 const model = api.createApi(config);
 
+/* The owner's Zotero library, read through its local API (ADR-016). No key: Zotero serves it on
+ * loopback only. HDD_ZOTERO_API exists so a different port or a test double can be pointed at. */
+const zoteroClient = zotero.createClient({
+  baseUrl: process.env.HDD_ZOTERO_API || zotero.DEFAULT_BASE,
+});
+
 /*
  * The conversation — this process owns the truth (docs/ADR.md ADR-001): it stores the
  * messages, assembles the prompt and persists the reply. The renderer only sends text.
@@ -72,6 +79,8 @@ function openConversation() {
       console.error('memory extraction failed, nothing was remembered: ' +
         String((err && err.message) || err));
     },
+    /* The library is read on demand, not on startup: Zotero may not be running. */
+    zotero: zoteroClient,
   });
   if (conv.available) {
     console.log('store: ' + conv.file + ' (schema v' + conv.schemaVersion + ')');
@@ -220,6 +229,14 @@ ipcMain.handle('fairy:search', (_event, payload) => {
   const p = payload || {};
   return conv.search(p.query, { limit: p.limit, topicId: p.topicId });
 });
+
+/* The owner's library (Phase 5, ADR-016). Sync is explicit and local; a failure is a result, so
+ * the renderer can say "Zotero is not running" instead of showing an empty library. */
+ipcMain.handle('fairy:zotero-sync', () => (
+  conv ? conv.syncZotero() : { ok: false, reason: 'unavailable' }
+));
+
+ipcMain.handle('fairy:files', () => (conv ? conv.files() : []));
 
 /* Memories. A wrong memory is worse than no memory, so the owner can read and remove theirs
  * (ADR-013); these three channels are the whole of that surface. `sourceCount` comes with each row

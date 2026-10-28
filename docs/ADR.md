@@ -1175,8 +1175,9 @@ Four measurements changed the shape:
    prefix is mounted and the route is genuinely absent. Embeddings require a second provider, or
    the mechanism changes to lexical retrieval plus reranking.
 2. **The owner's corpus lives in Zotero, and it is richer than the PDFs.** On 2026-10-28 the local
-   library reported 620 items: 32 papers (19 journal articles, 4 conference papers, 9 preprints),
-   29 Chinese notes of 11–14k characters each, 521 highlights, and 35 PDF attachments. A highlight
+   library reported 620 items: 35 papers (journal articles, conference papers, preprints and a few
+   reports/documents), 29 Chinese notes of 11–14k characters each, 521 highlights, and 35 PDF
+   attachments. A highlight
    is already an exact English sentence, a page label (`45:15`) and the owner's Chinese comment; a
    note is a long Chinese summary. That is the highest-signal, zero-parsing corpus in the library.
    A full PDF is lower signal and much more work: two columns, equations, references, headers.
@@ -1273,7 +1274,7 @@ change.
 - **No third key.** The Zotero API is local and unauthenticated; only the embedding provider needs a
   secret. Zotero must be running for a sync, and an unreachable Zotero is a sentence, not a silent
   empty library.
-- The first sync is a **full** sync: 32 papers, 29 notes and 521 highlights are small enough to
+- The first sync is a **full** sync: 35 papers, 29 notes and 521 highlights are small enough to
   refetch. `zotero_version` per paper makes an incremental pass possible later; it is not built
   until the full sync is shown to be slow.
 - **The corpus is the owner's own reading and writing.** Embedding sends chunk text to a third

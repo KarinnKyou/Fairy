@@ -14,6 +14,7 @@ const store = require('./store.js');
 const capabilities = require('./capabilities.js');
 const topics = require('./topics.js');
 const memory = require('./memory.js');
+const zotero = require('./zotero.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -568,6 +569,69 @@ function openConversation(options) {
     }
   }
 
+  /* ---------------------------------------------------------------- library */
+
+  /*
+   * Read the owner's Zotero library into the store (ADR-016). One row per paper, one row per
+   * chunk; embeddings stay NULL until the owner accepts that their notes leave the machine.
+   *
+   * A failure is a result, not a throw: Zotero not running is the ordinary case, and it must
+   * read as "nothing was synced", never as an empty library.
+   */
+  async function syncZotero() {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    const client = opts.zotero;
+    if (!client || typeof client.snapshot !== 'function') {
+      return { ok: false, reason: 'not-configured' };
+    }
+
+    let snap;
+    try {
+      snap = await client.snapshot();
+    } catch (err) {
+      return { ok: false, reason: 'unreachable', error: String((err && err.message) || err) };
+    }
+
+    const result = {
+      ok: true, papers: 0, notes: 0, highlights: 0, chunks: 0,
+      dropped: snap.droppedAnnotations || 0, version: snap.version || 0,
+    };
+
+    for (const p of snap.papers || []) {
+      const id = store.upsertZoteroFile(s.db, Object.assign({}, p, { content: zotero.paperContent(p) }));
+      if (!id) continue;
+      const list = zotero.chunksFor(p);
+      store.replaceChunks(s.db, id, list);
+      result.papers++;
+      result.notes += p.notes.length;
+      result.highlights += p.highlights.length;
+      result.chunks += list.length;
+    }
+
+    /* A note that hangs under no paper is still the owner's writing; losing it silently would be
+     * the same failure as dropping a highlight. It becomes its own file row. */
+    for (const n of snap.standaloneNotes || []) {
+      const paper = {
+        key: n.key, version: n.version, title: n.title || n.text.slice(0, 60),
+        itemType: 'note', year: null, creators: '', tags: [], abstract: '',
+        notes: [n], highlights: [], kind: 'note',
+      };
+      const id = store.upsertZoteroFile(s.db, Object.assign({}, paper, { content: zotero.paperContent(paper) }));
+      if (!id) continue;
+      const list = zotero.chunksFor(paper);
+      store.replaceChunks(s.db, id, list);
+      result.notes++;
+      result.chunks += list.length;
+    }
+
+    return result;
+  }
+
+  function files(limit) {
+    if (!available) return [];
+    return store.listFiles(s.db, { limit: limit == null ? 100 : limit });
+  }
+
   /* ---------------------------------------------------------------- memory */
 
   /*
@@ -822,6 +886,8 @@ function openConversation(options) {
     newTopic,
     renameTopic,
     search,
+    syncZotero,
+    files,
     listProjects,
     currentProject,
     newProject,

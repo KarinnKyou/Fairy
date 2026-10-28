@@ -34,4 +34,7 @@ contextBridge.exposeInMainWorld('fairyApp', {
   listMemories: () => ipcRenderer.invoke('fairy:memories'),
   rememberMemory: (text) => ipcRenderer.invoke('fairy:memory-remember', { text }),
   forgetMemory: (id) => ipcRenderer.invoke('fairy:memory-forget', { id }),
+  /* The owner's library, read from Zotero's local API on demand (ADR-016). */
+  syncZotero: () => ipcRenderer.invoke('fairy:zotero-sync'),
+  listFiles: () => ipcRenderer.invoke('fairy:files'),
 });
