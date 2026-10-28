@@ -18,7 +18,7 @@ left to rot. Everything below was true at the moment it was written.
   Accepted. **Phase 5 has started:** the Zotero sync, schema v7, the embedding client, `/recall`,
   the measured threshold and the labelled prompt section are in the tree (1386 chunks embedded;
   0.55 keeps 10/11 positives with 0/2 false positives; injection capped at 3 chunks / 1200
-  characters). `/read` and L1 do not exist yet.
+  characters). The L1 `/hand` brief is written as a file; `/read` does not exist yet.
 - **Schema is v7; `npm test` (root) runs five suites** (`store`, `zotero`, `conversation`,
   `renderer`, `scroll-pin`).
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the

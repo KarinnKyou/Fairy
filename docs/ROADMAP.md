@@ -256,7 +256,8 @@ threshold and the labelled prompt section.** A real sync read 35 papers, 29 note
 into 1386 chunks in 410 ms; BGE-M3 embedded all 1386 in 17.7 s. The first replay of 11 positive and
 2 negative questions gave hit@1 6/11 and hit@3 9/11; at 0.55 it kept 10/11 positives with 0/2 false
 positives. The turn now injects at most 3 chunks / 1200 characters above that threshold, labelled
-as original, note or abstract. `/read` and L1 do not exist yet.
+as original, note or abstract. The L1 `/hand` brief is written as a file (ADR-015); `/read` does
+not exist yet.
 
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).

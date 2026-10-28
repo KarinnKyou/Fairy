@@ -201,6 +201,19 @@ const fakeEmbFetch = async (_url, init) => {
   check(withFiles[0].content.includes('文件参考') && withFiles[0].content.includes('Paper'),
     '系统提示里带着检索到的片段');
 
+  /* 9. L1: the brief is a real file, built from stored facts, and is never sent. */
+  const briefDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
+  const briefConv = conversation.openConversation({ dir: briefDir });
+  const brief = briefConv.createHandoff('把发布流程里的密钥检查补上');
+  check(brief.ok === true, 'handoff 写成功');
+  check(fs.existsSync(brief.path), '简报文件存在');
+  const briefText = fs.readFileSync(brief.path, 'utf8');
+  check(briefText.includes('把发布流程里的密钥检查补上'), '简报包含需求原文');
+  check(briefText.includes('交给 harness') && briefText.includes('回复契约'), '简报包含任务契约');
+  check(briefConv.createHandoff('   ').reason === 'empty', '空需求被拒绝');
+  briefConv.close();
+  fs.rmSync(briefDir, { recursive: true, force: true });
+
   /* 10. An unreachable client is a result, not a throw and not an empty library. */
   const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
   const conv2 = conversation.openConversation({

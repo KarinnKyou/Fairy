@@ -316,6 +316,7 @@
     '/files             列出已同步的论文和笔记',
     '/embed             把库里还没嵌入的片段嵌入（当前模型）',
     '/recall <描述>      按意思在论文、笔记和高亮里查找',
+    '/hand <需求>       把需求写成一份给 harness 的简报文件（不会自动发送）',
     '/search <关键词>   在所有话题里搜索原文',
     '/memories          列出她记得的关于主人的事',
     '/remember <一句话> 让主人直接指定一条记忆',
@@ -587,6 +588,21 @@
           sysLine((ri + 1) + '. [' + (hit.title || '未命名') + ' · ' + where + '] ' +
             hit.score.toFixed(3) + '  ' +
             String(hit.text || '').replace(/\s+/g, ' ').slice(0, 80));
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'hand') {
+      if (!cmd.arg) { sysLine('用法：/hand <需求>'); return done(); }
+      return api.handoff(cmd.arg).then(function (r) {
+        if (r && r.ok) {
+          sysLine('简报写好了（' + r.bytes + ' 字节）：' + r.path);
+          sysLine('要发给 harness 的话，把这份文件交给它；HDD 不会自动发送。');
+        } else if (r && r.reason === 'empty') {
+          sysLine('用法：/hand <需求>');
+        } else {
+          sysLine('现在没法写简报（' + ((r && r.reason) || 'unknown') + '）。');
         }
         done();
       }).catch(fail);

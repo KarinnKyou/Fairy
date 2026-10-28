@@ -45,6 +45,7 @@
       "store.js",
       "zotero.js",
       "embedding.js",
+      "handoff.js",
       "config.json",
       "www/**/*"
     ],

@@ -16,6 +16,7 @@ const topics = require('./topics.js');
 const memory = require('./memory.js');
 const zotero = require('./zotero.js');
 const embedding = require('./embedding.js');
+const handoff = require('./handoff.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -737,6 +738,28 @@ function openConversation(options) {
     return { ok: true, model: emb.model, hits, scanned: rows.length };
   }
 
+  /* L1 handoff (ADR-015): a brief is written, never sent. The owner decides whether it goes to
+   * the harness; this function only turns the conversation's stored facts into a task file. */
+  function createHandoff(need) {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    const text = String(need == null ? '' : need).trim();
+    if (!text) return { ok: false, reason: 'empty' };
+    try {
+      const brief = handoff.composeBrief({
+        need: text,
+        topic: activeTopic(),
+        project: currentProject(),
+        memories: activeMemoryList(10),
+        recent: recentHistory(10),
+        now: now(),
+      });
+      const written = handoff.writeBrief(s.dir, brief, now());
+      return { ok: true, path: written.file, bytes: written.bytes };
+    } catch (err) {
+      return { ok: false, reason: 'write-failed', error: String((err && err.message) || err) };
+    }
+  }
+
   /* ---------------------------------------------------------------- memory */
 
   /*
@@ -1011,6 +1034,7 @@ function openConversation(options) {
     files,
     embedLibrary,
     recall,
+    createHandoff,
     listProjects,
     currentProject,
     newProject,

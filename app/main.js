@@ -257,6 +257,11 @@ ipcMain.handle('fairy:recall', (_event, payload) => (
     : { ok: false, reason: 'unavailable' }
 ));
 
+/* L1 handoff (ADR-015): write the brief file; never spawn anything. */
+ipcMain.handle('fairy:handoff', (_event, payload) => (
+  conv ? conv.createHandoff(payload && payload.need) : { ok: false, reason: 'unavailable' }
+));
+
 /* Memories. A wrong memory is worse than no memory, so the owner can read and remove theirs
  * (ADR-013); these three channels are the whole of that surface. `sourceCount` comes with each row
  * because provenance that cannot be seen cannot be argued with. */
