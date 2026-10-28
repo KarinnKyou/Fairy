@@ -199,7 +199,10 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 - **The project block's effect is still unmeasured.** The machine side is asserted; whether she uses
   the other topics, or misreads an excerpt as something said just now, needs a real conversation.
 - **The packaged data-directory branch is untested at schema v6** (the last real launch was v5).
-- **The commands have never been typed by hand**, except `/memories`.
+- **The Phase 5 commands were driven by hand on 2026-10-28** (`/zotero sync`, `/files`, `/embed`,
+  `/recall`, `/hand`), and automatic injection was judged correct on the real library: citations
+  matched, notes were not passed off as originals, both negative questions stayed empty, and reply
+  length was right. `/forget`, `/remember`, `/projects` and `/project` are still test-only.
 
 ## What to do first next session
 

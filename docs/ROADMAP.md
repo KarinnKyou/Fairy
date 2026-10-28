@@ -259,6 +259,11 @@ positives. The turn now injects at most 3 chunks / 1200 characters above that th
 as original, note or abstract. The L1 `/hand` brief is written as a file (ADR-015); `/read` does
 not exist yet.
 
+**Manually verified on 2026-10-28**: `/zotero sync`, `/files`, `/embed`, `/recall` and `/hand` were
+driven by hand on the real library, and automatic injection was judged correct — citations matched,
+notes were not passed off as the paper's words, both negative questions stayed empty, and reply
+length was right.
+
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).
 
