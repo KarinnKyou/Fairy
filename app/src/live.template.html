@@ -314,6 +314,8 @@
     '/project off       把当前话题移出项目',
     '/zotero            查看库状态；/zotero sync 从本机 Zotero 同步',
     '/files             列出已同步的论文和笔记',
+    '/embed             把库里还没嵌入的片段嵌入（当前模型）',
+    '/recall <描述>      按意思在论文、笔记和高亮里查找',
     '/search <关键词>   在所有话题里搜索原文',
     '/memories          列出她记得的关于主人的事',
     '/remember <一句话> 让主人直接指定一条记忆',
@@ -544,6 +546,47 @@
           var f = list[fi];
           sysLine((fi + 1) + '. ' + (f.title || f.name) + '  [' +
             (f.kind === 'note' ? '笔记' : '论文') + '，' + f.chunkCount + ' 块]');
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'embed') {
+      sysLine('正在嵌入库里还没处理的内容…');
+      return api.embedLibrary({ limit: 2000 }).then(function (r) {
+        if (r && r.ok) {
+          sysLine('已嵌入 ' + r.embedded + ' 块（' + r.model + '，剩余 ' + r.remaining +
+            ' / 共 ' + r.total + '）。');
+        } else if (r && r.reason === 'not-configured') {
+          sysLine('没有配置嵌入 key（HDD_EMBEDDING_API_KEY）。');
+        } else if (r && r.reason === 'embed-failed') {
+          sysLine('嵌入请求失败，什么都没写；下次再试。');
+        } else {
+          sysLine('现在没法嵌入（' + ((r && r.reason) || 'unknown') + '）。');
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'recall') {
+      if (!cmd.arg) { sysLine('用法：/recall <描述>'); return done(); }
+      return api.recall(cmd.arg, { limit: 5 }).then(function (r) {
+        if (!r || !r.ok) {
+          if (r && r.reason === 'no-embeddings') sysLine('库里还没有嵌入，先运行 /embed。');
+          else if (r && r.reason === 'not-configured') sysLine('没有配置嵌入 key。');
+          else sysLine('检索失败（' + ((r && r.reason) || 'unknown') + '）。');
+          return done();
+        }
+        if (!r.hits.length) { sysLine('没有找到相关内容。'); return done(); }
+        sysLine('找到 ' + r.hits.length + ' 条（扫描 ' + r.scanned + ' 块）：');
+        for (var ri = 0; ri < r.hits.length; ri++) {
+          var hit = r.hits[ri];
+          var where = hit.kind === 'highlight'
+            ? ('高亮' + (hit.page ? ' p.' + hit.page : ''))
+            : (hit.kind === 'note' ? '笔记' : '摘要');
+          sysLine((ri + 1) + '. [' + (hit.title || '未命名') + ' · ' + where + '] ' +
+            hit.score.toFixed(3) + '  ' +
+            String(hit.text || '').replace(/\s+/g, ' ').slice(0, 80));
         }
         done();
       }).catch(fail);

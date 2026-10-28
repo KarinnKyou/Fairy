@@ -1193,7 +1193,9 @@ Four measurements changed the shape:
    English-passage sanity matrix separated a direct match (0.804) from unrelated pairs (0.32–0.40),
    but a conceptual query's correct passage beat the wrong one by only 0.032 (0.584 vs 0.552). The
    model is viable; the thin margin is why ranking and the evaluation set decide, not a guessed
-   threshold.
+   threshold. The real library was then embedded with it: 1386 chunks in 17.7 s, and `/recall`
+   returned the target papers and notes at 0.71–0.62. That is evidence the model works, not a
+   threshold; the evaluation set still decides where injection starts.
 
 The need is cross-lingual: ask in Chinese, answer from the English original. The owner asks about
 the original more often than about the note, so the retrieval must reach English text and must say

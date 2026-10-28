@@ -12,6 +12,7 @@ const conversation = require('./conversation.js');
 const personality = require('./personality.js');
 const api = require('./api.js');
 const zotero = require('./zotero.js');
+const embedding = require('./embedding.js');
 
 /*
  * ELECTRON_RUN_AS_NODE turns electron.exe into plain Node, so `require('electron')` returns a
@@ -53,6 +54,14 @@ const zoteroClient = zotero.createClient({
   baseUrl: process.env.HDD_ZOTERO_API || zotero.DEFAULT_BASE,
 });
 
+/* The embedding provider is a separate service by necessity (ADR-016): DeepSeek has no embeddings
+ * endpoint. Config is environment-only for now, so a real key never enters the repository. */
+const embedder = embedding.createEmbedder({
+  baseUrl: process.env.HDD_EMBEDDING_BASE_URL || embedding.DEFAULT_BASE,
+  apiKey: process.env.HDD_EMBEDDING_API_KEY || '',
+  model: process.env.HDD_EMBEDDING_MODEL || embedding.DEFAULT_MODEL,
+});
+
 /*
  * The conversation — this process owns the truth (docs/ADR.md ADR-001): it stores the
  * messages, assembles the prompt and persists the reply. The renderer only sends text.
@@ -81,6 +90,7 @@ function openConversation() {
     },
     /* The library is read on demand, not on startup: Zotero may not be running. */
     zotero: zoteroClient,
+    embedder,
   });
   if (conv.available) {
     console.log('store: ' + conv.file + ' (schema v' + conv.schemaVersion + ')');
@@ -237,6 +247,15 @@ ipcMain.handle('fairy:zotero-sync', () => (
 ));
 
 ipcMain.handle('fairy:files', () => (conv ? conv.files() : []));
+
+ipcMain.handle('fairy:embed-library', (_event, payload) => (
+  conv ? conv.embedLibrary({ limit: payload && payload.limit }) : { ok: false, reason: 'unavailable' }
+));
+
+ipcMain.handle('fairy:recall', (_event, payload) => (
+  conv ? conv.recall(payload && payload.query, { limit: payload && payload.limit })
+    : { ok: false, reason: 'unavailable' }
+));
 
 /* Memories. A wrong memory is worse than no memory, so the owner can read and remove theirs
  * (ADR-013); these three channels are the whole of that surface. `sourceCount` comes with each row

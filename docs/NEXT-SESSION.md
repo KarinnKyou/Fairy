@@ -15,9 +15,9 @@ left to rot. Everything below was true at the moment it was written.
 - **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
 - **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
   and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
-  Accepted. **Phase 5 has started:** the Zotero sync and schema v7 are in the tree (35 papers, 29
-  notes, 521 highlights, 1386 chunks in a scratch sync); embeddings, `/recall` and the prompt
-  section do not exist yet.
+  Accepted. **Phase 5 has started:** the Zotero sync, schema v7, the embedding client and `/recall`
+  are in the tree (35 papers, 29 notes, 521 highlights, 1386 chunks, all embedded with BGE-M3 in
+  17.7 s). The measured threshold, the labelled prompt section, `/read` and L1 do not exist yet.
 - **Schema is v7; `npm test` (root) runs five suites** (`store`, `zotero`, `conversation`,
   `renderer`, `scroll-pin`).
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
@@ -206,12 +206,12 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
    `/zotero sync`, `/files`; 35 papers, 29 notes, 521 highlights, 1386 chunks, 0 dropped, 410 ms.
    `zotero.test.cjs` covers the grouping, chunk shapes, schema round-trip and the unreachable case.
 3. **The chunker — done** for the three shapes (note paragraphs, highlight + comment, abstract).
-4. **Next: the embedding client.** Provider BGE-M3; the owner accepted (option A) that chunk text
-   goes to SiliconFlow. Put the request where `main.js` cannot hide it, batch conservatively, and
-   test with a fake transport first. Then embed the 1386 chunks into a scratch store and record the
-   real call count and cost.
-5. **Then `/recall` and the retrieval module** — brute-force cosine, top-k, per-file cap, threshold
-   applied only after measurement.
+4. **The embedding client and a real embed — done.** BGE-M3 embedded all 1386 chunks in 17.7 s at
+   1024 dimensions, and `/recall` over the real library returned relevant papers and notes at
+   0.71–0.62. The owner accepted option A (chunk text may go to SiliconFlow).
+5. **`/recall` and the retrieval module — done for explicit search.** Brute-force cosine, top-k,
+   two chunks per paper. **Next: the measured threshold**, then automatic injection; nothing is
+   injected before `docs/eval/retrieval-*.json` exists.
 6. **The evaluation set and `probe --retrieval`** before any threshold exists. Use the real corpus:
    7 Chinese questions answered in English papers/highlights, 2 in Chinese notes, 1–2 with English
    terms. The provider is chosen in principle (BGE-M3) but is not proven — the conceptual margin was

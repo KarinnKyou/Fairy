@@ -963,6 +963,43 @@ function deleteFile(db, id) {
   return db.prepare('DELETE FROM files WHERE id = ?').run(String(id)).changes;
 }
 
+/* Embedding state lives on the chunk. "Needs embedding" is embedding IS NULL, so a failed batch
+ * is retried on the next run instead of being marked done with a zero vector. */
+function chunksNeedingEmbedding(db, options) {
+  const opts = options || {};
+  const limit = clamp(opts.limit == null ? 1000 : Number(opts.limit), 1, 20000);
+  return db.prepare(
+    `SELECT c.*, f.title AS file_title FROM chunks c JOIN files f ON f.id = c.file_id
+      WHERE c.embedding IS NULL ORDER BY c.file_id, c.ordinal LIMIT ?`
+  ).all(limit);
+}
+
+function setChunkEmbedding(db, id, blob, model) {
+  return db.prepare('UPDATE chunks SET embedding = ?, embedding_model = ? WHERE id = ?')
+    .run(blob, String(model), String(id)).changes;
+}
+
+function countChunks(db) {
+  return Number(db.prepare('SELECT COUNT(*) AS n FROM chunks').get().n);
+}
+
+function countEmbeddedChunks(db, model) {
+  const row = model
+    ? db.prepare('SELECT COUNT(*) AS n FROM chunks WHERE embedding IS NOT NULL AND embedding_model = ?').get(String(model))
+    : db.prepare('SELECT COUNT(*) AS n FROM chunks WHERE embedding IS NOT NULL').get();
+  return Number(row.n);
+}
+
+/* Only chunks embedded by the current model are comparable; mixing spaces is silently wrong. */
+function embeddedChunks(db, model) {
+  return db.prepare(
+    `SELECT c.id, c.file_id, c.kind, c.page, c.text, c.embedding,
+            f.title AS file_title, f.kind AS file_kind
+       FROM chunks c JOIN files f ON f.id = c.file_id
+      WHERE c.embedding IS NOT NULL AND c.embedding_model = ?`
+  ).all(String(model));
+}
+
 function appendMessage(db, msg) {
   const createdAt = msg.createdAt == null ? nowMs() : msg.createdAt;
   /* The id embeds the same timestamp as the row, so ordering by (created_at, id) stays
@@ -1374,6 +1411,11 @@ module.exports = {
   countFiles,
   deleteFile,
   detectLang,
+  chunksNeedingEmbedding,
+  setChunkEmbedding,
+  countChunks,
+  countEmbeddedChunks,
+  embeddedChunks,
   appendMessage,
   updateMessage,
   recentMessages,

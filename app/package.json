@@ -43,6 +43,7 @@
       "personality.js",
       "store.js",
       "zotero.js",
+      "embedding.js",
       "config.json",
       "www/**/*"
     ],

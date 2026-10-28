@@ -251,9 +251,10 @@ step, gated on the first proving useful.
 Privacy is a gate, not a footnote: embeddings send the owner's own notes and highlights to a third
 party, so the first sync stops before that until they say yes.
 
-Delivered so far: **the Zotero sync and schema v7**. A real sync read 35 papers, 29 notes and 521
-highlights into 1386 chunks in 410 ms, mapping every highlight through its PDF attachment and
-dropping none. Embeddings, `/recall` and the prompt section do not exist yet.
+Delivered so far: **the Zotero sync, schema v7, the embedding client and `/recall`.** A real sync
+read 35 papers, 29 notes and 521 highlights into 1386 chunks in 410 ms; BGE-M3 embedded all 1386 in
+17.7 s; `/recall` returned relevant papers and notes at 0.71–0.62. The **measured threshold**, the
+labelled prompt section, `/read` and L1 do not exist yet.
 
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).
@@ -271,7 +272,8 @@ Gates, in order:
    highlights by paper, and stores one row per paper; `/files`, `/file show`, `/file rm` for
    inspection. A highlight's parent is its PDF attachment, so attachment metadata maps it back to
    the paper. An unreachable Zotero is a sentence, not an empty library.
-4. **Retrieval.** `/recall` first; automatic injection only after the threshold is measured on
+4. **Retrieval (done for `/recall`).** `/recall` searches all embedded chunks and returns score and
+   source; automatic injection is **not** wired: it waits for the threshold measured on
    `docs/eval/retrieval-*.json`. `/read <title|n>` injects one named document whole, bounded, with
    no generated summary.
 5. **Labelled sections.** Original text and the owner's note never blur into each other.

@@ -50,6 +50,8 @@ to the model. Anything else is a message for her.
 | `/project off` | Take the current topic out of its project |
 | `/zotero` | Library status; `/zotero sync` reads this machine's Zotero library (papers, notes, highlights) |
 | `/files` | Papers and notes already synced, with their chunk counts |
+| `/embed` | Embed chunks that have no vector yet; prints how many were done and what remains |
+| `/recall <描述>` | Semantic search across papers, notes and highlights; prints the score and the source |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
 | `/memories` | What she currently believes about the owner, where each belief came from, and how many older ones have been superseded |
 | `/remember <一句话>` | State a fact about yourself directly. It is recorded as coming from you rather than inferred |

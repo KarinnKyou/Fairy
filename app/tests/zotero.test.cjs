@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 const store = require('../store.js');
 const zotero = require('../zotero.js');
+const embedding = require('../embedding.js');
 const conversation = require('../conversation.js');
 
 let failures = 0;
@@ -62,6 +63,25 @@ function fakeFetch() {
     };
   };
 }
+
+function vecFor(text) {
+  const v = new Float32Array(8);
+  for (const ch of String(text)) v[ch.codePointAt(0) % 8] += 1;
+  return embedding.normalize(v);
+}
+const fakeEmbedder = {
+  configured: true, model: 'fake',
+  embed: async (texts) => texts.map(vecFor),
+  embedOne: async (text) => vecFor(text),
+};
+const fakeEmbFetch = async (_url, init) => {
+  const body = JSON.parse(init.body);
+  return {
+    ok: true, status: 200,
+    json: async () => ({ data: body.input.map((t) => ({ embedding: vecFor(t) })) }),
+    text: async () => '',
+  };
+};
 
 (async () => {
   /* 1. HTML to text, entities and structure. */
@@ -115,9 +135,28 @@ function fakeFetch() {
   store.close(s);
   fs.rmSync(dir, { recursive: true, force: true });
 
-  /* 5. syncZotero writes one paper, its note, its highlight, and a standalone note. */
+  /* 5. Vectors: normalisation, BLOB round-trip, cosine. */
+  const v1 = embedding.normalize(Float32Array.from([1, 0, 0]));
+  const v2 = embedding.normalize(Float32Array.from([0, 1, 0]));
+  check(Math.abs(embedding.cosine(v1, v2)) < 1e-6, '正交向量的余弦为 0');
+  const back = embedding.fromBlob(embedding.toBlob([3, 0, 0]));
+  check(back.length === 3 && Math.abs(back[0] - 1) < 1e-6, 'BLOB 往返且已归一化');
+  check(embedding.fromBlob(Buffer.alloc(0)) === null, '空 BLOB 解出 null');
+
+  /* 6. The embedding client: batch success, no key, HTTP failure. */
+  const emb = embedding.createEmbedder({ apiKey: 'k', model: 'fake', fetchImpl: fakeEmbFetch });
+  eq((await emb.embed(['a', 'b'])).length, 2, '批量嵌入返回两条');
+  check((await embedding.createEmbedder({ apiKey: '', fetchImpl: fakeEmbFetch }).embed(['a'])) === null,
+    '没有 key 时返回 null');
+  check((await embedding.createEmbedder({
+    apiKey: 'k', fetchImpl: async () => ({ ok: false, status: 500, text: async () => '' }),
+  }).embed(['a'])) === null, 'HTTP 失败时返回 null');
+
+  /* 7. syncZotero writes one paper, its note, its highlight, and a standalone note. */
   const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
-  const conv = conversation.openConversation({ dir: dir2, zotero: { snapshot: async () => snap } });
+  const conv = conversation.openConversation({
+    dir: dir2, zotero: { snapshot: async () => snap }, embedder: fakeEmbedder,
+  });
   const result = await conv.syncZotero();
   check(result.ok === true, '同步成功');
   eq(result.papers, 1, '同步一篇论文');
@@ -127,6 +166,21 @@ function fakeFetch() {
   const files = conv.files();
   eq(files.length, 2, '论文 + 独立笔记两条 file（' + files.length + '）');
   check(files.some((f) => f.kind === 'note'), '独立笔记的 kind 是 note');
+
+  /* 8. Embedding the library, then a semantic recall over it. */
+  const embedded = await conv.embedLibrary({ limit: 100 });
+  check(embedded.ok && embedded.embedded === embedded.total, '全部块嵌入（' + embedded.embedded + '/' + embedded.total + '）');
+  eq(embedded.remaining, 0, '没有剩余未嵌入的块');
+  eq(store.countEmbeddedChunks(conv._store.db, 'fake'), embedded.total, '库里的嵌入数与块数一致');
+  const rec = await conv.recall('The exact English sentence', { limit: 5 });
+  check(rec.ok && rec.hits.length > 0, '语义检索有结果');
+  check(rec.hits.some((h) => h.kind === 'highlight'), '命中里包含高亮块');
+  const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
+  const recBefore = conversation.openConversation({ dir: emptyDir, embedder: fakeEmbedder });
+  const noEmb = await recBefore.recall('anything');
+  check(noEmb.ok === false && noEmb.reason === 'no-embeddings', '没有嵌入时明确返回 no-embeddings');
+  recBefore.close();
+  fs.rmSync(emptyDir, { recursive: true, force: true });
   conv.close();
   fs.rmSync(dir2, { recursive: true, force: true });
 

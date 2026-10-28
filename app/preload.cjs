@@ -37,4 +37,6 @@ contextBridge.exposeInMainWorld('fairyApp', {
   /* The owner's library, read from Zotero's local API on demand (ADR-016). */
   syncZotero: () => ipcRenderer.invoke('fairy:zotero-sync'),
   listFiles: () => ipcRenderer.invoke('fairy:files'),
+  embedLibrary: (options) => ipcRenderer.invoke('fairy:embed-library', options || {}),
+  recall: (query, options) => ipcRenderer.invoke('fairy:recall', Object.assign({ query }, options || {})),
 });

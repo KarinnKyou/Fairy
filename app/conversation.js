@@ -15,6 +15,7 @@ const capabilities = require('./capabilities.js');
 const topics = require('./topics.js');
 const memory = require('./memory.js');
 const zotero = require('./zotero.js');
+const embedding = require('./embedding.js');
 
 /* Mirrors the original renderer behaviour: inject one example pair only while the
  * conversation is short, as a voice cue rather than a permanent token cost. */
@@ -632,6 +633,68 @@ function openConversation(options) {
     return store.listFiles(s.db, { limit: limit == null ? 100 : limit });
   }
 
+  /* Fill in missing vectors. A failure writes nothing: the next run sees the same NULLs and
+   * retries, which is the only safe way to handle "the provider answered nothing". */
+  async function embedLibrary(options) {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    const emb = opts.embedder;
+    if (!emb || !emb.configured) return { ok: false, reason: 'not-configured' };
+    const limit = Math.max(1, Math.min(2000, Number(options && options.limit) || 2000));
+    const rows = store.chunksNeedingEmbedding(s.db, { limit });
+    if (!rows.length) {
+      return { ok: true, model: emb.model, embedded: 0, remaining: 0, total: store.countChunks(s.db) };
+    }
+    const vectors = await emb.embed(rows.map((r) => r.text));
+    if (!vectors) return { ok: false, reason: 'embed-failed', model: emb.model };
+    try {
+      s.db.exec('BEGIN');
+      for (let i = 0; i < rows.length; i++) {
+        store.setChunkEmbedding(s.db, rows[i].id, embedding.toBlob(vectors[i]), emb.model);
+      }
+      s.db.exec('COMMIT');
+    } catch (err) {
+      s.db.exec('ROLLBACK');
+      return { ok: false, reason: 'store-failed', error: String((err && err.message) || err) };
+    }
+    return {
+      ok: true, model: emb.model, embedded: rows.length,
+      remaining: store.countChunks(s.db) - store.countEmbeddedChunks(s.db, emb.model),
+      total: store.countChunks(s.db),
+    };
+  }
+
+  /* Semantic hits over the owner's library. At most two chunks from one paper, so a single
+   * verbose note cannot fill the whole answer; the score is returned, not hidden, because the
+   * threshold is the owner's evidence (ADR-016). */
+  async function recall(query, options) {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    const emb = opts.embedder;
+    if (!emb || !emb.configured) return { ok: false, reason: 'not-configured' };
+    const q = String(query == null ? '' : query).trim();
+    if (!q) return { ok: false, reason: 'empty' };
+    const rows = store.embeddedChunks(s.db, emb.model);
+    if (!rows.length) return { ok: false, reason: 'no-embeddings' };
+    const qv = await emb.embedOne(q);
+    if (!qv) return { ok: false, reason: 'embed-failed' };
+    const limit = Math.max(1, Math.min(50, Number(options && options.limit) || 5));
+    const scored = rows
+      .map((r) => ({ row: r, score: embedding.cosine(qv, embedding.fromBlob(r.embedding)) }))
+      .sort((a, b) => b.score - a.score);
+    const perFile = new Map();
+    const hits = [];
+    for (const entry of scored) {
+      const n = perFile.get(entry.row.file_id) || 0;
+      if (n >= 2) continue;
+      perFile.set(entry.row.file_id, n + 1);
+      hits.push({
+        fileId: entry.row.file_id, title: entry.row.file_title, fileKind: entry.row.file_kind,
+        kind: entry.row.kind, page: entry.row.page, score: entry.score, text: entry.row.text,
+      });
+      if (hits.length >= limit) break;
+    }
+    return { ok: true, model: emb.model, hits, scanned: rows.length };
+  }
+
   /* ---------------------------------------------------------------- memory */
 
   /*
@@ -888,6 +951,8 @@ function openConversation(options) {
     search,
     syncZotero,
     files,
+    embedLibrary,
+    recall,
     listProjects,
     currentProject,
     newProject,
