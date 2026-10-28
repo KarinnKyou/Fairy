@@ -15,6 +15,7 @@
     "dev": "node scripts/dev.cjs",
     "dev:fresh": "node scripts/dev.cjs --fresh",
     "probe": "node scripts/probe.cjs",
+    "eval:retrieval": "node scripts/retrieval-eval.cjs",
     "inspect": "node scripts/inspect.cjs",
     "inspect:dev": "node scripts/inspect.cjs --dev",
     "dist": "npm run prep && node scripts/icon.cjs && electron-builder --win portable"

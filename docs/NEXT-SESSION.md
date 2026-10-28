@@ -15,9 +15,9 @@ left to rot. Everything below was true at the moment it was written.
 - **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
 - **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
   and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
-  Accepted. **Phase 5 has started:** the Zotero sync, schema v7, the embedding client and `/recall`
-  are in the tree (35 papers, 29 notes, 521 highlights, 1386 chunks, all embedded with BGE-M3 in
-  17.7 s). The measured threshold, the labelled prompt section, `/read` and L1 do not exist yet.
+  Accepted. **Phase 5 has started:** the Zotero sync, schema v7, the embedding client, `/recall`
+  and the first measured threshold are in the tree (1386 chunks embedded; 0.55 keeps 10/11
+  positives with 0/2 false positives). The labelled prompt section, `/read` and L1 do not exist yet.
 - **Schema is v7; `npm test` (root) runs five suites** (`store`, `zotero`, `conversation`,
   `renderer`, `scroll-pin`).
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
@@ -210,8 +210,10 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
    1024 dimensions, and `/recall` over the real library returned relevant papers and notes at
    0.71–0.62. The owner accepted option A (chunk text may go to SiliconFlow).
 5. **`/recall` and the retrieval module — done for explicit search.** Brute-force cosine, top-k,
-   two chunks per paper. **Next: the measured threshold**, then automatic injection; nothing is
-   injected before `docs/eval/retrieval-*.json` exists.
+   two chunks per paper. **The threshold is measured: 0.55** (`docs/eval/retrieval-2026-10-28.json`,
+   11 positive + 2 negative questions; 10/11 kept, 0/2 false positives). **Next: the labelled
+   prompt section** (`RETRIEVAL_INJECT_THRESHOLD = 0.55`, at most 3 chunks / 1200 characters,
+   original vs note labelled), then `/read`.
 6. **The evaluation set and `probe --retrieval`** before any threshold exists. Use the real corpus:
    7 Chinese questions answered in English papers/highlights, 2 in Chinese notes, 1–2 with English
    terms. The provider is chosen in principle (BGE-M3) but is not proven — the conceptual margin was

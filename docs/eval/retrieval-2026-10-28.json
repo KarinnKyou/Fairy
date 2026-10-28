@@ -1,0 +1,22 @@
+{
+  "kind": "retrieval",
+  "created": "2026-10-28",
+  "model": "BAAI/bge-m3",
+  "corpus": "the owner's Zotero library: 35 papers, 29 Chinese notes, 521 highlights",
+  "notes": "Questions are written the way the owner would ask them, in Chinese, about English originals. expect is a case-insensitive substring of the paper title. negative questions expect no hit above the injection threshold.",
+  "questions": [
+    { "question": "图注意力网络是怎么计算注意力的？", "expect": ["Graph Attention Networks"] },
+    { "question": "用强化学习做车间调度有哪些代表性方法？", "expect": ["Learning to Dispatch for Job Shop Scheduling"] },
+    { "question": "集装箱码头的泊位分配问题有哪些综述？", "expect": ["A follow-up survey of berth allocation", "Berth allocation and quay crane assignment"] },
+    { "question": "神经组合优化真的比传统求解器好吗？", "expect": ["Applicability of Neural Combinatorial Optimization"] },
+    { "question": "自动算法配置有哪些方法？", "expect": ["A Survey of Methods for Automated Algorithm Configuration"] },
+    { "question": "POMO 是怎么利用多个最优解的？", "expect": ["POMO: Policy Optimization with Multiple Optima"] },
+    { "question": "用机器学习加速分支定界是怎么做的？", "expect": ["Machine learning augmented branch and bound"] },
+    { "question": "我笔记里怎么评价 instance space analysis？", "expect": ["Instance Space Analysis and Complexity Estimation"] },
+    { "question": "我对神经组合优化适用性的批注是什么？", "expect": ["Applicability of Neural Combinatorial Optimization"] },
+    { "question": "AGV 调度里用的 GNN-Transformer 架构是什么？", "expect": ["GNN–Transformer architecture for AGV"] },
+    { "question": "instance space analysis 里的 complexity estimation 指什么？", "expect": ["Instance Space Analysis and Complexity Estimation", "Instance space analysis for the job shop"] },
+    { "question": "量子计算机的退相干时间一般是多少？", "expect": [], "negative": true },
+    { "question": "红烧肉应该怎么做好吃？", "expect": [], "negative": true }
+  ]
+}

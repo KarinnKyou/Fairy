@@ -1261,6 +1261,11 @@ have read it.
 notes, 1–2 with English technical terms. Replayed by `probe --retrieval`, which prints top-k hits
 and a threshold sweep. The model choice and the injection threshold both come from that file.
 
+The first replay (2026-10-28, 11 positive and 2 negative questions over the real library) gave
+hit@1 6/11 and hit@3 9/11. At **0.55** it kept 10/11 positives and produced **0/2 false positives**;
+0.60 kept 9/11, and 0.65 collapsed to 2/11. 0.55 is the starting injection threshold, recorded as
+`RETRIEVAL_INJECT_THRESHOLD`; one library is a start, not a corpus.
+
 **7. Hybrid lexical plus vector retrieval is recorded, not built.**
 
 Exact terms (`LoRA`, `DPO`) are where vector search is weakest and FTS5 is strongest. The retrieval
