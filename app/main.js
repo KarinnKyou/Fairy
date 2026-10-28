@@ -267,6 +267,15 @@ ipcMain.handle('fairy:handoff', (_event, payload) => (
   conv ? conv.createHandoff(payload && payload.need) : { ok: false, reason: 'unavailable' }
 ));
 
+/* /read (ADR-016): attach one named document to the following turns, or detach it. */
+ipcMain.handle('fairy:read-file', (_event, payload) => (
+  conv ? conv.readFile(payload && payload.ref) : { ok: false, reason: 'unavailable' }
+));
+
+ipcMain.handle('fairy:stop-reading', () => (
+  conv ? conv.stopReading() : { ok: false, reason: 'unavailable' }
+));
+
 /* Memories. A wrong memory is worse than no memory, so the owner can read and remove theirs
  * (ADR-013); these three channels are the whole of that surface. `sourceCount` comes with each row
  * because provenance that cannot be seen cannot be argued with. */

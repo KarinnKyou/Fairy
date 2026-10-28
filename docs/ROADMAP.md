@@ -10,17 +10,18 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 
 | | |
 | --- | --- |
-| Current release | **v0.4** (`0.4.0`), pre-release, tag `v0.4` |
-| Released | 2026-10-27 |
-| Artifact | `HDD-0.4.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B3E8ACB5…` |
-| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.4 |
-| Phase in progress | **Phase 5 — the owner's library** (ADR-016): Zotero notes and highlights first, text-layer PDFs later; the embedding provider is the open decision, and DeepSeek was measured to have none |
-| Automated tests | 5 suites since Phase 5 (`store`, `zotero`, `conversation`, `renderer`, `scroll-pin`); the v0.4 release reported 614 assertions. See `docs/COMMANDS.md` §3 |
+| Current release | **v0.5** (`0.5.0`), pre-release, tag `v0.5` |
+| Released | 2026-10-28 |
+| Artifact | `HDD-0.5.0.exe` (portable, Windows x64); `release.ps1` records the SHA-256 on the release page |
+| Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.5 |
+| Phase in progress | **Phase 6 — tools, narrowed** (ADR-015): a few safe local actions and the handoff audit, not a tool platform; execution is delegated to the harness |
+| Automated tests | 5 suites (`store`, `zotero`, `conversation`, `renderer`, `scroll-pin`); the v0.4 release reported 614 assertions. See `docs/COMMANDS.md` §3 |
 
 Earlier releases are kept as history: `v0.1` made the conversation real (persistence, a per-turn
 prompt, an accumulating profile) but held one undifferentiated transcript; `v0.2` split it into
-topics; `v0.3` gave her long-term memory; `v0.4` put topics into projects. `v0.01` (the "demo")
-showed the look, before the app had any persistence at all.
+topics; `v0.3` gave her long-term memory; `v0.4` put topics into projects; `v0.5` gave her the
+owner's Zotero library, semantic recall and `/read`. `v0.01` (the "demo") showed the look, before
+the app had any persistence at all.
 
 ---
 
@@ -126,8 +127,8 @@ order is the plan.
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
 | 4 | v0.4 | **shipped** 2026-10-27 | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
-| 5 | v0.5 | in progress | The owner's library: sync Zotero notes/highlights, then text-layer PDFs; chunking, embeddings, semantic retrieval; the provider is measured on a bilingual eval set (ADR-016) | `files`, `chunks` |
-| 6 | v0.6 | not started | Tools, narrowed (ADR-015): a few safe local actions and the handoff audit; not a tool platform. Execution is delegated | `tool_invocations` only if a local action needs it |
+| 5 | v0.5 | **shipped** 2026-10-28 | The owner's library: Zotero local API, chunking, BGE-M3 embeddings, `/recall` at a measured 0.55, labelled prompt section, `/read`, `/hand` (ADR-016) | `files`, `chunks` |
+| 6 | v0.6 | next | Tools, narrowed (ADR-015): a few safe local actions and the handoff audit; not a tool platform. Execution is delegated | `tool_invocations` only if a local action needs it |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
 | 8 | — | **removed** | Execution is delegated to the harness (ADR-015); HDD runs no agent of its own | — |
 | 9 | v0.9 | not started | Schedules and scheduled tasks, weekly reports, export / merge / re-import | `schedules` |
@@ -240,7 +241,7 @@ hand in that window, and the project block has not been through a real conversat
 
 ---
 
-## Phase 5 — the owner's library (in progress; ADR-016)
+## Phase 5 — the owner's library (shipped as v0.5)
 
 **Goal:** she can answer from the owner's reading — in Chinese, from the English original — and say
 which paper and which passage it came from. The corpus comes straight from Zotero's local API
@@ -263,6 +264,11 @@ not exist yet.
 driven by hand on the real library, and automatic injection was judged correct — citations matched,
 notes were not passed off as the paper's words, both negative questions stayed empty, and reply
 length was right.
+
+**Released as `v0.5` on 2026-10-28.** The artifact passed every packaging check — neither the chat
+key nor the embedding key inside, every required module in the asar, no font bytes, and the three
+interface rules still present. `/read` and the automatic section are part of this release; PDF full
+text is the next gate.
 
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).

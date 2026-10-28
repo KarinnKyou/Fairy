@@ -1,5 +1,52 @@
 # HDD — version record
 
+## 0.5.0 (release name: HDD-0.5.0)
+
+Phase 5: the owner's library. HDD reads the Zotero library on this machine, chunks notes, highlights
+and abstracts, embeds them with a multilingual model, and uses the relevant few in a reply — in
+Chinese, from the English original, with the paper and page it came from. The decisions are ADR-016.
+
+### What is new
+
+- **Zotero through its local API.** `http://127.0.0.1:23119/api/users/0` — no key, no cloud, no
+  export. `/zotero sync` reads papers, notes, highlights and attachment metadata and groups them by
+  paper; a highlight's parent is its PDF attachment, and the importer maps it back. On the owner's
+  library: 35 papers, 29 notes, 521 highlights, 1386 chunks, nothing dropped.
+- **Schema v7, additive.** `files` (one row per paper, with `zotero_key`, title, authors, year,
+  tags, version) and `chunks` (`kind` = abstract/note/highlight, `page`, vector, per-chunk model).
+- **Embeddings.** DeepSeek has no embeddings endpoint (measured: `/embeddings` and `/v1/embeddings`
+  are 404 while `/v1/chat` is 200), so a second provider is used: SiliconFlow `BAAI/bge-m3`,
+  1024 dimensions. All 1386 chunks embedded in 17.7 s. The key lives in `app/config.json` beside the
+  chat key; `release.ps1` swaps and checks both.
+- **Semantic recall.** `/recall <描述>` returns score and source over papers, notes and highlights.
+  Automatic injection uses the threshold measured on the evaluation set, **0.55**: at most 3 chunks
+  / 1200 characters, labelled as original, note or abstract. A failed lookup is an empty section.
+- **`/read <标题|序号>`** attaches one named document to the following turns (≤ 8000 characters,
+  no generated summary); `/read off` detaches it.
+- **`/hand <需求>`** writes a deterministic brief for the harness, with the project, memories and
+  recent turns, under `app/data/handoffs/`; it is never sent automatically (ADR-015).
+- **An evaluation set with a number behind the threshold.** `docs/eval/retrieval-2026-10-28.json`:
+  11 positive and 2 negative questions; hit@1 6/11, hit@3 9/11; at 0.55, 10/11 positives and 0/2
+  false positives. `npm run probe:retrieval` replays it.
+- **No Markdown.** The persona forbids it and the renderer strips `**`, including when the markers
+  arrive in different stream deltas.
+
+### Known limitations
+
+- **PDF full text is not parsed.** The library holds abstracts, the owner's notes and the
+  highlighted sentences; a question about an unhighlighted passage cannot be answered from the PDF
+  body. OCR and two-column reconstruction are not in this release.
+- **The sync is a full refetch**, not incremental; 1386 chunks are small enough for that to be fine.
+- **The 0.55 threshold comes from one library.** It must be re-measured as `docs/eval` grows.
+- **`/hand` is L1 only**: it writes the brief; it does not spawn the harness. The one headless
+  trial failed on this machine's shell configuration (ADR-015).
+- **Zotero must be running** for `/zotero sync`; an unreachable Zotero is a sentence, not an empty
+  library.
+- **The embedding key is a second secret.** Both keys are swapped for placeholders and checked by
+  `release.ps1`; a private `npm run dist` still embeds whatever is in `config.json`.
+- Windows x64 only, full screen, `Esc` quits, no cancel for a reply in progress; the published exe
+  contains no font.
+
 ## 0.4.0 (release name: HDD-0.4.0)
 
 Phase 4: projects. Topics can be put into a named container, and the prompt is assembled from the

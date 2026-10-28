@@ -40,4 +40,6 @@ contextBridge.exposeInMainWorld('fairyApp', {
   embedLibrary: (options) => ipcRenderer.invoke('fairy:embed-library', options || {}),
   recall: (query, options) => ipcRenderer.invoke('fairy:recall', Object.assign({ query }, options || {})),
   handoff: (need) => ipcRenderer.invoke('fairy:handoff', { need }),
+  readFile: (ref) => ipcRenderer.invoke('fairy:read-file', { ref }),
+  stopReading: () => ipcRenderer.invoke('fairy:stop-reading'),
 });

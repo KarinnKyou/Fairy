@@ -201,7 +201,30 @@ const fakeEmbFetch = async (_url, init) => {
   check(withFiles[0].content.includes('文件参考') && withFiles[0].content.includes('Paper'),
     '系统提示里带着检索到的片段');
 
-  /* 9. L1: the brief is a real file, built from stored facts, and is never sent. */
+  /* 9. /read: one named document attached to the following turns, bounded, detachable. */
+  const readDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
+  const readConv = conversation.openConversation({ dir: readDir });
+  store.upsertZoteroFile(readConv._store.db, {
+    key: 'READ1', version: 1, title: 'Read Me', itemType: 'journalArticle', year: 2024,
+    creators: 'A. Author', tags: [], abstract: '', notes: [], highlights: [],
+    content: '## 摘要\nhello world\n\n## 高亮\n- key sentence',
+  });
+  const opened = readConv.readFile('Read Me');
+  check(opened.ok === true && opened.title === 'Read Me', '按标题选中文献');
+  const readTurn = await readConv.beginTurn('这篇讲了什么？');
+  check(Boolean(readTurn.reading) && readTurn.reading.content.includes('hello world'),
+    '下一轮带着正在读的内容');
+  const readMsgs = readConv.messagesFor(readTurn);
+  check(readMsgs[0].content.includes('正在读的文献') && readMsgs[0].content.includes('hello world'),
+    '系统提示里出现整篇文献段');
+  readConv.stopReading();
+  const afterStop = await readConv.beginTurn('再说说');
+  check(!afterStop.reading, '/read off 之后不再注入');
+  check(readConv.readFile('nope').reason === 'not-found', '找不到的文献明确返回 not-found');
+  readConv.close();
+  fs.rmSync(readDir, { recursive: true, force: true });
+
+  /* 10. L1: the brief is a real file, built from stored facts, and is never sent. */
   const briefDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
   const briefConv = conversation.openConversation({ dir: briefDir });
   const brief = briefConv.createHandoff('把发布流程里的密钥检查补上');

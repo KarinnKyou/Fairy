@@ -346,6 +346,7 @@
     '/embed             把库里还没嵌入的片段嵌入（当前模型）',
     '/recall <描述>      按意思在论文、笔记和高亮里查找',
     '/hand <需求>       把需求写成一份给 harness 的简报文件（不会自动发送）',
+    '/read <标题|序号>  把一篇文献整篇放进对话；/read off 停止',
     '/search <关键词>   在所有话题里搜索原文',
     '/memories          列出她记得的关于主人的事',
     '/remember <一句话> 让主人直接指定一条记忆',
@@ -632,6 +633,29 @@
           sysLine('用法：/hand <需求>');
         } else {
           sysLine('现在没法写简报（' + ((r && r.reason) || 'unknown') + '）。');
+        }
+        done();
+      }).catch(fail);
+    }
+
+    if (cmd.name === 'read') {
+      if (cmd.arg === 'off') {
+        return api.stopReading().then(function () {
+          sysLine('已停止阅读这篇文献。');
+          done();
+        }).catch(fail);
+      }
+      if (!cmd.arg) {
+        sysLine('用法：/read <标题|序号>；/read off 停止。');
+        return done();
+      }
+      return api.readFile(cmd.arg).then(function (r) {
+        if (r && r.ok) {
+          sysLine('现在在读《' + r.title + '》（' + r.chunks + ' 块）；直接问它相关的问题。');
+        } else if (r && r.reason === 'not-found') {
+          sysLine('库里没有匹配的文献，先 /files 看看序号。');
+        } else {
+          sysLine('读不了（' + ((r && r.reason) || 'unknown') + '）。');
         }
         done();
       }).catch(fail);

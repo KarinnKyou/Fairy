@@ -141,14 +141,14 @@
       "kind": "authored",
       "origin": null,
       "bytes": 743,
-      "sha256": "a077bb2a0cdb5814bbe9914c016d5b20dad4f6848e7e8a628b6f265f98b9ae60"
+      "sha256": "f1a136db3175bd534261d95d09edcef67e5524fb0b96e8d253585dc7dfafea51"
     },
     {
       "file": "README.md",
       "kind": "authored",
       "origin": null,
-      "bytes": 37648,
-      "sha256": "08d851851e163bb7100288e118459da10ef26567fe1b072b6d97ae0d56a6ee51"
+      "bytes": 39877,
+      "sha256": "2cb096620e513a8a46d526dc9ed67e17ba9bc4598772a2e6147a84ddc7d445ec"
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",

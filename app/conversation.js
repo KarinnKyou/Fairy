@@ -87,6 +87,12 @@ const FILE_CONTEXT_LIMIT = 3;
 const FILE_SECTION_MAX_CHARS = 1200;
 const FILE_CHUNK_MAX_CHARS = 400;
 
+/* Phase 5's other half: "read this paper" (ADR-016). One named document is injected whole,
+ * bounded, with no generated summary; 8000 characters is roughly a long abstract plus all of
+ * the owner's notes and highlights for one paper, not the paper's full text (PDF text is the
+ * next gate). */
+const READ_MAX_CHARS = 8000;
+
 /*
  * The project section. Every line comes from the store — the name, the sibling topics with their
  * message counts, and excerpts of what was actually said. There is deliberately no summary here:
@@ -129,8 +135,20 @@ function fileSection(hits) {
   return lines.length > 2 ? lines.join('\n') : '';
 }
 
-function projectSection(context) {
-  if (!context || !context.project) return '';
+/*
+ * The whole-document section, for /read. It is the paper's assembled material (abstract, the
+ * owner's notes, the highlighted sentences), not a generated summary and not the PDF body.
+ */
+function readingSection(reading) {
+  if (!reading || !reading.content) return '';
+  const title = String(reading.title || '未命名').trim();
+  const body = String(reading.content).slice(0, READ_MAX_CHARS);
+  return '\n\n# 正在读的文献：' + title +
+    '\n以下是这篇文献在库里保存的内容（摘要、主人的笔记、高亮原句），供本次对话参考；' +
+    '它不是主人刚说的话，也不是整篇 PDF 正文。\n' + body;
+}
+
+function projectSection(context) {  if (!context || !context.project) return '';
   const name = String(context.project.name == null ? '' : context.project.name).trim();
   if (!name) return '';
 
@@ -229,10 +247,10 @@ function memorySection(memories) {
  * they constrain what she may claim, and they must not be buried under flavour. See
  * capabilities.js for why they are not part of the persona.
  */
-function buildSystemPrompt(persona, identity, now, memories, project, files) {
+function buildSystemPrompt(persona, identity, now, memories, project, files, reading) {
   return String(persona) + capabilities.capabilitySection() + profileLine(identity) +
     memorySection(memories) + projectSection(project) + fileSection(files) +
-    '\n\n# 当前时间\n' + nowLine(now);
+    readingSection(reading) + '\n\n# 当前时间\n' + nowLine(now);
 }
 
 /*
@@ -270,7 +288,7 @@ function buildMessages(options) {
   const now = options.now;
 
   let system = buildSystemPrompt(persona, identity, now, options.memories, options.project,
-    options.files);
+    options.files, options.reading);
   if (history.length <= EXAMPLE_HISTORY_LIMIT) {
     system += styleReferenceSection(examples, options.pickExample);
   }
@@ -676,6 +694,39 @@ function openConversation(options) {
     return store.listFiles(s.db, { limit: limit == null ? 100 : limit });
   }
 
+  /* "Read this paper" (ADR-016): the owner names one file, and it stays attached to subsequent
+   * turns until /read off. Selection is by the number /files printed or a title substring. */
+  const READING_KEY = 'reading_file';
+
+  function resolveFileRef(ref) {
+    const wanted = String(ref == null ? '' : ref).trim();
+    if (!wanted) return null;
+    const list = store.listFiles(s.db, { limit: 200 });
+    if (/^\d+$/.test(wanted)) return list[Number(wanted) - 1] || null;
+    const low = wanted.toLowerCase();
+    return list.find((f) => String(f.title || f.name || '').toLowerCase().includes(low)) || null;
+  }
+
+  function readFile(ref) {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    const file = resolveFileRef(ref);
+    if (!file) return { ok: false, reason: 'not-found' };
+    store.metaSet(s.db, READING_KEY, file.id);
+    return { ok: true, id: file.id, title: file.title || file.name, chunks: file.chunkCount };
+  }
+
+  function stopReading() {
+    if (!available) return { ok: false, reason: 'unavailable' };
+    store.metaSet(s.db, READING_KEY, '');
+    return { ok: true };
+  }
+
+  function readingFile() {
+    if (!available) return null;
+    const id = store.metaGet(s.db, READING_KEY);
+    return id ? store.getFile(s.db, id) : null;
+  }
+
   /* Fill in missing vectors. A failure writes nothing: the next run sees the same NULLs and
    * retries, which is the only safe way to handle "the provider answered nothing". */
   async function embedLibrary(options) {
@@ -917,6 +968,16 @@ function openConversation(options) {
       } catch (_) { /* a failed lookup is an empty section */ }
     }
 
+    /* The document the owner asked to read stays attached until /read off. Bounded here so a
+     * long paper cannot make every turn enormous; the section says it is not the PDF body. */
+    const open = readingFile();
+    if (open) {
+      result.reading = {
+        title: open.title || open.name,
+        content: String(open.content || '').slice(0, READ_MAX_CHARS),
+      };
+    }
+
     const userRow = store.appendMessage(s.db, {
       /* The row timestamp comes from the same reading of the clock as the boundary decision
        * above. Two separate readings could land either side of the idle threshold, and it
@@ -944,6 +1005,7 @@ function openConversation(options) {
        * what the next turn is told. */
       project: turn && turn.topicId ? projectContext(turn.topicId) : null,
       files: (turn && turn.files) || [],
+      reading: turn && turn.reading,
       now: Date.now(),
     });
     if (turn && turn.userText) {
@@ -1032,6 +1094,9 @@ function openConversation(options) {
     search,
     syncZotero,
     files,
+    readFile,
+    stopReading,
+    readingFile,
     embedLibrary,
     recall,
     createHandoff,
@@ -1076,7 +1141,9 @@ module.exports = {
   FILE_CONTEXT_LIMIT,
   FILE_SECTION_MAX_CHARS,
   FILE_CHUNK_MAX_CHARS,
+  READ_MAX_CHARS,
   fileSection,
+  readingSection,
   projectSection,
   projectContextFor,
 };

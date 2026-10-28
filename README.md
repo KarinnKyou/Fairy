@@ -58,6 +58,8 @@ page itself is fully local (CSP blocks network access).
 | OS | Windows x64 (the release artifact is a portable exe) |
 | Node.js | ≥ 22.5, and **24.x recommended** — `store.js` uses the built-in `node:sqlite`, which needs 22.5+ and is gated behind `--experimental-sqlite` on some 22.x builds. Developed and tested on v24.20.0. Only needed to develop/package; the built exe bundles its own runtime |
 | Network | `https://api.deepseek.com` must be reachable at runtime (main process only) |
+| Zotero | Zotero 7+ running locally, with its local API reachable at `127.0.0.1:23119` (Settings → Advanced), for `/zotero sync` |
+| Embeddings | An OpenAI-compatible `/embeddings` endpoint and key; SiliconFlow `BAAI/bge-m3` (1024 dimensions) was measured. DeepSeek exposes no embeddings endpoint |
 | Font | **You must supply your own** (see 3.0): drop a `.ttf/.otf/.woff/.woff2` into `app/fonts/` and `prep` registers it automatically |
 
 ## 3. Getting started
@@ -369,6 +371,28 @@ newest exchanges from those topics — capped at 8 topics, 6 messages and 1000 c
 is labelled as other topics' content and is not part of the current conversation's history. There is
 no generated project brief: she must not assert progress the app cannot verify. The decisions behind
 this are ADR-014.
+
+## 4.0.3 Literature library
+
+HDD reads the Zotero library on this machine through its local API — no Zotero key, no cloud, no
+export. `/zotero sync` stores papers, notes and highlights; `/embed` turns them into vectors with a
+multilingual model; `/recall` searches by meaning; `/read` attaches one paper to the conversation;
+`/files` shows what is in the library.
+
+| Command | What it does |
+| --- | --- |
+| `/zotero sync` | Read the local Zotero API and group notes/highlights by paper |
+| `/files` | Papers and notes, with chunk counts |
+| `/embed` | Embed chunks that have no vector yet |
+| `/recall <描述>` | Semantic search; prints score, source and a short excerpt |
+| `/read <标题\|序号>` | Attach one paper to the following turns; `/read off` detaches |
+| `/hand <需求>` | Write a brief for the harness; it is never sent automatically |
+
+**Only what is relevant is injected**: at most three chunks / 1200 characters, above the measured
+threshold 0.55, each labelled as original, note or abstract. A failed lookup is an empty section.
+**The embedding key is a second key**, beside the chat key in `app/config.json`; `release.ps1` swaps
+and checks both. **PDF full text is not parsed** in this release: the library is abstracts, the
+owner's notes and the highlighted sentences, with page labels.
 
 ## 4.1 Fairy's personality
 

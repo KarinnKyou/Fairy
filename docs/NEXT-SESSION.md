@@ -12,18 +12,16 @@ left to rot. Everything below was true at the moment it was written.
 
 ## Where the project is
 
-- **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
-- **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
-  and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
-  Accepted. **Phase 5 has started:** the Zotero sync, schema v7, the embedding client, `/recall`,
-  the measured threshold and the labelled prompt section are in the tree (1386 chunks embedded;
-  0.55 keeps 10/11 positives with 0/2 false positives; injection capped at 3 chunks / 1200
-  characters). The L1 `/hand` brief is written as a file; `/read` does not exist yet.
+- **v0.5 shipped** (`0.5.0`, pre-release, tag `v0.5`) — Phase 5, the owner's library: Zotero local
+  API, schema v7, BGE-M3 embeddings, `/recall` at a measured 0.55, the labelled prompt section,
+  `/read` and the L1 `/hand` brief. The manual pass on 2026-10-28 was judged correct.
+- **Next: Phase 6, narrowed** (ADR-015): a few safe local actions and the handoff audit, not a tool
+  platform. Execution stays delegated to the harness.
 - **Schema is v7; `npm test` (root) runs five suites** (`store`, `zotero`, `conversation`,
   `renderer`, `scroll-pin`).
 - **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
   harness, not rebuilt here.
-- The decision record is committed locally (ADR-015/016 and the measurements); the tree is clean.
+- The decision record and the release are committed locally; nothing was pushed by the agent.
 
 ## The direction, in one paragraph
 
@@ -198,7 +196,7 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
   files. `--prompt` now uses the real assembler, so injected sections appear with their caps.
 - **The project block's effect is still unmeasured.** The machine side is asserted; whether she uses
   the other topics, or misreads an excerpt as something said just now, needs a real conversation.
-- **The packaged data-directory branch is untested at schema v6** (the last real launch was v5).
+- **The packaged data-directory branch is untested at schema v7** (the last real launch was v5).
 - **The Phase 5 commands were driven by hand on 2026-10-28** (`/zotero sync`, `/files`, `/embed`,
   `/recall`, `/hand`), and automatic injection was judged correct on the real library: citations
   matched, notes were not passed off as originals, both negative questions stayed empty, and reply
@@ -207,23 +205,20 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 ## What to do first next session
 
 1. Read ADR-015 and ADR-016; they are the authority on everything below.
-2. **Zotero client and full sync — done.** `zotero.js`, migration 7, `conversation.syncZotero`,
-   `/zotero sync`, `/files`; 35 papers, 29 notes, 521 highlights, 1386 chunks, 0 dropped, 410 ms.
-   `zotero.test.cjs` covers the grouping, chunk shapes, schema round-trip and the unreachable case.
-3. **The chunker — done** for the three shapes (note paragraphs, highlight + comment, abstract).
-4. **The embedding client and a real embed — done.** BGE-M3 embedded all 1386 chunks in 17.7 s at
-   1024 dimensions, and `/recall` over the real library returned relevant papers and notes at
-   0.71–0.62. The owner accepted option A (chunk text may go to SiliconFlow).
-5. **`/recall` and the retrieval module — done, including automatic injection.** Brute-force
-   cosine, top-k, two chunks per paper; the turn injects at most 3 chunks / 1200 characters above
-   **0.55**, labelled as original, note or abstract, after the project block. **Next: `/read`**,
-   then the capability/packaging pass and L1.
-6. **The evaluation set and `probe --retrieval`** before any threshold exists. Use the real corpus:
-   7 Chinese questions answered in English papers/highlights, 2 in Chinese notes, 1–2 with English
-   terms. The provider is chosen in principle (BGE-M3) but is not proven — the conceptual margin was
-   only 0.032.
-7. **L1 is independent** and can be done in parallel: `/hand` writes a brief file, no provider, no
-   schema, no network.
-8. **The owner's five real questions split three ways**: paper listing and existence (`/recall`),
-   reading a named document (`/read`), and **tasks and the schedule, which are Phase 7** — do not
-   stretch retrieval to answer them.
+2. **Phase 6, narrowed.** A few safe local actions (read a file, write a brief) and the handoff
+   audit row; **not** a tool platform, and no agent execution inside HDD. The permission model is
+   only as large as those actions.
+3. **Run the library on the real store.** The manual pass used `npm run dev:fresh`; `app/data/hdd.db`
+   has not been synced or embedded. In a real window: `/zotero sync`, `/embed`, then `/recall`,
+   `/read`, `/hand`. That also opens the database at schema v7 for the first time.
+4. **Grow the evaluation set.** Add questions to `docs/eval/retrieval-*.json` and re-run
+   `npm run probe:retrieval`; 0.55 came from one library of 11 positive and 2 negative questions.
+5. **PDF full text is the next big gate**: text-layer only, extraction preview, no OCR, no
+   two-column reconstruction beyond best effort. The current corpus is abstracts, notes and
+   highlights.
+6. **L2 handoff stays blocked** until the headless shell, temp-root and approval behaviour are
+   verified; the one trial failed on this machine (ADR-015). L1 (`/hand`) exists and is tested.
+7. **`inspect.cjs` has no file listing** and the packaged data-directory branch is untested at
+   schema v7; one launch of the built exe closes the second.
+8. **The reply budget is still a starting value** (2–5 sentences / ~240 characters); grow the eval
+   before moving it.

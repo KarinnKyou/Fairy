@@ -53,6 +53,7 @@ to the model. Anything else is a message for her.
 | `/embed` | Embed chunks that have no vector yet; prints how many were done and what remains |
 | `/recall <描述>` | Semantic search across papers, notes and highlights; prints the score and the source |
 | `/hand <需求>` | Write a self-contained brief file for the harness under `app/data/handoffs/`; it is never sent automatically |
+| `/read <标题\|序号>` | Attach one paper to the following turns; `/read off` detaches it |
 | `/search <关键词>` | Full-text search across every topic; each hit shows the topic it came from |
 | `/memories` | What she currently believes about the owner, where each belief came from, and how many older ones have been superseded |
 | `/remember <一句话>` | State a fact about yourself directly. It is recorded as coming from you rather than inferred |
