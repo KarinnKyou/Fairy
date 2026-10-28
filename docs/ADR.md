@@ -1284,7 +1284,8 @@ change.
   export.
 - **No third key.** The Zotero API is local and unauthenticated; only the embedding provider needs a
   secret. Zotero must be running for a sync, and an unreachable Zotero is a sentence, not a silent
-  empty library.
+  empty library. The embedding key is environment-only in v0.5: it never enters `config.json` or the
+  bundle, so the artifact keeps one secret surface (the DeepSeek key), not two.
 - The first sync is a **full** sync: 35 papers, 29 notes and 521 highlights are small enough to
   refetch. `zotero_version` per paper makes an incremental pass possible later; it is not built
   until the full sync is shown to be slow.
