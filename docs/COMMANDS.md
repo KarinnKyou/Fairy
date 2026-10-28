@@ -234,6 +234,9 @@ pointed at a deliberately broken build and shown to fail — do that if you chan
 | --- | --- |
 | `DEEPSEEK_API_KEY` | API key; wins over `app/config.json`. Required for a packaged exe |
 | `DEEPSEEK_MODEL` | Model name, e.g. `deepseek-v4-flash` |
+| `HDD_EMBEDDING_API_KEY` | Embedding provider key; overrides `embeddingApiKey` in `app/config.json` |
+| `HDD_EMBEDDING_BASE_URL` | Embedding base URL; overrides `embeddingBaseUrl` |
+| `HDD_EMBEDDING_MODEL` | Embedding model; overrides `embeddingModel` |
 | `HDD_DATA_DIR` | Where the store lives. Set by `npm run dev` |
 | `HDD_NO_FONTS` | `1` = register no font (used by `release.ps1`) |
 | `SOURCE_DATE_EPOCH` | Unused by app code; a convention available to the asset bake |

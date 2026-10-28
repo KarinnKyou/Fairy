@@ -122,7 +122,7 @@ function Step  { param([string]$m) Write-Host "`n=== $m ===" -ForegroundColor Wh
 # also be run on its own against an existing build (-VerifyOnly), which is how the checks
 # themselves get tested — a check that cannot be shown to fail is not a check.
 function Assert-PackagedContents {
-    param([string]$AsarFile, [string]$RealKey)
+    param([string]$AsarFile, [string]$RealKey, [string]$RealEmbeddingKey)
 
     if (-not (Test-Path $AsarFile)) {
         Warn "no unpacked asar at $AsarFile — skipped the deep verification of the exe contents"
@@ -145,6 +145,15 @@ function Assert-PackagedContents {
             Ok "exe contains no real API key"
         } else {
             Warn "no API key on hand — skipped the key-leak check"
+        }
+
+        # The embedding key lives in the same config.json now, so the same swap must cover it.
+        if ($RealEmbeddingKey) {
+            $packedCfg = Get-Content (Join-Path $tmp 'config.json') -Raw
+            if ($packedCfg.Contains($RealEmbeddingKey)) { Fail "SECURITY: the built exe contains your real embedding API key. Do not distribute it!" }
+            Ok "exe contains no real embedding API key"
+        } else {
+            Warn "no embedding key on hand — skipped the embedding key-leak check"
         }
 
         $packedLive = Get-Content (Join-Path $tmp 'www\live.html') -Raw
@@ -213,11 +222,15 @@ $exeName = "HDD-$Version.exe"
 if ($VerifyOnly) {
     Step "Verify the artifact (no build, no commit)"
     $knownKey = ''
+    $knownEmbeddingKey = ''
     if (Test-Path $cfgPath) {
-        $km = [regex]::Match((Get-Content $cfgPath -Raw), '"apiKey"\s*:\s*"([^"]*)"')
+        $cfgRaw = Get-Content $cfgPath -Raw
+        $km = [regex]::Match($cfgRaw, '"apiKey"\s*:\s*"([^"]*)"')
         if ($km.Success) { $knownKey = $km.Groups[1].Value }
+        $em = [regex]::Match($cfgRaw, '"embeddingApiKey"\s*:\s*"([^"]*)"')
+        if ($em.Success) { $knownEmbeddingKey = $em.Groups[1].Value }
     }
-    Assert-PackagedContents -AsarFile (Join-Path $root 'app\dist\win-unpacked\resources\app.asar') -RealKey $knownKey
+    Assert-PackagedContents -AsarFile (Join-Path $root 'app\dist\win-unpacked\resources\app.asar') -RealKey $knownKey -RealEmbeddingKey $knownEmbeddingKey
     Info "`nVerify-only run complete."
     exit 0
 }
@@ -234,6 +247,8 @@ $realCfg = Get-Content $cfgPath -Raw
 $realKeyMatch = [regex]::Match($realCfg, '"apiKey"\s*:\s*"([^"]*)"')
 if (-not $realKeyMatch.Success) { Fail "app/config.json has no apiKey field." }
 $realKey = $realKeyMatch.Groups[1].Value
+$realEmbeddingKeyMatch = [regex]::Match($realCfg, '"embeddingApiKey"\s*:\s*"([^"]*)"')
+$realEmbeddingKey = if ($realEmbeddingKeyMatch.Success) { $realEmbeddingKeyMatch.Groups[1].Value } else { '' }
 if (-not $realKey) {
     Fail "app/config.json has an empty apiKey. Put your real key in before releasing."
 }
@@ -437,7 +452,7 @@ $exeSizeMb = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
 Ok "artifact: app/dist/$exeName  ($exeSizeMb MB)"
 
 $asarFile = Join-Path $root 'app\dist\win-unpacked\resources\app.asar'
-Assert-PackagedContents -AsarFile $asarFile -RealKey $realKey
+Assert-PackagedContents -AsarFile $asarFile -RealKey $realKey -RealEmbeddingKey $realEmbeddingKey
 Remove-Item (Join-Path $root 'app\dist\win-unpacked') -Recurse -Force -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------- 4. commit

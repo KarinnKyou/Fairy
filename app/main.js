@@ -38,6 +38,11 @@ function loadConfig() {
   /* The side questions (topic boundary, memory extraction) go to a non-reasoning model by default;
    * see api.js for the measurement behind that. Empty means "use the default". */
   config.classifierModel = process.env.DEEPSEEK_CLASSIFIER_MODEL || config.classifierModel || '';
+  /* The embedding provider is a second key, deliberately in the same place as the first:
+   * app/config.json (gitignored). Environment variables still win, as they do for the chat key. */
+  config.embeddingBaseUrl = process.env.HDD_EMBEDDING_BASE_URL || config.embeddingBaseUrl || '';
+  config.embeddingApiKey = process.env.HDD_EMBEDDING_API_KEY || config.embeddingApiKey || '';
+  config.embeddingModel = process.env.HDD_EMBEDDING_MODEL || config.embeddingModel || '';
 }
 loadConfig();
 
@@ -57,9 +62,9 @@ const zoteroClient = zotero.createClient({
 /* The embedding provider is a separate service by necessity (ADR-016): DeepSeek has no embeddings
  * endpoint. Config is environment-only for now, so a real key never enters the repository. */
 const embedder = embedding.createEmbedder({
-  baseUrl: process.env.HDD_EMBEDDING_BASE_URL || embedding.DEFAULT_BASE,
-  apiKey: process.env.HDD_EMBEDDING_API_KEY || '',
-  model: process.env.HDD_EMBEDDING_MODEL || embedding.DEFAULT_MODEL,
+  baseUrl: config.embeddingBaseUrl || embedding.DEFAULT_BASE,
+  apiKey: config.embeddingApiKey,
+  model: config.embeddingModel || embedding.DEFAULT_MODEL,
 });
 
 /*
@@ -318,6 +323,11 @@ ipcMain.on('fairy:ask', async (event, payload) => {
    * beginTurn is async because a topic boundary may need the classifier above. */
   const turn = await conv.beginTurn(text);
   const messages = conv.messagesFor(turn);
+  /* The only observable trace of automatic retrieval: without it, "no section" and "nothing
+   * relevant" look identical in the console. */
+  if (turn.files && turn.files.length) {
+    console.log('  retrieval: injected ' + turn.files.length + ' chunk(s)');
+  }
 
   /* Which topic this went into, and whether a confirmation backed that up. A boundary that
    * nobody asked for, and one that was asked for and refused, look identical in the

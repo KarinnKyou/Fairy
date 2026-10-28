@@ -449,11 +449,10 @@ Not blockers, but they should not be forgotten.
 25. **The first corpus is the owner's highlights, not the owner's reading.** Highlights are what they
     cared about — high signal, and a biased sample: a question about a passage they did not highlight
     can only be answered after PDF full text lands. That is the trigger for the PDF step.
-26. **The embedding key is environment-only, so it is not in the artifact.** `main.js` reads
-    `HDD_EMBEDDING_*`; it never reads `config.json` for it, and the renderer never sees it.
-    `release.ps1` still scans for the DeepSeek key only, which is correct for this shape. If the
-    embedding key ever moves into `config.json`, the placeholder swap, the environment list and
-    `Assert-PackagedContents` must learn it in the same commit.
+26. **The embedding key now sits in `app/config.json`, beside the chat key.** The file is
+    gitignored; `release.ps1` swaps both values for the placeholders in `config.example.json` and
+    checks the built asar for both real keys. A private `npm run dist` still embeds whatever is in
+    `config.json` — the same warning as the chat key.
 27. **Zotero's export shape is not stable across versions.** HTML, RDF or JSON, per item or per
     collection, notes and annotations in one file or several — the importer must read defensively and
     say what it could not parse, rather than importing half a library silently.

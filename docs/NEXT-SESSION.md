@@ -190,8 +190,8 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 - **The reply budget is a starting value** (debt 24): 2–5 sentences / ~240 characters, not measured.
 - **The first corpus is notes and highlights, not the full papers** (debt 25): PDF full text is the
   trigger.
-- **The embedding key is environment-only** (debt 26): it is not in the artifact; moving it into
-  `config.json` would require the leak check in the same commit.
+- **The embedding key sits in `config.json`** (debt 26): gitignored, swapped for a placeholder by
+  `release.ps1`, and checked alongside the chat key in the built asar.
 - **The Zotero local API is a version surface** (debt 27): pin the version, keep the export
   fallback, and treat an unreachable Zotero as a sentence rather than an empty library.
 - **`inspect.cjs` still has no listing for stored memories or projects**, and will need one for

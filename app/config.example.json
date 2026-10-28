@@ -1,5 +1,8 @@
 {
   "apiKey": "sk-REPLACE_WITH_YOUR_DEEPSEEK_API_KEY",
   "model": "deepseek-v4-flash",
-  "baseUrl": "https://api.deepseek.com"
+  "baseUrl": "https://api.deepseek.com",
+  "embeddingBaseUrl": "https://api.siliconflow.cn/v1",
+  "embeddingApiKey": "sk-REPLACE_WITH_YOUR_SILICONFLOW_API_KEY",
+  "embeddingModel": "BAAI/bge-m3"
 }

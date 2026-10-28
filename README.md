@@ -83,11 +83,18 @@ The app reads `app/config.json`; environment variables take precedence:
 {
   "apiKey": "sk-...your DeepSeek API key...",
   "model": "deepseek-v4-flash",
-  "baseUrl": "https://api.deepseek.com"
+  "baseUrl": "https://api.deepseek.com",
+
+  // Phase 5's embedding provider (DeepSeek exposes no embeddings endpoint).
+  "embeddingBaseUrl": "https://api.siliconflow.cn/v1",
+  "embeddingApiKey": "sk-...your SiliconFlow key...",
+  "embeddingModel": "BAAI/bge-m3"
 }
 ```
 
-- `app/config.json` is excluded by `.gitignore` — never commit it.
+- `app/config.json` is excluded by `.gitignore` — never commit it. Both keys in it (chat and
+  embeddings) are swapped for the placeholders in `config.example.json` by `release.ps1`, and the
+  built artifact is checked for both real values.
 - `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` override it (**environment variables win over
   `config.json`**).
 - **Running from source and running a packaged build read the same `config.json`, but the
