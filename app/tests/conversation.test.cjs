@@ -820,6 +820,10 @@ function stubConfirmer(newOn, options) {
       continue;
     }
 
+    /* The retrieval corpus has its own replay (scripts/retrieval-eval.cjs) because it needs an
+     * embedding provider and a synced library; this suite must stay offline. */
+    if (corpus.kind === 'retrieval') continue;
+
     check(Array.isArray(corpus.turns) && corpus.turns.length > 0,
       file + '：包含 ' + (corpus.turns || []).length + ' 个真实回合');
 

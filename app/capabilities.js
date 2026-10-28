@@ -42,6 +42,9 @@ const CAN_DO = [
    * "some of what you said", not "everything" — because a memory can be wrong, and the persona's
    * honesty rule is what stops her asserting a doubtful one as fact. */
   { id: 'memory', text: '记得主人以前说过的一些事，并在之后的对话里用上' },
+  /* Phase 5. Declared because the code really retrieves it: chunks from the owner's Zotero
+   * library are scored against the turn and injected above a measured threshold (ADR-016). */
+  { id: 'library', text: '记得主人文献库里的笔记和高亮，并在回答里用上' },
 ];
 
 /* The absences, recorded but deliberately NOT rendered — see the header. They are kept for

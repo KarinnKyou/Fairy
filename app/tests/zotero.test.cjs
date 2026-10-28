@@ -184,7 +184,24 @@ const fakeEmbFetch = async (_url, init) => {
   conv.close();
   fs.rmSync(dir2, { recursive: true, force: true });
 
-  /* 6. An unreachable client is a result, not a throw and not an empty library. */
+  /* 9. The prompt section: labelled, bounded, and empty when nothing clears the threshold. */
+  const section = conversation.fileSection([
+    { title: 'Paper', kind: 'highlight', page: '45:15', score: 0.7, text: 'The exact English sentence.' },
+    { title: 'Note', kind: 'note', page: null, score: 0.6, text: '我的笔记' },
+    { title: 'Low', kind: 'note', page: null, score: 0.4, text: 'below threshold' },
+  ]);
+  check(section.includes('文件参考') && section.includes('高亮 p.45:15') && section.includes('笔记'),
+    '文件参考段带来源标签');
+  check(!section.includes('below threshold'), '低于阈值的块不进入提示词');
+  check(conversation.fileSection([]) === '', '没有命中时没有段');
+  const withFiles = conversation.buildMessages({
+    persona: 'P', identity: { turns: 1, firstSeen: 0, lastSeen: null }, now: Date.now(),
+    files: [{ title: 'Paper', kind: 'highlight', page: '45:15', score: 0.7, text: 'The exact English sentence.' }],
+  });
+  check(withFiles[0].content.includes('文件参考') && withFiles[0].content.includes('Paper'),
+    '系统提示里带着检索到的片段');
+
+  /* 10. An unreachable client is a result, not a throw and not an empty library. */
   const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'hdd-zotero-'));
   const conv2 = conversation.openConversation({
     dir: dir3,

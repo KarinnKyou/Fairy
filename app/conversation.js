@@ -78,6 +78,14 @@ const PROJECT_MESSAGE_LIMIT = 6;
 const PROJECT_SECTION_MAX_CHARS = 1000;
 const PROJECT_EXCERPT_MAX_CHARS = 200;
 
+/* Phase 5 retrieval (ADR-016). The threshold is measured, not chosen: at 0.55 the first replay of
+ * docs/eval/retrieval-2026-10-28.json kept 10/11 positives and produced no false positives on the
+ * two negative questions. It is a starting value for one library, not a law. */
+const RETRIEVAL_INJECT_THRESHOLD = 0.55;
+const FILE_CONTEXT_LIMIT = 3;
+const FILE_SECTION_MAX_CHARS = 1200;
+const FILE_CHUNK_MAX_CHARS = 400;
+
 /*
  * The project section. Every line comes from the store — the name, the sibling topics with their
  * message counts, and excerpts of what was actually said. There is deliberately no summary here:
@@ -88,6 +96,38 @@ const PROJECT_EXCERPT_MAX_CHARS = 200;
  * are part of the query); this function applies the character ceiling, because it is the only
  * place that knows how long the rendered text really is.
  */
+/*
+ * The retrieved-material section. It is reference, not history, and every line says what it is:
+ * a highlight is the paper's own sentence, a note is the owner's summary. The prompt is told not
+ * to blur the two, because the owner asks about the original more often than about the note.
+ */
+function fileSection(hits) {
+  const list = (hits || [])
+    .filter((h) => h && h.text && Number(h.score) >= RETRIEVAL_INJECT_THRESHOLD)
+    .slice(0, FILE_CONTEXT_LIMIT);
+  if (!list.length) return '';
+
+  const lines = [
+    '\n\n# 文件参考（来自主人导入的 Zotero 文献库，不是对话内容）',
+    '以下是按相关度检索到的片段，供参考。笔记是主人自己的总结，不是论文原文；' +
+      '不要把它们说成是主人刚说的话，也不要把笔记当成原文引用。',
+  ];
+  let used = lines.join('\n').length;
+  for (const h of list) {
+    const where = h.kind === 'highlight'
+      ? ('高亮' + (h.page ? ' p.' + h.page : ''))
+      : (h.kind === 'note' ? '笔记' : '摘要');
+    let text = String(h.text == null ? '' : h.text).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    if (text.length > FILE_CHUNK_MAX_CHARS) text = text.slice(0, FILE_CHUNK_MAX_CHARS) + '…';
+    const line = '【' + (h.title || '未命名') + ' · ' + where + '】' + text;
+    if (used + line.length + 1 > FILE_SECTION_MAX_CHARS) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return lines.length > 2 ? lines.join('\n') : '';
+}
+
 function projectSection(context) {
   if (!context || !context.project) return '';
   const name = String(context.project.name == null ? '' : context.project.name).trim();
@@ -188,9 +228,10 @@ function memorySection(memories) {
  * they constrain what she may claim, and they must not be buried under flavour. See
  * capabilities.js for why they are not part of the persona.
  */
-function buildSystemPrompt(persona, identity, now, memories, project) {
+function buildSystemPrompt(persona, identity, now, memories, project, files) {
   return String(persona) + capabilities.capabilitySection() + profileLine(identity) +
-    memorySection(memories) + projectSection(project) + '\n\n# 当前时间\n' + nowLine(now);
+    memorySection(memories) + projectSection(project) + fileSection(files) +
+    '\n\n# 当前时间\n' + nowLine(now);
 }
 
 /*
@@ -227,7 +268,8 @@ function buildMessages(options) {
   const identity = options.identity;
   const now = options.now;
 
-  let system = buildSystemPrompt(persona, identity, now, options.memories, options.project);
+  let system = buildSystemPrompt(persona, identity, now, options.memories, options.project,
+    options.files);
   if (history.length <= EXAMPLE_HISTORY_LIMIT) {
     system += styleReferenceSection(examples, options.pickExample);
   }
@@ -837,6 +879,21 @@ function openConversation(options) {
       ? store.recentMessages(s.db, CONTEXT_MESSAGE_LIMIT, { topicId: result.topicId })
       : [];
 
+    /* Retrieval runs before assembly and only contributes above the measured threshold. A failure
+     * is no section, never a guess; the reply itself is never blocked by it. */
+    result.files = [];
+    const emb = opts.embedder;
+    if (emb && emb.configured && content.trim().length >= 4) {
+      try {
+        const found = await recall(content, { limit: 10 });
+        if (found && found.ok) {
+          result.files = found.hits
+            .filter((h) => Number(h.score) >= RETRIEVAL_INJECT_THRESHOLD)
+            .slice(0, FILE_CONTEXT_LIMIT);
+        }
+      } catch (_) { /* a failed lookup is an empty section */ }
+    }
+
     const userRow = store.appendMessage(s.db, {
       /* The row timestamp comes from the same reading of the clock as the boundary decision
        * above. Two separate readings could land either side of the idle threshold, and it
@@ -863,6 +920,7 @@ function openConversation(options) {
       /* Read at assembly time, like the memories: a project assigned between turns is part of
        * what the next turn is told. */
       project: turn && turn.topicId ? projectContext(turn.topicId) : null,
+      files: (turn && turn.files) || [],
       now: Date.now(),
     });
     if (turn && turn.userText) {
@@ -990,6 +1048,11 @@ module.exports = {
   PROJECT_MESSAGE_LIMIT,
   PROJECT_SECTION_MAX_CHARS,
   PROJECT_EXCERPT_MAX_CHARS,
+  RETRIEVAL_INJECT_THRESHOLD,
+  FILE_CONTEXT_LIMIT,
+  FILE_SECTION_MAX_CHARS,
+  FILE_CHUNK_MAX_CHARS,
+  fileSection,
   projectSection,
   projectContextFor,
 };

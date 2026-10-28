@@ -251,12 +251,12 @@ step, gated on the first proving useful.
 Privacy is a gate, not a footnote: embeddings send the owner's own notes and highlights to a third
 party, so the first sync stops before that until they say yes.
 
-Delivered so far: **the Zotero sync, schema v7, the embedding client, `/recall`, and the first
-measured threshold.** A real sync read 35 papers, 29 notes and 521 highlights into 1386 chunks in
-410 ms; BGE-M3 embedded all 1386 in 17.7 s. The first replay of 11 positive and 2 negative
-questions gave hit@1 6/11 and hit@3 9/11; at 0.55 it kept 10/11 positives with 0/2 false positives,
-which is the starting injection threshold. The **labelled prompt section**, `/read` and L1 do not
-exist yet.
+Delivered so far: **the Zotero sync, schema v7, the embedding client, `/recall`, the first measured
+threshold and the labelled prompt section.** A real sync read 35 papers, 29 notes and 521 highlights
+into 1386 chunks in 410 ms; BGE-M3 embedded all 1386 in 17.7 s. The first replay of 11 positive and
+2 negative questions gave hit@1 6/11 and hit@3 9/11; at 0.55 it kept 10/11 positives with 0/2 false
+positives. The turn now injects at most 3 chunks / 1200 characters above that threshold, labelled
+as original, note or abstract. `/read` and L1 do not exist yet.
 
 The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
 known) and ADR-015 (the room/registers boundary).
@@ -274,10 +274,10 @@ Gates, in order:
    highlights by paper, and stores one row per paper; `/files`, `/file show`, `/file rm` for
    inspection. A highlight's parent is its PDF attachment, so attachment metadata maps it back to
    the paper. An unreachable Zotero is a sentence, not an empty library.
-4. **Retrieval (threshold measured at 0.55).** `/recall` searches all embedded chunks and returns
-   score and source. Automatic injection is **not** wired: it waits on the labelled section. At
-   0.55 the measured replay kept 10/11 positives and 0/2 false positives. `/read <title|n>` injects
-   one named document whole, bounded, with no generated summary.
+4. **Retrieval (injection wired at 0.55).** `/recall` searches all embedded chunks and returns
+   score and source. Automatic injection adds at most 3 chunks / 1200 characters above 0.55,
+   labelled as original, note or abstract, after the project block. `/read <title|n>` injects one
+   named document whole, bounded, with no generated summary — not built yet.
 5. **Labelled sections.** Original text and the owner's note never blur into each other.
 6. **Capability and packaging.** The `files` capability, the second key's leak check, and the
    module checks.

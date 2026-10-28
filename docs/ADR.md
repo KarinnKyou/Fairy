@@ -1255,6 +1255,10 @@ the answer to "帮我阅读一下这篇文献", which is a different operation f
 If the document exceeds the cap, the app says so and points at `/recall` instead of pretending to
 have read it.
 
+The automatic section sits after the project block and before the time. It carries at most three
+chunks and 1200 characters (400 per chunk), and only hits at or above the measured threshold; a
+failed lookup is an empty section, never a guess.
+
 **6. The evaluation set is written before the threshold.**
 
 `docs/eval/retrieval-*.json`: 7 Chinese questions answered in English papers, 2 answered in Chinese
