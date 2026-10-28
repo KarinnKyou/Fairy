@@ -14,7 +14,8 @@ const zotero = require('../zotero.js');
 const embedding = require('../embedding.js');
 
 const ROOT = path.join(__dirname, '..', '..');
-const file = process.argv[2] || 'docs/eval/retrieval-2026-10-28.json';
+const arg = process.argv.slice(2).find((a) => !a.startsWith('--'));
+const file = arg || 'docs/eval/retrieval-2026-10-28.json';
 const corpus = JSON.parse(fs.readFileSync(path.resolve(ROOT, file), 'utf8'));
 
 (async () => {
