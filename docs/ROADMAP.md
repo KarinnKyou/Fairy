@@ -14,7 +14,7 @@ are). Each phase ends in a released version, so "Phase 2" and "v0.2" are the sam
 | Released | 2026-10-27 |
 | Artifact | `HDD-0.4.0.exe` (95.5 MB, portable, Windows x64), SHA-256 `B3E8ACB5…` |
 | Release page | https://github.com/KarinnKyou/Fairy/releases/tag/v0.4 |
-| Phase in progress | **Phase 5 — files, chunks and semantic retrieval**, no ADR yet, not started; the vector-store decision is due at the start (ADR-007) |
+| Phase in progress | **Phase 5 — the owner's library** (ADR-016): Zotero notes and highlights first, text-layer PDFs later; the embedding provider is the open decision, and DeepSeek was measured to have none |
 | Automated tests | 4 suites, **614 assertions** at v0.4; see `docs/COMMANDS.md` §3 |
 
 Earlier releases are kept as history: `v0.1` made the conversation real (persistence, a per-turn
@@ -126,10 +126,10 @@ order is the plan.
 | 2 | v0.2 | **shipped** 2026-09-14 | Topic detection, creation and switching; full-text search UI; the "semantic search" item needs the Phase 5 decision; the behaviour evaluation set starts being collected (ADR-010) | `topics`; `messages.topic_id` nullable, then backfilled (ADR-006) |
 | 3 | v0.3 | **shipped** 2026-09-15 | Long-term memory: structured, updatable memories linked to the messages they came from | `memories` |
 | 4 | v0.4 | **shipped** 2026-10-27 | Context assembly and projects; topics linked to projects; project context derived at assembly time, no context table (ADR-014) | `projects`; `topics.project_id` nullable (ADR-014) |
-| 5 | v0.5 | not started | Files and chunks; chunking, embeddings, semantic retrieval (the vector-store decision is due at the start of this phase — ADR-007) | `files`, `chunks` |
-| 6 | v0.6 | not started | Tools: a real capability inventory and a permission model before any tool exists; tool calls linked to turns | `tool_invocations` |
+| 5 | v0.5 | in progress | The owner's library: import Zotero notes/highlights, then text-layer PDFs; chunking, embeddings, semantic retrieval; the provider is measured on a bilingual eval set (ADR-016) | `files`, `chunks` |
+| 6 | v0.6 | not started | Tools, narrowed (ADR-015): a few safe local actions and the handoff audit; not a tool platform. Execution is delegated | `tool_invocations` only if a local action needs it |
 | 7 | v0.7 | not started | Tasks and reminders, calendar as a real capability | `tasks`, `reminders` |
-| 8 | v0.8 | not started | Multi-step execution; agent runs linked to turns | `agent_runs` |
+| 8 | — | **removed** | Execution is delegated to the harness (ADR-015); HDD runs no agent of its own | — |
 | 9 | v0.9 | not started | Schedules and scheduled tasks, weekly reports, export / merge / re-import | `schedules` |
 | — | v1.0 | not started | **The full character returns**: cold humour, vanity, teasing, style examples. Deliberately withheld until the capabilities it describes exist (ADR-008). Also the point where the deferred decisions should be settled | |
 
@@ -240,6 +240,41 @@ hand in that window, and the project block has not been through a real conversat
 
 ---
 
+## Phase 5 — the owner's library (in progress; ADR-016)
+
+**Goal:** she can answer from the owner's reading — in Chinese, from the English original — and say
+which file and which passage it came from. The corpus is Zotero's exported notes and highlights
+first, because a highlight is already an exact English sentence with a page number and the owner's
+Chinese comment; PDF full text is the second step, gated on the first proving useful.
+
+Delivered so far: **nothing**. The phase starts with the bilingual evaluation set and the embedding
+provider measurement, not with code.
+
+The decisions are ADR-016, on top of ADR-007 (no vector store before the volume and query shape were
+known) and ADR-015 (the room/registers boundary).
+
+Gates, in order:
+
+1. **Provider measured.** DeepSeek has none: on 2026-10-28 `GET /models` listed no embedding model
+   and `/embeddings`, `/v1/embeddings`, `/beta/embeddings` all returned 404 while `/v1/chat`
+   returned 200. A second provider is needed, and the model is chosen by a 10-question bilingual
+   set, not by a specification sheet. If no provider is acceptable, the fallback is chunk-level
+   FTS5 plus reranking, and this section changes with the reason recorded.
+2. **Schema v7.** `files` and `chunks`, additive, with the model that embedded each chunk stored
+   beside the vector.
+3. **Import.** `/file add <file|dir>` for Zotero's exported notes, Markdown and text-layer PDFs;
+   `/files`, `/file show`, `/file rm`. Bad extraction is visible, not silently indexed.
+4. **Retrieval.** `/recall` first; automatic injection only after the threshold is measured on
+   `docs/eval/retrieval-*.json`.
+5. **Labelled sections.** Original text and the owner's note never blur into each other.
+6. **Capability and packaging.** The `files` capability, the second key's leak check, and the
+   module checks.
+
+What this phase deliberately does not do: OCR, PDF layout reconstruction beyond best effort,
+translating the papers, Zotero live sync, or writing the owner's files.
+
+---
+
 ## Open decisions and known debts
 
 Not blockers, but they should not be forgotten.
@@ -253,12 +288,13 @@ Not blockers, but they should not be forgotten.
    sentence produced a closing "就这些". The prompt is now a heading and two bullets, and
    nothing is claimed about completeness (ADR-009, revised three times). Verified by behaviour
    probes through the real assembly path, not only by assertions.
-2. **Capability declarations are hand-maintained until Phase 6.** `main.js` sending `tools` is
+2. **Capability declarations are hand-maintained.** `main.js` sending `tools` is
    cross-checked against the declared `tools` capability, and the page CSP against a declared
    network capability, so neither can drift silently. The remaining absences (`camera`,
    `hardware`, `actions`, `files`) are statements about absence that no test can meaningfully
-   verify — they exist so whoever adds a capability sees what was already considered. Phase 6
-   should generate the tool entry from the real tool registry.
+   verify — they exist so whoever adds a capability sees what was already considered. ADR-015
+   removed the tool platform from the plan, so the `tools` entry stays absent and there is no
+   registry to generate it from; the `files` absence changes in Phase 5, and the test must follow.
 3. **The packaged data-directory branch is not covered by automation.** `getDataDir()` returns
    `app.getPath('userData')/data` when packaged, and the tests run outside Electron, so a regression
    here is only ever caught by hand. **Verified again on 2026-09-15 with `HDD-0.3.0.exe`**: launched
@@ -382,6 +418,25 @@ Not blockers, but they should not be forgotten.
     instead of ignoring them, that she does not read an excerpt as something said just now, and that
     one `/project` per topic is not too much typing. Until then this is the phase's main risk: v0.4
     shipped with it unmeasured.
+23. **The handoff has been tried once, and the evidence is a failure.** `dsh --profile headless` boots
+    only with `DEEPSEEK_API_KEY` in the child environment; it ran tools **without an approval prompt**;
+    and its shell failed twice under this configuration (`Windows ACL temp root must be outside the
+    workspace`, then `spawn … pwsh.exe ENOENT`). It reported the failure honestly, which is the one
+    thing that went right. L2 must not be built on "it works" until the shell path, the ACL temp root
+    and the approval behaviour are each verified. L1 (the brief file) is the only part with evidence
+    behind it so far.
+24. **The reply budget is a starting value, not a measurement.** "2–3 sentences / about 120
+    characters" is the first constant (ADR-015). The dataset that should move it is the reply-length
+    distribution across `docs/eval`, and "she never gives a wall of text" is not an assertion yet.
+25. **The first corpus is the owner's highlights, not the owner's reading.** Highlights are what they
+    cared about — high signal, and a biased sample: a question about a passage they did not highlight
+    can only be answered after PDF full text lands. That is the trigger for the PDF step.
+26. **The second API key has no packaging check yet.** `release.ps1` scans for one real key and swaps
+    one placeholder. Until the embedding key reaches `config.example.json`, the environment-variable
+    list and `Assert-PackagedContents`, a published build could carry it.
+27. **Zotero's export shape is not stable across versions.** Markdown or HTML, per item or per
+    collection, notes and annotations in one file or several — the importer must read defensively and
+    say what it could not parse, rather than importing half a library silently.
 
 ---
 

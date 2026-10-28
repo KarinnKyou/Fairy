@@ -1,7 +1,8 @@
 # Starting the next session
 
-A handover note, rewritten after `v0.4` was released on 2026-10-27. It exists so a new session
-can start from the truth instead of from the previous session's narration.
+A handover note, rewritten on 2026-10-28 after the product boundary was decided (ADR-015) and
+Phase 5 was reshaped (ADR-016). It exists so a new session can start from the truth instead of from
+the previous session's narration.
 
 **`docs/ROADMAP.md` is the authority on progress; this file is the briefing.** When the two
 disagree, the roadmap (and the code) win — and this file should be updated or deleted rather than
@@ -11,12 +12,24 @@ left to rot. Everything below was true at the moment it was written.
 
 ## Where the project is
 
-- **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly:
-  `HDD-0.4.0.exe`, packaged and published on 2026-10-27.
-- **Next: Phase 5** — "Files and chunks; chunking, embeddings, semantic retrieval". No ADR yet; ADR-007
-  requires the vector-store decision at the start of it.
-- Schema is at **v6**; `npm test` (root) reports **614 assertions across four suites**.
-- The tree matches `origin/main`, and tag `v0.4` points at the release commit.
+- **v0.4 shipped** (`0.4.0`, pre-release, tag `v0.4`) — Phase 4, projects and context assembly.
+- **Phase 5 is in progress on paper only.** ADR-015 (the boundary, the two registers, delegation)
+  and ADR-016 (the owner's library: Zotero notes and highlights first, text-layer PDFs later) are
+  Accepted. **No Phase 5 code and no migration 7 exist yet.** The phase starts with a bilingual
+  evaluation set and a provider measurement, not with a schema.
+- **Schema is v6; `npm test` (root) reports 614 assertions across four suites.**
+- **ADR-015 removed Phase 8** (agent runs) and narrowed Phase 6: execution is delegated to the
+  harness, not rebuilt here.
+- The tree was clean at `c45daf7`; the ADR-015/016 record is the next commit.
+
+## The direction, in one paragraph
+
+**HDD is a room, not a printer.** Her subject is the owner's reading, notes, projects and personal
+facts — not the owner's codebase. Conversation is short by design (2–3 sentences, no lists, no
+headings); long content is a follow-up turn, a command's structured output, or a file. Execution
+belongs to the harness: HDD may **propose** a handoff, the owner confirms, and the brief is a file,
+never something to copy and paste. The boundary test for any feature: if its deliverable is a work
+artifact, it belongs in the harness; if it is continuity and conversation, it belongs here.
 
 ## How to work here
 
@@ -26,13 +39,19 @@ left to rot. Everything below was true at the moment it was written.
 - **When docs and code disagree, the code is right** — then fix the docs. Any constant or number
   written into documentation must be read out of the code or measured first.
 - Do not change a verified visual effect without saying so first (the mask, `pinBottom()`, the
-  font-weight override).
+  font-weight override, the folded newline).
 - **Do not set a threshold by reasoning.** Twice in this project a confidently-reasoned threshold
   was disproved by one real conversation. `docs/eval/` is the authority, and adding a case there is
   adding data rather than editing an assertion.
 - **A new check must be shown to fail** before it is committed. The IPC contract check, the
   capability cross-check and the packaging check were each demonstrated failing.
 - Ask questions in prose with lettered options rather than in a modal.
+- **The conversation register is a rule, not a taste.** A long answer is a file or a command's
+  output; never a wall of chat text (ADR-015).
+- **Delegation is proposed, never inferred.** The model never decides to send a task; the owner
+  approves, and every handoff is recorded (ADR-015).
+- **A retrieved chunk is labelled original text or the owner's note**, and a note is never
+  attributed to the paper (ADR-016).
 
 ## Environment
 
@@ -56,13 +75,33 @@ left to rot. Everything below was true at the moment it was written.
 - `electron-builder` builds, `git push` and `gh` are denied in the sandbox (`spawn EPERM`,
   `schannel`) and need escalation.
 - **Electron starts here again** (smoke-launched 2026-10-27 with `HDD_DATA_DIR` pointed at a scratch
-  directory: window titled `HDD`, four processes, `hdd.db` created). The automated tests still never
-  open a window, and a packaged build is still the owner's step — do not imply either was verified
-  by them.
+  directory). The automated tests still never open a window, and a packaged build is still the
+  owner's step — do not imply either was verified by them.
 - In `pwsh`, .NET file APIs (`[System.IO.File]::…`) need **absolute** paths: a relative one resolves
   against the process working directory, not against `cd`. This has cost real time here.
 - Do not truncate a long-running command's output with `Select-Object -First N` — it kills the
   process part-way through.
+
+## The harness, measured on 2026-10-28
+
+- `dsh --profile headless "<task>"` exists (CLI at `C:\Users\karin\AppData\Roaming\npm\dsh.cmd`):
+  one task in, the final assistant message out, exit. It is the intended one-shot interface.
+- **Credentials are the first wall.** Without `DEEPSEEK_API_KEY` exported to the child it fails with
+  `MISSING_CREDENTIAL` and names the harness credentials service. The GUI's stored key is not
+  reachable from a spawned process; HDD must inject its own key into the child environment only.
+- **It ran tools without any approval prompt.** That is why ADR-015 puts a person at the approval
+  step and shows the brief before sending.
+- **Its shell is broken under this configuration**: first `Windows ACL temp root must be outside the
+  workspace` (do not use `%TEMP%` as the workspace), then `spawn C:\Program Files\PowerShell\7\pwsh.exe
+  ENOENT` even though that path exists. It reported both failures honestly instead of claiming
+  success — but the failure arrived as an ordinary final message, so a caller must read the output,
+  not just note that the process finished. L2 must verify the shell, the temp root and the approval
+  behaviour before it is trusted.
+- HDD's own key (`app/config.json`) is 35 characters; `deepseek-v4-flash` is a working alias for
+  `deepseek-flash`. `deepseek-chat` still resolves and still behaves as the non-reasoning model.
+- **DeepSeek exposes no embeddings endpoint** (2026-10-28): `GET /models` lists only `deepseek-flash`
+  and `deepseek-v4-pro`; `POST /embeddings`, `/v1/embeddings` and `/beta/embeddings` are 404 while
+  `/v1/chat/completions` is 200.
 
 ## The testing tool built in v0.3
 
@@ -77,10 +116,14 @@ left to rot. Everything below was true at the moment it was written.
   model every turn the local rule proposes, and compares its verdicts with the judgement recorded
   for each turn. This is the only way to score the *model* rather than the machinery.
 - `npm run probe -- --dry-run` — prints the prompts that would be sent and sends nothing.
+- **`probe --retrieval` does not exist yet.** ADR-016 requires it: top-k hits and a threshold sweep
+  over `docs/eval/retrieval-*.json`.
 - **Ask before spending API credit**, and say roughly how many calls it will be. The owner is
   generous with it but wants to know where it goes.
 - `app/config.json` holds a real key (35 characters). Never print it, never commit it, never package
-  it. `release.ps1` swaps in the placeholder and verifies the artifact contains no key.
+  it. `release.ps1` swaps in the placeholder and verifies the artifact contains no key. **A second
+  key for embeddings is planned and has no packaging check yet** — add it to `config.example.json`,
+  the environment list and `Assert-PackagedContents` before it is used.
 
 ## Decisions that must not be quietly undone
 
@@ -93,42 +136,51 @@ left to rot. Everything below was true at the moment it was written.
   worked while mostly not happening. Look for that shape in new code.
 - **Side requests use a non-reasoning model** (`deepseek-chat` by default; `classifierModel` in
   config or `DEEPSEEK_CLASSIFIER_MODEL`). The reply uses `model`.
-- **Memories supersede, never overwrite**; `/forget` genuinely deletes, and deletes the whole
-  supersession chain, because an owner asking for something to be gone is not the same as the app
-  correcting itself. Memories are global; topics are local.
+- **Memories supersede, never overwrite**; `/forget` genuinely deletes the whole chain. Memories are
+  global; topics are local.
 - **`api.js` exists because `main.js` cannot be loaded outside Electron** — anything left there can
-  never be tested. Keep the two side requests there.
-- **`build.files` is hand-maintained and has been forgotten three times.** A test now walks the
-  require graph in seconds; if you add a module, that test tells you.
-- `docs/eval/` entries are data: adding a case is appending a turn and its judgement.
+  never be tested. Keep side requests there.
+- **`build.files` is hand-maintained and has been forgotten three times.** A test walks the
+  `require` graph in seconds; if you add a module, that test tells you.
 - **A project is a container the owner fills, never one the app infers.** No inheritance on a
-  boundary, no keyword rule, no model guess. The cost — one `/project <n>` per new topic — is
-  stated in ADR-014, and a real workload is the only thing that can judge it.
+  boundary, no keyword rule, no model guess (ADR-014).
 - **The project block is reference, not history, and it is derived.** Its rows are read at assembly
-  time; there is no context table and no generated project summary. The current topic is excluded,
-  and the section is labelled so it cannot be read as something said in the current exchange.
+  time; there is no context table and no generated project summary (ADR-014).
+- **HDD is a room, not a printer** (ADR-015). No code editing, no builds, tests or git, no
+  orchestration, no panels. Long content is a file or a command output.
+- **Execution is delegated, never inferred** (ADR-015). HDD proposes; the owner confirms; the brief
+  is a file shown before sending; every handoff is recorded with its outcome.
+- **Original text and the owner's note stay labelled** (ADR-016). The owner asks about the
+  original; the answer must not quietly become a summary of their own summary.
+- **`docs/eval/` entries are data**: adding a case is appending a turn and its judgement.
 
 ## Debts waiting, measured rather than suspected
 
 The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter next:
 
-- **`inspect.cjs` still has no listing for stored memories or projects.** `--prompt` now uses the
-  real assembler, so both sections appear with their caps applied; what is missing is a way to see a
-  memory that lost the cap, or a project no current topic points at.
-- **The project block's effect is unmeasured.** The machine side is asserted; whether she uses the
-  project's other topics, or misreads an excerpt as something said just now, needs a real
-  conversation. It is the phase's main risk.
-- **The project curation cost is unmeasured.** One `/project <n>` per new topic, and no inheritance.
-  If that is what stops projects being used, automatic assignment comes back with evidence.
-- **Nothing can rename or delete a project.** A typo stays in `/projects`; deletion needs a
-  confirmation design the command surface does not have.
-- **The topic confirmer over-splits short follow-ups** — seen twice, always in the same direction
-  (same→new). Three short capability questions became three topics where a person would keep one.
-- **The extraction cue misses some real facts** — a preference stated inside a request, and an
-  identity fact with no first-person pronoun. Two of fifteen turns in the recorded conversation.
-  Widening the cue would spend a request on nearly every turn shaped like `帮我…`.
-- **The thresholds in `topics.js` and `memory.js` are still estimates**, with three conversations as
-  the whole of the evidence.
-- **The packaged data-directory branch and the command surface are not covered by automation.** One
-  launch of the built exe closes both: it should create `%APPDATA%\HDD\data\hdd.db` at schema v6,
-  and the commands can be typed there (`/memories` is the only one ever driven by hand).
+- **The handoff's only evidence is a failure** (ROADMAP debt 23): headless runs tools without
+  approval and its shell is broken under this configuration. Do not build L2 on "it works".
+- **The reply budget is a starting value** (debt 24): 2–3 sentences / ~120 characters, not measured.
+- **The first corpus is highlights, not the reading** (debt 25): PDF full text is the trigger.
+- **The second key has no packaging check** (debt 26).
+- **Zotero's export shape is not stable** (debt 27).
+- **`inspect.cjs` still has no listing for stored memories or projects**, and will need one for
+  files. `--prompt` now uses the real assembler, so injected sections appear with their caps.
+- **The project block's effect is still unmeasured.** The machine side is asserted; whether she uses
+  the other topics, or misreads an excerpt as something said just now, needs a real conversation.
+- **The packaged data-directory branch is untested at schema v6** (the last real launch was v5).
+- **The commands have never been typed by hand**, except `/memories`.
+
+## What to do first next session
+
+1. Read ADR-015 and ADR-016; they are the authority on everything below.
+2. **Pick the embedding provider.** DeepSeek has none. Candidates are a multilingual model (BGE-M3
+   class, SiliconFlow) and a Chinese provider's multilingual endpoint (DashScope `text-embedding-v3`
+   / v4). The choice is made by a 10-question bilingual set — 7 Chinese questions answered in English
+   papers, 2 in Chinese notes, 1–2 with English terms — not by a specification sheet. This needs the
+   owner's key and permission to spend.
+3. **Write `docs/eval/retrieval-*.json` and `probe --retrieval`** before any threshold exists.
+4. **Then migration 7** (`files`, `chunks`) and the store layer, with tests.
+5. **L1 is independent of Phase 5** and can be done in parallel: the `/hand` brief file and its
+   contract need no provider, no schema and no network, and they test the part of ADR-015 that is
+   cheapest to get wrong.

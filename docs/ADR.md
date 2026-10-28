@@ -163,9 +163,9 @@ Persistent state lives in `app/data/` (gitignored): `hdd.db`, plus exports.
 
 The roadmap has nine phases and nearly every one adds tables or columns: topics (Phase 2),
 memories (Phase 3), projects and context (Phase 4), files and chunks (Phase 5), tool
-invocations (Phase 6), tasks and reminders (Phase 7), agent runs (Phase 8), schedules
-(Phase 9). Without a migration mechanism every addition becomes a manual database edit or
-a data-losing rebuild.
+invocations (Phase 6), tasks and reminders (Phase 7), agent runs (Phase 8 — removed by
+ADR-015), schedules (Phase 9). Without a migration mechanism every addition becomes a manual
+database edit or a data-losing rebuild.
 
 **Decision**
 
@@ -1031,14 +1031,260 @@ the IPC cross-checks; then the docs and the debts.
 
 ---
 
+## ADR-015 — A room, not a printer: the boundary, the two registers, and delegation
+
+**Status:** Accepted (2026-10-28)
+
+**Context**
+
+Phases 1–4 built a relationship, not a workbench: topics, memories with provenance, projects, a
+persona and a mascot that changes state. None of that is needed to edit code. Phases 5–9 as the
+roadmap wrote them drifted the other way — files, tools, agent runs — and the owner asked what HDD
+is actually for. The confusion was real and the roadmap carried it: the next four phases described
+a smaller harness, while the first four phases had built a room.
+
+Part of the answer was already fixed by verified design. The renderer folds every newline into a
+space, puts one reply on one visual line, uses no bubbles, and fades history toward the mascot.
+HDD **cannot** display a document by construction; that was a deliberate look, not a missing
+feature. And the app already has two registers: conversation, and command output — `/topics`,
+`/memories`, `/projects` and `/search` print structured lists, and have since v0.2. Long content
+already has a home; the question was which register it belongs to.
+
+Delegation was measured rather than assumed, on 2026-10-28:
+
+- `dsh --profile headless "<task>"` exists: one task in, one final assistant message out, exit.
+- It boots only when `DEEPSEEK_API_KEY` is exported to the child. Without it the launcher fails
+  with `MISSING_CREDENTIAL` and names the harness credentials service — so a handoff must carry the
+  key through the environment, not assume the GUI's stored credentials are reachable.
+- It attempted shell commands **without any approval prompt**, and under this configuration the
+  shell tool itself failed twice: first `Windows ACL temp root must be outside the workspace`, then
+  `spawn C:\Program Files\PowerShell\7\pwsh.exe ENOENT`. It reported the failure honestly instead
+  of claiming success.
+
+So the interface exists, it is not turnkey, and its failure arrives as an ordinary-looking final
+message: the caller must read the output, not merely note that the process finished. That is the
+same shape as the v0.2 defect this project already paid for.
+
+**Decision**
+
+**1. HDD is a room, not a printer. Her subject is the owner's reading, notes, projects and personal
+facts — not the owner's codebase. Execution belongs to the harness.**
+
+Non-goals, stated as firmly as the goals: no code editing, no builds, tests or git, no multi-step
+agent orchestration, no diff or approval UI, no panels. The test for any future feature is one
+question — **is its deliverable a work artifact, or is it continuity and conversation?** A patch,
+a build, a report belong to the harness. Remembering, discussing, proposing and pointing belong
+here.
+
+**2. Two registers, and a drawer for everything long.**
+
+- **Conversation** is short and unstructured: 2–3 sentences by default, no lists, no headings, no
+  code blocks. The existing newline folding stays. The default is a tunable constant
+  (`REPLY_SOFT_LIMIT`, starting at about 120 characters), not a taste, and it is adjusted from real
+  conversations the same way the topic and memory constants are.
+- **Commands** may be structured. That is already true (`/topics`), and it stays true: a list is
+  something the owner asked for, not something she volunteers.
+- Anything longer than the speech budget becomes either **a follow-up turn** the owner asks for
+  ("展开" / "继续") or **a file**. It never becomes a wall of chat text.
+
+A corollary that keeps ADR-009 honest: files HDD writes are **its own artifacts** — handoff briefs,
+reports — under its data directory. That is app state, not the owner's files. Reading the owner's
+imported files (Phase 5) and modifying the owner's files remain separate capabilities, and the
+latter stays absent until Phase 9's export.
+
+**3. Execution is delegated, never inferred.**
+
+HDD may **propose** a handoff. The owner confirms. The approval step is a person, not a classifier,
+for three reasons that are not hypothetical: a wrong route changes the owner's files; imported
+documents make prompt injection a real path from a PDF to a shell; and ADR-012 already measured how
+often a semantic classification misses.
+
+- **L1 — the brief.** `/hand <need>` composes a self-contained brief from the conversation, memories,
+  project and library, writes it to `data/handoffs/<timestamp>.md`, and says one line: where it is
+  and whether to send. Nothing is printed for copying, because the owner does not want to paste.
+- **L2 — the send.** After confirmation, HDD spawns `dsh --profile headless` with the brief as the
+  task, a configured working directory, a timeout, the key injected into the child environment, and
+  a record of the task text, start, end, exit code and output. The result comes back as at most
+  three lines plus a file for the full log.
+- **L3 — automatic routing.** Deferred until L2 has measured usage and a permission model exists
+  (Phase 6). It is not a v0.5 feature and it is not a default.
+
+The brief is shown **before** it is sent. That is the human firewall: an instruction hidden in an
+imported document has to appear in plain text in the brief for the owner to approve it. No
+retrieved content may become a task without being visible there.
+
+**4. The handoff is recorded, and a failure is reported as a failure.**
+
+A handoff is an action with side effects, so it gets the same treatment as every other entity here:
+an application-generated id, UTC timestamps, and a stored outcome. An uninstalled harness, a
+timeout, a non-zero exit and a hung approval are all "it did not run", never a success message.
+The headless measurement above is the evidence that this is necessary: the tool can fail while the
+model writes a perfectly calm paragraph about it.
+
+**Consequences**
+
+- The roadmap changes: Phase 5 is reshaped by ADR-016; Phase 6 narrows to a few safe local actions
+  plus the handoff audit, not a tool platform; **Phase 8 (agent runs) is removed as a phase**,
+  because execution is delegated.
+- The capability list gains "把自己的简报写成文件" (app state) and, in Phase 5, "读主人导入的文件".
+  "不能修改或删除主人电脑上的文件" remains true.
+- A handoff record needs storage: a table appended after Phase 5's migration 7, or a `meta`-keyed
+  record — decided when the protocol is implemented, with the same rules as every other entity.
+- New failure modes, with their mitigations: a handoff that runs when it should not (confirmation
+  plus a visible brief); a task that fails quietly (exit code, stderr, audit row); a result too long
+  for the room (the three-line contract, full log in a file).
+- The reply budget is measurable: the distribution of reply lengths in `docs/eval` is the dataset,
+  and "she never gives a wall of text" becomes an assertion the page tests can check.
+
+**Alternatives rejected**
+
+- *Replace the harness or build its tools*: asymmetric competition on its home turf, with none of
+  its infrastructure, and it would bury the character under tooling.
+- *A panel or document view for long answers*: contradicts the verified fullscreen composition and
+  turns the room into a workspace. The drawer already exists — commands and files.
+- *Let the model decide when to hand off*: cheap to write, and the error is an action on the owner's
+  files. ADR-012 is this repository's evidence that the semantic judgement is the unreliable part.
+- *Print the brief and let the owner paste it*: solves nothing the owner asked to solve. A file is
+  the same artifact without the clipboard.
+- *Keep long answers in chat and trust the fade mask*: the mask protects the composition, not the
+  immersion. A wall of text is still a wall.
+
+**Implementation order**, each step verifiable on its own: the reply-length constant and the
+"展开" rule first (prompt and page tests, no integration); then the brief file and its contract
+(L1, judged by whether the owner ever sends one); then the L2 spawn with audit and failure
+semantics; then the capability declarations and the documentation.
+
+---
+
+## ADR-016 — Phase 5: the owner's library, notes first, PDFs later
+
+**Status:** Accepted (2026-10-28)
+
+**Context**
+
+The roadmap row said "Files and chunks; chunking, embeddings, semantic retrieval", with tables
+`files`, `chunks`, and the vector-store decision due at the start (ADR-007). That was the whole of
+the specification.
+
+Two measurements changed the shape:
+
+1. **DeepSeek has no embeddings endpoint.** On 2026-10-28, `GET /models` listed only
+   `deepseek-flash` and `deepseek-v4-pro`; `POST /embeddings`, `/v1/embeddings` and
+   `/beta/embeddings` all returned 404, while `/v1/chat/completions` returned 200 — so the `/v1`
+   prefix is mounted and the route is genuinely absent. Embeddings require a second provider, or
+   the mechanism changes to lexical retrieval plus reranking.
+2. **The owner's corpus is highlights and notes before it is papers.** The papers are English PDFs
+   with a text layer; the notes are Chinese summaries in Zotero; the Zotero entries also carry
+   child notes and PDF highlights/annotations. A highlight is already an exact English sentence,
+   a page number and the owner's Chinese comment — the highest-signal, zero-parsing corpus in the
+   whole library. A full PDF is lower signal and much more work: two columns, equations,
+   references, headers.
+
+The need is cross-lingual: ask in Chinese, answer from the English original. The owner asks about
+the original more often than about the note, so the retrieval must reach English text and must say
+which it reached.
+
+**Decision**
+
+**1. Phase 5 starts with Zotero's exported notes, not with PDF parsing.**
+
+`/file add <path>` accepts a file or a directory of Zotero's "Export Notes" output (Markdown or
+HTML), plus plain text and Markdown. That corpus can prove the value of "ask in Chinese, answer
+from the English original" with no new parser and no OCR. **PDF full text is the second step**, gated
+on that proof.
+
+**2. PDFs are text-layer only in this phase, and bad extraction is visible.**
+
+Scanned PDFs are refused with a sentence rather than sent to OCR. Two-column reconstruction is
+best-effort. `/file show` prints the extracted text and the chunk count, so a garbled import is seen
+and removed, not silently indexed. This is the ADR-009 shape applied to extraction: the app may say
+"this is what I read", never "I read it" when it did not.
+
+**3. The schema is migration 7, additive, and small.**
+
+`files` (id, name, kind `paper|note|other`, lang, source_path, bytes, sha256, content, created_at)
+and `chunks` (id, file_id → files, ordinal, text, start_offset, end_offset, embedding BLOB,
+embedding_model, created_at). Content is copied into the store; the path is provenance only. A
+chunk stores the model that embedded it, so vectors from different models are never compared. No
+`chunks_fts` in the first cut; the seam stays open for hybrid retrieval.
+
+**4. Embeddings come from a second provider behind a provider-agnostic client.**
+
+Config gains `embeddingBaseUrl`, `embeddingApiKey`, `embeddingModel` (environment wins, as usual).
+DeepSeek cannot serve this (measured). The provider is **not fixed here**: the candidates are a
+multilingual model (BGE-M3 class) and a Chinese provider's multilingual endpoint, and the choice is
+made by the evaluation set in point 6, not by a specification sheet. If no provider is acceptable,
+the fallback is chunk-level FTS5 plus model reranking — ADR-007's third option — and the roadmap
+wording changes with the reason recorded.
+
+**5. Retrieval has two entries, and the section is labelled by source.**
+
+`/recall <描述>` is explicit and changes no prompt. Automatic injection happens only when a
+**measured** threshold is cleared, is reference rather than history, and is bounded by count and
+characters. Every excerpt says whether it is original text or the owner's note, and the prompt
+forbids attributing a note to the paper. The owner asks about the original; the answer must not
+quietly become a summary of their own summary.
+
+**6. The evaluation set is written before the threshold.**
+
+`docs/eval/retrieval-*.json`: 7 Chinese questions answered in English papers, 2 answered in Chinese
+notes, 1–2 with English technical terms. Replayed by `probe --retrieval`, which prints top-k hits
+and a threshold sweep. The model choice and the injection threshold both come from that file.
+
+**7. Hybrid lexical plus vector retrieval is recorded, not built.**
+
+Exact terms (`LoRA`, `DPO`) are where vector search is weakest and FTS5 is strongest. The retrieval
+module keeps the seam; adding `chunks_fts` and a reciprocal-rank merge is a later, evidence-led
+change.
+
+**Consequences**
+
+- `files` and `chunks` exist at schema v7; nothing is backfilled.
+- Capabilities gain "读主人导入的文件" and "从文件里按意思找内容". "不能修改或删除主人电脑上的文件"
+  remains true; writing stays out until Phase 9's export.
+- A second API key enters the project. `config.example.json`, the environment variables and
+  `release.ps1`'s leak check must all learn about it, or a published build can carry a real second
+  key. This is ADR-011's rule applied to a new secret.
+- Changing the embedding model invalidates stored vectors. `embedding_model` per chunk makes the
+  mismatch visible; a re-index is required and is not automatic.
+- PDF parsing, OCR and Zotero live integration are **not** in this phase, and are listed as debts
+  with triggers rather than left as omissions.
+- The reply budget from ADR-015 applies to retrieval answers too: a hit becomes a sentence and a
+  pointer, not a pasted excerpt.
+
+**Alternatives rejected**
+
+- *Full PDF parsing first*: the largest and least verifiable work, before the value is proven.
+- *Translate the papers into Chinese*: lossy, costly, and it removes the exact wording the owner
+  asks for.
+- *Translate the query and use an English-only embedding model*: an extra request and translation
+  errors; a multilingual model does it in one step.
+- *A Chinese-only embedding model*: fails the cross-lingual requirement by construction.
+- *A separate vector database*: another process and another source of truth, for a personal library
+  that brute-force cosine can serve.
+- *Auto-inject everything above a guessed threshold*: this project has twice paid for thresholds
+  chosen by reasoning.
+
+**Implementation order**, each step verifiable on its own: the bilingual evaluation set and the
+provider measurement first; then migration 7 and the store layer with tests; then the chunker; then
+the embedding client with a fake transport in tests; then `/files` and the import pipeline; then
+`/recall`; then the measured threshold; then the prompt section; then the capability declaration,
+`inspect` listings and the release.
+
+---
+
 ## Deferred decisions (with revisit triggers)
 
 Recorded so they are not silently forgotten. None of these should be built early.
 
 | Topic | Revisit when | Why not now |
 | --- | --- | --- |
-| Vector store and embedding model | Phase 5 starts | Unknown volume, model and query shape (ADR-007) |
-| Tool-calling architecture and permission model | Phase 6 starts | Needs a real capability inventory first |
+| Vector store and embedding model | Phase 5 (ADR-016) — provider selection in progress | DeepSeek exposes no embeddings endpoint (measured 2026-10-28); candidates are compared on the bilingual evaluation set, not on a specification sheet |
+| Tool-calling architecture and permission model | Phase 6 (narrowed by ADR-015) | Only a few safe local actions are in scope; execution is delegated, so the harness owns the tool platform |
+| Automatic handoff routing (HDD decides to send) | L2 has measured usage, and a permission model exists | A wrong send changes the owner's files; the approval step is a person (ADR-015) |
+| PDF full-text parsing | The Zotero-export path shows that retrieval is worth the work | The largest and least verifiable piece; highlights are higher signal (ADR-016) |
+| Zotero live integration | Export friction proves to be what stops the library being used | A moving external schema; export already works and the owner accepts it (ADR-016) |
+| Hybrid lexical + vector retrieval | Semantic misses on exact English terms are measured | One retriever first; the module keeps the seam (ADR-016) |
 | Multi-conversation UI | Not scheduled. Phase 2 shipped topics with a command surface (ADR-012) and the panel is still deferred | Six commands already switch topics; a panel is a visual design for a verified fullscreen layout |
 | Retrieval-based memory (vs recent-N + summary) | Memory volume makes summaries inadequate | Recent-N plus a profile covers Phase 1–3 |
 | Automatic project assignment | A real workload shows the one-command cost stops projects being used | A wrong assignment silently changes what she is told, and there is no ground truth to score it against (ADR-014) |
@@ -1071,3 +1317,9 @@ Short list, to be checked before any structural change:
 11. A topic belongs to at most one project, and membership changes only on an explicit command.
     Project context is derived from the stored rows at assembly time; it is never a generated
     summary and never a second copy of the data (ADR-014).
+12. The conversation register stays short. A long answer is a follow-up turn, a file, or a
+    command's structured output — never a wall of chat text (ADR-015).
+13. Execution is delegated, never inferred: HDD may propose a handoff, the owner confirms, and
+    every handoff is recorded with its outcome (ADR-015).
+14. Every retrieved chunk is labelled as original text or the owner's note, and the prompt never
+    attributes a note to the paper (ADR-016).
