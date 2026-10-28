@@ -1180,6 +1180,13 @@ Two measurements changed the shape:
    whole library. A full PDF is lower signal and much more work: two columns, equations,
    references, headers.
 
+3. **A provider candidate was measured, not selected.** On 2026-10-28, SiliconFlow's `BAAI/bge-m3`
+   answered in 327 ms at 1024 dimensions (90 tokens for six short texts). A Chinese-query ×
+   English-passage sanity matrix separated a direct match (0.804) from unrelated pairs (0.32–0.40),
+   but a conceptual query's correct passage beat the wrong one by only 0.032 (0.584 vs 0.552). The
+   model is viable; the thin margin is why ranking and the evaluation set decide, not a guessed
+   threshold.
+
 The need is cross-lingual: ask in Chinese, answer from the English original. The owner asks about
 the original more often than about the note, so the retrieval must reach English text and must say
 which it reached.
@@ -1224,6 +1231,12 @@ wording changes with the reason recorded.
 characters. Every excerpt says whether it is original text or the owner's note, and the prompt
 forbids attributing a note to the paper. The owner asks about the original; the answer must not
 quietly become a summary of their own summary.
+
+A third entry is `/read <title|n>`: **one named document, injected whole for one turn** (or until
+detached), bounded by a character cap, with no generated summary — the paper is the paper. This is
+the answer to "帮我阅读一下这篇文献", which is a different operation from "find the passage about X".
+If the document exceeds the cap, the app says so and points at `/recall` instead of pretending to
+have read it.
 
 **6. The evaluation set is written before the threshold.**
 

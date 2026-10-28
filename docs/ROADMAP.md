@@ -265,13 +265,19 @@ Gates, in order:
 3. **Import.** `/file add <file|dir>` for Zotero's exported notes, Markdown and text-layer PDFs;
    `/files`, `/file show`, `/file rm`. Bad extraction is visible, not silently indexed.
 4. **Retrieval.** `/recall` first; automatic injection only after the threshold is measured on
-   `docs/eval/retrieval-*.json`.
+   `docs/eval/retrieval-*.json`. `/read <title|n>` injects one named document whole, bounded, with
+   no generated summary.
 5. **Labelled sections.** Original text and the owner's note never blur into each other.
 6. **Capability and packaging.** The `files` capability, the second key's leak check, and the
    module checks.
 
 What this phase deliberately does not do: OCR, PDF layout reconstruction beyond best effort,
 translating the papers, Zotero live sync, or writing the owner's files.
+
+The owner's first five real questions are the evidence for this shape: two are about papers
+("与某主题相关的论文有哪些", "有没有相关论文"), one is "帮我读一下某篇文献", and **two are about tasks and
+the schedule** ("今天的工作安排", "还有哪些工作待推进"). The last two belong to Phase 7, and retrieval
+must not pretend to answer them. The first three are what `/recall` and `/read` exist for.
 
 ---
 
@@ -437,6 +443,9 @@ Not blockers, but they should not be forgotten.
 27. **Zotero's export shape is not stable across versions.** Markdown or HTML, per item or per
     collection, notes and annotations in one file or several — the importer must read defensively and
     say what it could not parse, rather than importing half a library silently.
+28. **Two of the owner's first five questions are about tasks, not files.** "今天的工作安排" and
+    "还有哪些工作待推进" belong to Phase 7; Phase 5 cannot answer them and must not appear to. That is
+    the strongest signal yet that Phase 7 should follow Phase 5 closely, possibly before Phase 6.
 
 ---
 

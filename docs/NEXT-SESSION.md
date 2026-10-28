@@ -102,6 +102,11 @@ artifact, it belongs in the harness; if it is continuity and conversation, it be
 - **DeepSeek exposes no embeddings endpoint** (2026-10-28): `GET /models` lists only `deepseek-flash`
   and `deepseek-v4-pro`; `POST /embeddings`, `/v1/embeddings` and `/beta/embeddings` are 404 while
   `/v1/chat/completions` is 200.
+- **SiliconFlow's `BAAI/bge-m3` is the first measured embedding candidate** (2026-10-28): 1024
+  dimensions, 327 ms, 90 tokens for six short texts. A Chinese→English sanity matrix separated a
+  direct match (0.804) from unrelated pairs (0.32–0.40), but a conceptual query's margin was only
+  0.032 — rank, do not threshold on one number. The key lives in the user environment as
+  `HDD_EMBEDDING_API_KEY` (with `HDD_EMBEDDING_BASE_URL`, `HDD_EMBEDDING_MODEL`), never in the repo.
 
 ## The testing tool built in v0.3
 
@@ -174,13 +179,17 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 ## What to do first next session
 
 1. Read ADR-015 and ADR-016; they are the authority on everything below.
-2. **Pick the embedding provider.** DeepSeek has none. Candidates are a multilingual model (BGE-M3
-   class, SiliconFlow) and a Chinese provider's multilingual endpoint (DashScope `text-embedding-v3`
-   / v4). The choice is made by a 10-question bilingual set — 7 Chinese questions answered in English
-   papers, 2 in Chinese notes, 1–2 with English terms — not by a specification sheet. This needs the
-   owner's key and permission to spend.
+2. **The provider is chosen in principle: SiliconFlow `BAAI/bge-m3`**, measured on 2026-10-28 with
+   the key in the user environment. It is not proven: the 10-question bilingual set still decides
+   whether it separates the owner's real papers well enough — a conceptual query's margin was only
+   0.032. Keep the provider-agnostic client; DashScope `text-embedding-v3/v4` stays the fallback.
 3. **Write `docs/eval/retrieval-*.json` and `probe --retrieval`** before any threshold exists.
 4. **Then migration 7** (`files`, `chunks`) and the store layer, with tests.
 5. **L1 is independent of Phase 5** and can be done in parallel: the `/hand` brief file and its
    contract need no provider, no schema and no network, and they test the part of ADR-015 that is
    cheapest to get wrong.
+6. **The owner's five real questions split three ways**: paper listing and existence (`/recall`),
+   reading a named document (`/read`), and **tasks and the schedule, which are Phase 7** — do not
+   stretch retrieval to answer them. The next input is the first Zotero export: a collection's notes
+   and highlights saved under `app/data/library/` (gitignored), inspected for format before any
+   parser is written.
