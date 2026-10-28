@@ -140,15 +140,15 @@
       "file": "package.json",
       "kind": "authored",
       "origin": null,
-      "bytes": 709,
-      "sha256": "990ad7c311fe213256be785b52bae6db2a709b6a3400ee3599cee03a46a00bf0"
+      "bytes": 743,
+      "sha256": "a077bb2a0cdb5814bbe9914c016d5b20dad4f6848e7e8a628b6f265f98b9ae60"
     },
     {
       "file": "README.md",
       "kind": "authored",
       "origin": null,
-      "bytes": 37580,
-      "sha256": "ef79aebcac537399a08291ea423c8e3bb9be14a3e4c587081344f43469495212"
+      "bytes": 37648,
+      "sha256": "08d851851e163bb7100288e118459da10ef26567fe1b072b6d97ae0d56a6ee51"
     },
     {
       "file": "THIRD_PARTY_NOTICES.md",
