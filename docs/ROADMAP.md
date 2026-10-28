@@ -431,7 +431,7 @@ Not blockers, but they should not be forgotten.
     thing that went right. L2 must not be built on "it works" until the shell path, the ACL temp root
     and the approval behaviour are each verified. L1 (the brief file) is the only part with evidence
     behind it so far.
-24. **The reply budget is a starting value, not a measurement.** "2–3 sentences / about 120
+24. **The reply budget is a starting value, not a measurement.** "2–5 sentences / about 240
     characters" is the first constant (ADR-015). The dataset that should move it is the reply-length
     distribution across `docs/eval`, and "she never gives a wall of text" is not an assertion yet.
 25. **The first corpus is the owner's highlights, not the owner's reading.** Highlights are what they
@@ -440,7 +440,7 @@ Not blockers, but they should not be forgotten.
 26. **The second API key has no packaging check yet.** `release.ps1` scans for one real key and swaps
     one placeholder. Until the embedding key reaches `config.example.json`, the environment-variable
     list and `Assert-PackagedContents`, a published build could carry it.
-27. **Zotero's export shape is not stable across versions.** Markdown or HTML, per item or per
+27. **Zotero's export shape is not stable across versions.** HTML, RDF or JSON, per item or per
     collection, notes and annotations in one file or several — the importer must read defensively and
     say what it could not parse, rather than importing half a library silently.
 28. **Two of the owner's first five questions are about tasks, not files.** "今天的工作安排" and

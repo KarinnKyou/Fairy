@@ -1078,10 +1078,11 @@ here.
 
 **2. Two registers, and a drawer for everything long.**
 
-- **Conversation** is short and unstructured: 2–3 sentences by default, no lists, no headings, no
-  code blocks. The existing newline folding stays. The default is a tunable constant
-  (`REPLY_SOFT_LIMIT`, starting at about 120 characters), not a taste, and it is adjusted from real
-  conversations the same way the topic and memory constants are.
+- **Conversation** is a short explanation, the length of ordinary conversation: typically 2–5
+  sentences, enough to explain one thing, never a wall; no lists, no headings, no code blocks. The
+  existing newline folding stays. The default is a tunable constant (`REPLY_SOFT_LIMIT`, starting at
+  about 240 characters), not a taste, and it is adjusted from real conversations the same way the
+  topic and memory constants are.
 - **Commands** may be structured. That is already true (`/topics`), and it stays true: a list is
   something the owner asked for, not something she volunteers.
 - Anything longer than the speech budget becomes either **a follow-up turn** the owner asks for
@@ -1195,8 +1196,8 @@ which it reached.
 
 **1. Phase 5 starts with Zotero's exported notes, not with PDF parsing.**
 
-`/file add <path>` accepts a file or a directory of Zotero's "Export Notes" output (Markdown or
-HTML), plus plain text and Markdown. That corpus can prove the value of "ask in Chinese, answer
+`/file add <path>` accepts a file or a directory of Zotero's export output — "Export Notes" HTML
+where the installed version offers it, otherwise Zotero RDF — plus plain text and Markdown. That corpus can prove the value of "ask in Chinese, answer
 from the English original" with no new parser and no OCR. **PDF full text is the second step**, gated
 on that proof.
 

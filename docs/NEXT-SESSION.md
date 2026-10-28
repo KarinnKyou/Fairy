@@ -25,7 +25,7 @@ left to rot. Everything below was true at the moment it was written.
 ## The direction, in one paragraph
 
 **HDD is a room, not a printer.** Her subject is the owner's reading, notes, projects and personal
-facts — not the owner's codebase. Conversation is short by design (2–3 sentences, no lists, no
+facts — not the owner's codebase. Conversation is a short explanation (2–5 sentences, no lists, no
 headings); long content is a follow-up turn, a command's structured output, or a file. Execution
 belongs to the harness: HDD may **propose** a handoff, the owner confirms, and the brief is a file,
 never something to copy and paste. The boundary test for any feature: if its deliverable is a work
@@ -165,7 +165,7 @@ The full list is at the end of `docs/ROADMAP.md`. The ones most likely to matter
 
 - **The handoff's only evidence is a failure** (ROADMAP debt 23): headless runs tools without
   approval and its shell is broken under this configuration. Do not build L2 on "it works".
-- **The reply budget is a starting value** (debt 24): 2–3 sentences / ~120 characters, not measured.
+- **The reply budget is a starting value** (debt 24): 2–5 sentences / ~240 characters, not measured.
 - **The first corpus is highlights, not the reading** (debt 25): PDF full text is the trigger.
 - **The second key has no packaging check** (debt 26).
 - **Zotero's export shape is not stable** (debt 27).
