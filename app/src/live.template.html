@@ -184,7 +184,36 @@
 
   /* Whole-string cleanup, for text that is complete (stored history, prompt echo). */
   function cleanText(s) {
-    return cleanChunk(s).replace(/[ \t]{2,}/g, ' ').trim();
+    return cleanChunk(s).replace(/\*\*/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+  }
+
+  /* Markdown bold markers are not part of the terminal's voice, and a stream delta can split
+     "**" across two events. One "*" is held until the next character decides what it is; a
+     lone "*" (multiplication, a footnote) is flushed unchanged. */
+  var heldStars = 0;
+  function stripBoldChunk(s) {
+    var text = String(s || '');
+    var out = '';
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (ch === '*') {
+        heldStars++;
+        if (heldStars === 2) heldStars = 0;
+        continue;
+      }
+      if (heldStars) {
+        out += new Array(heldStars + 1).join('*');
+        heldStars = 0;
+      }
+      out += ch;
+    }
+    return out;
+  }
+  function flushHeldStars() {
+    if (!heldStars) return '';
+    var s = new Array(heldStars + 1).join('*');
+    heldStars = 0;
+    return s;
   }
 
   function scrollBottom() {
@@ -690,11 +719,14 @@
       if (phase !== 'thinking') changePhase('thinking');
     } else if (ev.type === 'content') {
       if (phase !== 'speaking') changePhase('speaking');
-      var clean = cleanChunk(ev.text);
+      var clean = cleanChunk(stripBoldChunk(ev.text));
       if (clean) pushText(clean);
     } else if (ev.type === 'done') {
+      var tail = flushHeldStars();
+      if (tail) pushText(tail);
       finishTurn();
     } else if (ev.type === 'error') {
+      heldStars = 0;
       cancelTyping();
       if (currentLine && !currentLine.textContent) currentLine.remove();
       currentLine = null;

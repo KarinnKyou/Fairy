@@ -285,8 +285,9 @@ async function emit(type, text) {
   // breaks, and with `white-space: pre-wrap` that would render as an empty line. It also
   // ends with a space, to catch a per-delta trim() that would glue the next chunk onto it.
   const expectFull = '我是 Fairy，不是 DeepSeek。 有什么可以帮你？好了';
-  const chunk1 = '我是 Fairy😊，不是 DeepSeek。';
-  const chunk2 = '\n\n有什么可以帮你？🎉';
+  /* Bold markers are split across deltas on purpose: the first chunk ends inside "**". */
+  const chunk1 = '我是 Fairy😊，不是 **Deep';
+  const chunk2 = 'Seek**。\n\n有什么可以帮你？🎉';
   const chunk3 = '好了';
   await emit('content', chunk1);
   await waitFor(() => mascot.getAttribute('data-state') === 'comforting', 1500, '安慰态');
@@ -308,6 +309,7 @@ async function emit(type, text) {
   }, 6000, '整句打完');
   const finalText = [...out.querySelectorAll('.line.assistant')].map((n) => n.textContent).join('');
   if (/[😊🎉]/.test(finalText)) throw new Error('Emoji 未被清除: ' + finalText);
+  if (/\*/.test(finalText)) throw new Error('加粗标记 ** 未被清除: ' + finalText);
   /* No blank lines may reach the screen: the reply is one terminal line. */
   const live = liveAssistant();
   if (/\n/.test(live)) throw new Error('回复里仍有换行（会渲染成空行）: ' + JSON.stringify(live));

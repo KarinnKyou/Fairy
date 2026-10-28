@@ -524,6 +524,8 @@ HDD/
   up when it grows); `done` waits for the queue to drain before finishing the turn.
 - **No emoji**: system prompt plus a second scrub in the renderer over
   `Extended_Pictographic` and related ranges.
+- **No Markdown**: the persona forbids it, and the renderer strips `**` including when the
+  two asterisks arrive in different stream deltas; stored history is scrubbed on repaint too.
 - **One line per reply**: `#out` is `white-space: pre-wrap`, so a `\n\n` in the model's
   reply would render as a blank line in the terminal. Newlines are therefore folded into a
   single space. This happens in two places for a reason: `cleanChunk` runs on every stream
